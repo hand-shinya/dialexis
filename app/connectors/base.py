@@ -5,6 +5,7 @@ not knowledge. Every fetch is stamped with retrieved_at (axiom 4) and cached
 politely to respect free public APIs. Failures are returned as visible error
 objects, never swallowed (visibility over silence).
 """
+import asyncio
 import datetime
 import json
 import os
@@ -32,10 +33,19 @@ async def cached_get_json(url: str, params: dict | None = None,
                    - datetime.datetime.fromisoformat(row["fetched_at"])).total_seconds()
             if age < ttl:
                 return json.loads(row["body"]), row["fetched_at"], True
+        # Retry transient throttling/unavailability (429/503) politely with
+        # backoff, honoring Retry-After. Free pools like OpenAlex burst-limit;
+        # a couple of short retries turns a visible error into a served result.
         async with httpx.AsyncClient(timeout=25, follow_redirects=True,
                                      headers={"User-Agent": UA, **(headers or {})}) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
+            for attempt in range(3):
+                resp = await client.get(url, params=params)
+                if resp.status_code in (429, 503) and attempt < 2:
+                    wait = float(resp.headers.get("Retry-After") or (1.5 * (attempt + 1)))
+                    await asyncio.sleep(min(wait, 5))
+                    continue
+                resp.raise_for_status()
+                break
             body = resp.json()
         ts = now()
         conn.execute("INSERT OR REPLACE INTO api_cache(url, fetched_at, body) VALUES(?,?,?)",
