@@ -12,6 +12,7 @@ of the seven axioms. In particular:
 import asyncio
 import json
 import os
+import re
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -151,15 +152,17 @@ async def api_explore(q: str, lang: str = "en"):
         if not entity["error"]:
             ed = entity["data"]
             is_person = ed.get("is_person", False)
-            # Persons: search scholarship by the unambiguous English name
-            # (Kant, Marx) — English scholarship dominates and names don't
-            # collide. Concepts: keep the user's original-language term so a
-            # Japanese query for 存在 returns Japanese 存在論 scholarship rather
-            # than Wikidata's sometimes-wrong English sense (存在→"entity").
-            # In both cases the OpenAlex humanities lens removes cross-domain noise.
-            scholar_q = (ed.get("label_en") or q) if is_person else q
-            sep_term = ed.get("label_en") or q  # SEP is English-only
+            # English anchor for English-only sources (SEP) and person searches.
+            # The English WIKIPEDIA sitelink title is the reliable name — the
+            # Wikidata English *label* has data gaps (e.g. Montesquieu's is null,
+            # which previously leaked the Japanese name into OpenAlex). Fall back
+            # to the English label, then the raw query.
             wp_titles = ed["wikipedia"]
+            english_term = wp_titles.get("en") or ed.get("label_en") or q
+            # Persons: search by the unambiguous English name. Concepts: keep the
+            # user's original-language term (Japanese 存在 → 存在論 scholarship).
+            scholar_q = english_term if is_person else q
+            sep_term = english_term  # SEP is English-only
             title = wp_titles.get(lang) or wp_titles.get("en")
             wp_lang = lang if lang in wp_titles else "en"
             if title:
@@ -179,20 +182,38 @@ async def api_explore(q: str, lang: str = "en"):
     if not sep_result["error"] and sep_result["data"]:
         sep_entry = await sep.entry(sep_result["data"][0]["slug"])
 
-    # Step 3: scholarly sources, anchored on scholar_q, under the philosophy lens.
-    # These SUPPLEMENT the SEP orientation (recent journal articles, OA texts);
-    # they are no longer the primary answer.
-    oa_works, oa_authors, cr_works, gutenberg = await asyncio.gather(
-        openalex.search_works(scholar_q),
-        openalex.search_authors(scholar_q) if is_person else _empty("openalex"),
-        crossref.search_works(scholar_q),
-        gutendex.search(scholar_q) if is_person else _empty("gutendex"))
+    # Step 3: primary texts (public-domain editions the reader can actually open)
+    # and, only as a clearly-secondary supplement, recent journal articles.
+    # Crossref is dropped from the default view: for philosophy it returned
+    # untitled/irrelevant records (RESEARCH_REALITY.md §2). The literature that
+    # matters is the SEP bibliography above; OpenAlex is "recent articles",
+    # strictly filtered so it self-suppresses rather than showing noise.
+    gutenberg = await (gutendex.search(scholar_q) if is_person else _empty("gutendex"))
+    oa_works = await openalex.search_works(scholar_q)
+    if not oa_works["error"] and oa_works["data"]:
+        oa_works["data"] = _relevant(oa_works["data"], english_term if is_person else q)
 
     return {"query": q, "resolved_term": scholar_q, "lang": lang, "queried_at": now(),
             "sep_search": sep_result, "sep_entry": sep_entry,
             "wikidata_search": wd, "entity": entity, "wikipedia": wiki,
-            "openalex_works": oa_works, "openalex_authors": oa_authors,
-            "crossref": cr_works, "gutenberg": gutenberg}
+            "primary_texts": gutenberg, "recent_scholarship": oa_works}
+
+
+def _relevant(works: list, term: str) -> list:
+    """Keep only works that actually mention the query term (or a significant
+    token of it) in the title or authors. OpenAlex 'search' relevance-ranks even
+    when nothing matches, so an unfiltered result is often pure noise (e.g. a
+    Montesquieu query returning trout-fishing papers). Dropping non-matches makes
+    the panel honest: it shows real hits or nothing."""
+    toks = [t for t in re.split(r"\W+", term.lower()) if len(t) >= 4]
+    if not toks:
+        toks = [term.lower()]
+    out = []
+    for w in works:
+        hay = (w.get("title", "") + " " + " ".join(w.get("authors", []))).lower()
+        if any(t in hay for t in toks):
+            out.append(w)
+    return out
 
 
 async def _empty(source: str) -> dict:

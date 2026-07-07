@@ -115,35 +115,47 @@ async function exploreRun(q) {
         : "No SEP entry for this term (sources below are supplementary)."}</p>`;
     }
 
-    const sec = (title, res, fmt) => {
-      if (res.skipped) return "";  // source not meaningful for this query type
-      let s = `<div class="card"><h2>${title}</h2>${freshBadge(res)}`;
-      if (res.error) return s + "</div>";
-      if (!res.data || !res.data.length) return s + `<p class="muted">${T.none}</p></div>`;
-      s += res.data.map(fmt).join("");
-      return s + "</div>";
-    };
+    const jp = LANG === "ja";
 
-    html += sec(T.works, d.openalex_works, w => `<div class="result-item">
-      <a href="${esc(w.url)}" target="_blank"><b>${esc(w.title)}</b></a>
-      <span class="muted">(${esc(w.year ?? "?")})</span>
-      ${w.open_access ? '<span class="badge live">OA</span>' : ""}
-      <div class="srcline">${esc(w.authors.join(", "))} · cited ${w.cited_by_count}
-      ${w.doi ? ` · <a href="${esc(w.doi)}" target="_blank">DOI</a>` : ""}</div></div>`);
+    // Primary texts & editions — public-domain texts the reader can open now,
+    // plus a pointer to standard-locator citation. This is core to real work.
+    const wsUrls = (d.entity && !d.entity.error) ? (d.entity.data.wikisource_urls || {}) : {};
+    const pt = d.primary_texts;
+    const hasGutenberg = pt && !pt.error && !pt.skipped && (pt.data || []).length;
+    const hasWikisource = Object.keys(wsUrls).length;
+    if (hasGutenberg || hasWikisource) {
+      html += `<div class="card"><h2>📜 ${jp ? "一次資料・原典" : "Primary texts"}</h2>`;
+      if (hasWikisource) {
+        html += `<p class="srcline">Wikisource: ${Object.entries(wsUrls).map(([lg, u]) =>
+          `<a href="${esc(u)}" target="_blank">${esc(lg)}</a>`).join(" · ")}</p>`;
+      }
+      if (hasGutenberg) {
+        html += pt.data.map(b => `<div class="result-item">
+          <a href="${esc(b.read_url)}" target="_blank"><b>${esc(b.title)}</b></a>
+          <div class="srcline">${esc(b.authors.join(", "))} · ${esc(b.languages.join(","))} · Project Gutenberg</div></div>`).join("");
+      }
+      html += `<p class="srcline">${jp
+        ? "引用は標準ロケータで（Plato=Stephanus 514a / Aristotle=Bekker 1094a1 / Kant=A/B）。該当箇所への解決は今後の版で統合します。"
+        : "Cite by standard locator (Plato=Stephanus 514a / Aristotle=Bekker / Kant=A/B)."}</p></div>`;
+    }
 
-    html += sec(T.authors, d.openalex_authors, a => `<div class="result-item">
-      <b>${esc(a.name)}</b> <span class="muted">${esc(a.hint || "")}</span>
-      <div class="srcline">works: ${a.works_count} · cited: ${a.cited_by_count} ·
-      <a href="${esc(a.id)}" target="_blank">OpenAlex</a></div></div>`);
-
-    html += sec(T.books, d.gutenberg, b => `<div class="result-item">
-      <a href="${esc(b.read_url)}" target="_blank"><b>${esc(b.title)}</b></a>
-      <div class="srcline">${esc(b.authors.join(", "))} · ${esc(b.languages.join(","))}</div></div>`);
-
-    html += sec("Crossref", d.crossref, c => `<div class="result-item">
-      <a href="${esc(c.url)}" target="_blank">${esc(c.title)}</a>
-      <span class="muted">(${esc(c.year ?? "?")})</span>
-      <div class="srcline">${esc(c.authors.join(", "))} · ${esc(c.publisher)}</div></div>`);
+    // Recent scholarship — clearly secondary and honest: strictly filtered so it
+    // shows real hits or nothing (never trout-fishing papers). The literature
+    // that matters is the SEP bibliography above.
+    const rs = d.recent_scholarship;
+    if (rs && !rs.error && (rs.data || []).length) {
+      html += `<div class="card"><h2>🔬 ${jp ? "最近の論文（補助）" : "Recent articles (supplementary)"}
+        ${freshBadge(rs)}</h2>
+        <p class="srcline">${jp
+          ? "OpenAlex由来。哲学の主要文献は上のSEP書誌です。ここは近年の論文の補助的手がかりに限ります。"
+          : "From OpenAlex; the core literature is the SEP bibliography above."}</p>`;
+      html += rs.data.slice(0, 8).map(w => `<div class="result-item">
+        <a href="${esc(w.url)}" target="_blank"><b>${esc(w.title)}</b></a>
+        <span class="muted">(${esc(w.year ?? "?")})</span>
+        ${w.open_access ? '<span class="badge live">OA</span>' : ""}
+        <div class="srcline">${esc(w.authors.join(", "))}${w.cited_by_count ? ` · cited ${w.cited_by_count}` : ""}</div></div>`).join("");
+      html += "</div>";
+    }
 
     $("explore-results").innerHTML = html;
   } catch (e) {
