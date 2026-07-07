@@ -29,7 +29,8 @@
 |---|---|---|---|
 | C1 | 標準ロケータで一節を指す（Stephanus/Bekker/A-B） | /api/locator | ✅ |
 | C2 | ロケータ→原典の該当箇所へ deep-link | Perseus | ✅（Plato/Aristotle） |
-| C3 | パブリックドメイン原典へ到達 | Gutenberg/Wikisource | 🟡→探索に統合中 |
+| C3 | パブリックドメイン原典へ到達 | Gutenberg/Wikisource | ✅ |
+| C3-JP | **邦訳書へ到達（訳者付き）** — 日本語利用者の一次資料は邦訳書。訳者が決定的 | NDLサーチ（著作別・訳者付き） | ✅（純粋理性批判→天野貞祐訳 等） |
 | C4 | 校訂版（Akademie/MEGA/Gesamtausgabe）と異文 | — | ❌ |
 | C5 | 原語本文＋形態素解析 | Perseus(TLG的) | ❌ |
 

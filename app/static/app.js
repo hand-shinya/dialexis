@@ -139,6 +139,24 @@ async function exploreRun(q) {
         : "Cite by standard locator (Plato=Stephanus 514a / Aristotle=Bekker / Kant=A/B)."}</p></div>`;
     }
 
+    // Japanese translations (邦訳) — for a JP user the primary text is the
+    // translated book, and WHICH translator matters (translation method).
+    const jt = d.japanese_translations;
+    if (jt && !jt.error && !jt.skipped && (jt.data || []).length) {
+      html += `<div class="card"><h2>📖 ${jp ? "邦訳（日本語訳）" : "Japanese translations"}
+        ${freshBadge(jt)}</h2>
+        <p class="srcline">${jp
+          ? "国立国会図書館サーチより。哲学研究では「どの訳者の訳か」が決定的です（訳語の選択が解釈を左右する）。著作ごとに訳者・出版社・年を示します。"
+          : "From NDL Search, grouped by work. In philosophy the choice of translator is decisive; translator/publisher/year shown."}</p>`;
+      html += jt.data.map(g => `<div class="jt-work">
+        <h3>${esc(g.work)}</h3>
+        <ul class="biblist">${g.editions.map(b => `<li>
+          ${b.url ? `<a href="${esc(b.url)}" target="_blank">${esc(b.title)}</a>` : esc(b.title)}
+          — ${esc(b.creators.join(" / "))}${b.publisher ? ` · ${esc(b.publisher)}` : ""}${b.year ? ` · ${esc(b.year)}` : ""}</li>`).join("")}</ul>
+      </div>`).join("");
+      html += "</div>";
+    }
+
     // Recent scholarship — clearly secondary and honest: strictly filtered so it
     // shows real hits or nothing (never trout-fishing papers). The literature
     // that matters is the SEP bibliography above.

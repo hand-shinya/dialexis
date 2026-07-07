@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import db
 from .db import get_conn, init_db, now, rows
-from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep
+from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl
 from . import citations as cites
 from .llm import adapter
 
@@ -147,6 +147,7 @@ async def api_explore(q: str, lang: str = "en"):
     scholar_q = q          # term handed to scholarly APIs
     sep_term = q           # term handed to SEP (English-only)
     is_person = False
+    author_ja = ""
     title, wp_lang, all_qids = None, "en", []  # safe defaults if no entity
     if not wd["error"] and wd["data"]:
         entity = await wikidata.entity(wd["data"][0]["qid"], lang)
@@ -164,6 +165,7 @@ async def api_explore(q: str, lang: str = "en"):
             # user's original-language term (Japanese 存在 → 存在論 scholarship).
             scholar_q = english_term if is_person else q
             sep_term = english_term  # SEP is English-only
+            author_ja = ed["label"] if is_person else ""  # for NDL 邦訳 lookup
             title = wp_titles.get(lang) or wp_titles.get("en")
             wp_lang = lang if lang in wp_titles else "en"
             all_qids = [v for vs in ed["claims"].values()
@@ -180,13 +182,34 @@ async def api_explore(q: str, lang: str = "en"):
     async def wiki_summary():
         return await wikipedia.summary(title, wp_lang) if (entity and title) else None
 
-    async def labels_resolve():
-        return await wikidata.resolve_labels(all_qids, lang) if all_qids else {}
+    # Resolve QID labels up front: needed both to display the entity's claims and
+    # to get the Japanese titles of the author's notable works for the 邦訳 lookup.
+    labels = await wikidata.resolve_labels(all_qids, lang) if all_qids else {}
+    notable_ja = []
+    if entity and not entity["error"]:
+        for qid in entity["data"]["claims"].get("notable_work", []):
+            t = labels.get(qid, qid)
+            if t and not str(t).startswith("Q"):
+                notable_ja.append(t)
 
-    (sep_pair, wiki, labels, gutenberg, oa_works) = await asyncio.gather(
-        sep_chain(), wiki_summary(), labels_resolve(),
+    # Japanese translations (邦訳): the Japanese user's primary text is the
+    # translated book, and WHICH translator matters (translation method, JP face).
+    # Look up each notable work precisely by author-surname + work-title, so
+    # 純粋理性批判 → 天野貞祐訳・中山元訳… rather than name-substring noise.
+    async def ja_translations_lookup():
+        if not (is_person and author_ja and notable_ja):
+            return {"source": "ndl", "retrieved_at": now(), "error": None,
+                    "skipped": not (is_person and author_ja), "data": []}
+        groups = await asyncio.gather(*[ndl.by_work(author_ja, w) for w in notable_ja[:4]])
+        data = [g["data"] for g in groups if not g["error"] and g["data"]["editions"]]
+        errs = [g["error"] for g in groups if g["error"]]
+        return {"source": "ndl", "retrieved_at": now(),
+                "error": errs[0] if errs and not data else None, "data": data}
+
+    (sep_pair, wiki, gutenberg, oa_works, ja_translations) = await asyncio.gather(
+        sep_chain(), wiki_summary(),
         gutendex.search(scholar_q) if is_person else _empty("gutendex"),
-        openalex.search_works(scholar_q))
+        openalex.search_works(scholar_q), ja_translations_lookup())
     sep_result, sep_entry = sep_pair
 
     if entity and not entity["error"]:
@@ -200,7 +223,8 @@ async def api_explore(q: str, lang: str = "en"):
     return {"query": q, "resolved_term": scholar_q, "lang": lang, "queried_at": now(),
             "sep_search": sep_result, "sep_entry": sep_entry,
             "wikidata_search": wd, "entity": entity, "wikipedia": wiki,
-            "primary_texts": gutenberg, "recent_scholarship": oa_works}
+            "primary_texts": gutenberg, "japanese_translations": ja_translations,
+            "recent_scholarship": oa_works}
 
 
 def _relevant(works: list, term: str) -> list:
