@@ -455,11 +455,12 @@ async function deepsearchRun() {
     topic, goal: $("ds-goal").value.trim(), service: $("ds-service").value,
     lang: LANG, llm: llmConfig() } });
 
+  let dsN = 0;
   const block = (label, text, aiBadge) => {
-    const id = "ds-" + Math.abs(text.length + label.length);
+    const id = "ds-pre-" + (++dsN);
     return `<div class="card">
       <h2>${label} ${aiBadge || ""}
-        <button class="small" onclick="dsCopy('${id}')">${LANG === "ja" ? "コピー" : "Copy"}</button></h2>
+        <button class="small" onclick="dsCopy('${id}', this)">${LANG === "ja" ? "コピー" : "Copy"}</button></h2>
       <pre class="llm" id="${id}">${esc(text)}</pre></div>`;
   };
   let html = "";
@@ -477,13 +478,48 @@ async function deepsearchRun() {
   out.innerHTML = html;
 }
 
-function dsCopy(id) {
+function copyText(text) {
+  // navigator.clipboard needs a secure context (HTTPS/localhost); this site is
+  // served over plain HTTP, where it is undefined. Fall back to the legacy
+  // textarea + execCommand path, which works on HTTP.
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    ta.setAttribute("readonly", "");
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    ok ? resolve() : reject(new Error("copy failed"));
+  });
+}
+
+function dsCopy(id, btn) {
   const el = document.getElementById(id);
   if (!el) return;
-  navigator.clipboard.writeText(el.textContent).then(() => {
-    const b = event.target; const o = b.textContent;
-    b.textContent = LANG === "ja" ? "コピー済" : "Copied"; setTimeout(() => (b.textContent = o), 1500);
-  });
+  const done = (msg) => {
+    const o = btn.textContent;
+    btn.textContent = msg;
+    setTimeout(() => (btn.textContent = o), 1500);
+  };
+  copyText(el.textContent)
+    .then(() => done(LANG === "ja" ? "コピー済" : "Copied"))
+    .catch(() => {
+      // Last resort: select the text so the user can copy manually (Ctrl+C).
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      done(LANG === "ja" ? "選択しました→Ctrl+C" : "Selected → Ctrl+C");
+    });
 }
 
 /* ---------- settings ---------- */
