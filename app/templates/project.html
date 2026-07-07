@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ project.title }}{% endblock %}
+{% block content %}
+<h1>{{ project.title }}</h1>
+{% if project.question %}<p class="muted">Q: {{ project.question }}</p>{% endif %}
+<p>
+  <a class="btn" href="/api/projects/{{ project.id }}/export.md" target="_blank">{{ t.export_md }}</a>
+  <a class="btn" href="/api/projects/{{ project.id }}/export.jsonld" target="_blank">{{ t.export_jsonld }}</a>
+</p>
+<div class="two-col">
+  <div>
+    <div id="graph" class="graphbox"></div>
+    <div id="graph-fallback"></div>
+  </div>
+  <div>
+    <div class="card">
+      <h2>{{ t.node_add }}</h2>
+      <div class="formrow">
+        <select id="n-type">
+          {% for nt in ['question','claim','evidence','counterclaim','uncertainty','interpretation','decision','note','source'] %}
+          <option value="{{ nt }}">{{ t['type_' + nt] }}</option>
+          {% endfor %}
+        </select>
+        <select id="n-conf">
+          {% for c in ['unverified','confirmed','high_probability','interpretive_hypothesis','speculation'] %}
+          <option value="{{ c }}">{{ t['confidence_' + c] }}</option>
+          {% endfor %}
+        </select>
+        <select id="n-origin">
+          {% for o in ['human','ai','external'] %}
+          <option value="{{ o }}">{{ t['origin_' + o] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="formrow"><input id="n-title" placeholder="Title"></div>
+      <div class="formrow"><textarea id="n-body" rows="3" placeholder="Body / notes"></textarea></div>
+      <div class="formrow">
+        <input id="n-src-name" placeholder="{{ t.provenance }}: source name">
+        <input id="n-src-url" placeholder="URL">
+      </div>
+      <button onclick="projAddNode()">{{ t.node_add }}</button>
+    </div>
+    <div class="card">
+      <h2>{{ t.edge_add }}</h2>
+      <div class="formrow">
+        <select id="e-src"></select>
+        <select id="e-rel">
+          {% for r in ['supports','contradicts','answers','refines','derives_from','cites','about','responds_to'] %}
+          <option value="{{ r }}">{{ r }}</option>
+          {% endfor %}
+        </select>
+        <select id="e-dst"></select>
+      </div>
+      <button onclick="projAddEdge()">{{ t.edge_add }}</button>
+    </div>
+    <div id="node-detail" class="card" style="display:none"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/vendor/cytoscape.min.js"></script>
+<script>projectInit({{ project.id }});</script>
+{% endblock %}

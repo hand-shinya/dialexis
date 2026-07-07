@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ t.settings_title }}{% endblock %}
+{% block content %}
+<h1>{{ t.settings_title }}</h1>
+<p class="muted">{{ t.settings_desc }}</p>
+<script>
+if (location.protocol === "http:" && !["localhost", "127.0.0.1"].includes(location.hostname)) {
+  document.write('<div class="notice-ai">' + (document.documentElement.lang === "ja"
+    ? "⚠ この接続はHTTPS化されていません。APIキーの入力は、サイトがHTTPSになるまで控えてください。"
+    : "⚠ This connection is not HTTPS. Do not enter API keys until this site is served over HTTPS.") + "</div>");
+}
+</script>
+<div class="card">
+  <div class="formrow">
+    <label>{{ t.settings_provider }}</label>
+    <select id="s-provider">
+      <option value="">— Level 0 (no LLM) —</option>
+      <option value="anthropic">Anthropic (Claude)</option>
+      <option value="openai">OpenAI</option>
+      <option value="gemini">Google Gemini</option>
+      <option value="ollama">Ollama (local, free)</option>
+    </select>
+  </div>
+  <div class="formrow">
+    <label>{{ t.settings_model }}</label>
+    <input id="s-model" placeholder="claude-sonnet-5 / gpt-4o-mini / gemini-2.0-flash / llama3.1">
+  </div>
+  <div class="formrow">
+    <label>{{ t.settings_key }}</label>
+    <input id="s-key" type="password" placeholder="sk-…">
+  </div>
+  <button onclick="settingsSave()">{{ t.settings_save }}</button>
+  <button class="secondary" onclick="settingsClear()">{{ t.settings_clear }}</button>
+  <div id="settings-msg"></div>
+</div>
+<div class="card">
+  <h2>AI Transparency Ledger</h2>
+  <div id="ledger"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>settingsInit();</script>
+{% endblock %}

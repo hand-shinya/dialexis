@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ t.nav_home }}{% endblock %}
+{% block content %}
+<h1>{{ t.nav_home }}</h1>
+<form action="/explore" method="get" class="searchbox">
+  <input type="text" name="q" value="{{ q }}" placeholder="{{ t.search_placeholder }}">
+  <input type="hidden" name="lang" value="{{ lang }}">
+  <button type="submit">{{ t.search_button }}</button>
+</form>
+<div id="explore-status"></div>
+<div id="explore-results"></div>
+{% endblock %}
+{% block scripts %}
+<script>exploreInit({{ q | tojson }});</script>
+{% endblock %}

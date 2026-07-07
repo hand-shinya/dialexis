@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ t.levels_title }}{% endblock %}
+{% block content %}
+<h1>{{ t.levels_title }}</h1>
+<p class="muted">{{ t.levels_desc }}</p>
+<div class="card">
+  <div class="formrow">
+    <select id="lv-concept">
+      {% for c in concepts %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+      <option value="__custom__">✏️ …</option>
+    </select>
+    <input id="lv-custom" placeholder="concept (LLM Level 2)" style="display:none">
+    <select id="lv-level">
+      {% for lv in levels %}<option value="{{ lv }}">{{ t['level_' + lv] }}</option>{% endfor %}
+    </select>
+    <button onclick="levelsShow()">→</button>
+  </div>
+  <div id="levels-result"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>levelsInit();</script>
+{% endblock %}

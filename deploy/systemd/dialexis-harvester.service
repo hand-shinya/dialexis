@@ -1,0 +1,10 @@
+[Unit]
+Description=Dialexis harvester (watch checking — externally fired, never AI-fired)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=dialexis
+Group=dialexis
+WorkingDirectory=/opt/dialexis
+ExecStart=/opt/dialexis/.venv/bin/python -m app.harvester

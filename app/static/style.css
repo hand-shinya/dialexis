@@ -1,0 +1,64 @@
+:root {
+  --ink: #1d2430; --paper: #f7f5f0; --card: #ffffff; --line: #ddd6c8;
+  --accent: #7a5c2e; --accent2: #2e5c7a; --muted: #6b7280;
+  --ok: #2f7d4f; --warn: #b45309; --bad: #b91c1c;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Hiragino Mincho ProN", "Yu Mincho", Georgia, "Noto Serif JP", serif;
+       background: var(--paper); color: var(--ink); line-height: 1.65; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1rem;
+         padding: .8rem 1.2rem; border-bottom: 2px solid var(--ink); background: var(--card); }
+.brand { font-size: 1.5rem; font-weight: 700; text-decoration: none; color: var(--ink); }
+.brand-sub { font-size: .72rem; font-weight: 400; color: var(--muted); margin-left: .8rem; }
+nav { display: flex; flex-wrap: wrap; gap: .9rem; margin-left: auto;
+      font-family: system-ui, sans-serif; font-size: .9rem; }
+nav a { color: var(--ink); text-decoration: none; padding-bottom: 2px; }
+nav a.on { border-bottom: 2px solid var(--accent); }
+.langsw { color: var(--muted); }
+main { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1.2rem 4rem; }
+footer { border-top: 1px solid var(--line); padding: 1rem 1.2rem; color: var(--muted);
+         font-size: .8rem; font-family: system-ui, sans-serif; }
+h1 { font-size: 1.7rem; margin: .8rem 0; }
+h2 { font-size: 1.15rem; border-left: 4px solid var(--accent); padding-left: .6rem; }
+.hero { text-align: center; padding: 3rem 0 1.5rem; }
+.hero h1 { font-size: 3rem; letter-spacing: .15em; margin: 0; }
+.tagline { color: var(--muted); }
+.searchbox { display: flex; gap: .5rem; max-width: 640px; margin: 1.2rem auto; }
+.searchbox input[type=text] { flex: 1; }
+input, select, textarea { font: inherit; padding: .5rem .7rem; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--card); width: 100%; }
+.formrow { display: flex; gap: .5rem; margin: .5rem 0; }
+.formrow label { min-width: 11rem; align-self: center; font-family: system-ui, sans-serif; font-size: .85rem; }
+button, .btn { font-family: system-ui, sans-serif; font-size: .9rem; cursor: pointer;
+  background: var(--ink); color: var(--paper); border: 0; border-radius: 4px;
+  padding: .55rem 1.1rem; text-decoration: none; display: inline-block; }
+button.secondary { background: var(--muted); }
+button.small { padding: .25rem .6rem; font-size: .78rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+  padding: 1rem 1.2rem; margin: 1rem 0; }
+.axioms ol li { margin: .45rem 0; }
+.muted { color: var(--muted); font-size: .9rem; }
+.two-col { display: grid; grid-template-columns: 1.4fr 1fr; gap: 1rem; }
+@media (max-width: 860px) { .two-col { grid-template-columns: 1fr; } }
+.graphbox { height: 480px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; }
+.badge { display: inline-block; font-family: system-ui, sans-serif; font-size: .7rem;
+  padding: .1rem .5rem; border-radius: 999px; border: 1px solid var(--line);
+  background: #efe9dc; margin-right: .3rem; }
+.badge.ai { background: #fde8e8; border-color: #f3b4b4; }
+.badge.live { background: #e2f4e8; }
+.badge.err { background: #fde8e8; color: var(--bad); }
+.badge.conf-confirmed { background: #dcf3e3; }
+.badge.conf-high_probability { background: #e7f0d9; }
+.badge.conf-unverified { background: #fdf1d7; }
+.badge.conf-interpretive_hypothesis { background: #e5e0f5; }
+.badge.conf-speculation { background: #f5e0ee; }
+.srcline { font-family: system-ui, sans-serif; font-size: .75rem; color: var(--muted); }
+.result-item { border-bottom: 1px dashed var(--line); padding: .5rem 0; }
+.result-item:last-child { border-bottom: 0; }
+table.plain { width: 100%; border-collapse: collapse; font-family: system-ui, sans-serif; font-size: .85rem; }
+table.plain th, table.plain td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
+#settings-msg { margin-top: .6rem; color: var(--ok); font-family: system-ui, sans-serif; font-size: .85rem; }
+.notice-ai { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 4px;
+  padding: .6rem .9rem; font-size: .85rem; font-family: system-ui, sans-serif; margin: .5rem 0; }
+pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
+  border: 1px solid var(--line); border-radius: 4px; padding: .8rem; }

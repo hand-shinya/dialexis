@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ t.donate_title }}{% endblock %}
+{% block content %}
+<h1>{{ t.donate_title }}</h1>
+{% if lang == 'ja' %}
+<div class="card">
+  <p>Dialexisは、無料・鍵不要の公共学術基盤（Wikidata, OpenAlex, Crossref, OpenCitations, Wikisource…）の上に立つ、AGPL-3.0のオープンな哲学研究インフラです。閲覧と研究デスクの全機能は永続的に無料です。</p>
+  <p>費用が発生するのは次の3点だけです：</p>
+  <ul>
+    <li><b>サーバー運用費</b>（月額 約2,000円規模のVPS）</li>
+    <li><b>将来のコミュニティLLMプール</b>（APIキーを持たない学生・利用者のためのAI機能共有負担 — 設計中、未稼働）</li>
+    <li><b>翻訳・教材化・専門家レビューの支援</b>（将来構想）</li>
+  </ul>
+  <p>支援方法（準備中のものを含む）：</p>
+  <ul>
+    <li>GitHub Sponsors: <a href="https://github.com/sponsors/hand-shinya">github.com/sponsors/hand-shinya</a>（開設準備中）</li>
+    <li>コード・訳語データ・段階的読解の執筆による貢献: <a href="https://github.com/hand-shinya/dialexis">GitHub</a></li>
+    <li>あなた自身のAPIキーで使うこと自体が、運営費ゼロでの利用拡大への貢献です（公理5）</li>
+  </ul>
+  <p class="muted">寄付と支出の内訳は本ページで公開します（透明性は寄付にも適用されます）。</p>
+</div>
+{% else %}
+<div class="card">
+  <p>Dialexis is an open (AGPL-3.0) philosophy research infrastructure standing on free, keyless public scholarly foundations (Wikidata, OpenAlex, Crossref, OpenCitations, Wikisource…). Browsing and the full research desk are free, permanently.</p>
+  <p>Only three things cost money:</p>
+  <ul>
+    <li><b>Server hosting</b> (a ~$15/month-class VPS)</li>
+    <li><b>A future community LLM pool</b> (shared AI compute for students and users without API keys — designed, not yet live)</li>
+    <li><b>Translations, teaching materials, expert review</b> (future)</li>
+  </ul>
+  <p>Ways to support (some in preparation):</p>
+  <ul>
+    <li>GitHub Sponsors: <a href="https://github.com/sponsors/hand-shinya">github.com/sponsors/hand-shinya</a> (being set up)</li>
+    <li>Contribute code, translation data, or reading-level texts: <a href="https://github.com/hand-shinya/dialexis">GitHub</a></li>
+    <li>Using your own API key is itself a contribution: it scales usage at zero cost to the commons (Axiom 5)</li>
+  </ul>
+  <p class="muted">Income and spending will be published on this page — transparency applies to donations too.</p>
+</div>
+{% endif %}
+{% endblock %}

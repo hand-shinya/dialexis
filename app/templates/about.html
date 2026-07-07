@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ t.about_title }}{% endblock %}
+{% block content %}
+<h1>{{ t.about_title }}</h1>
+{% if lang == 'ja' %}
+<div class="card">
+  <p><b>Dialexis（ディアレクシス、διάλεξις＝論究）</b>は、反省的哲学研究インフラ（Reflexive Philosophy Infrastructure）です。哲学的な問いを持つあらゆる人——小学生から専門研究者まで——に、次の二つを提供します。</p>
+  <ol>
+    <li><b>レンズ</b>：世界中の生きた無料学術基盤（Wikidata・OpenAlex・Crossref・OpenCitations・Wikipedia/Wikisource・Project Gutenberg）への鍵不要の統合窓口。すべての情報に取得時刻と情報源を刻印。</li>
+    <li><b>研究デスク</b>：問い・主張・根拠・反証・未確認事項・判断を第一級の対象とする「研究過程グラフ」。知識の結果ではなく、研究がどう進んだかを記録し、確度分類（確定/高蓋然/未確認/解釈仮説/思弁）と来歴つきで共有・輸出できます。</li>
+  </ol>
+  <p>AIは答えを出す機械ではなく、仮説生成・反証生成・段階的説明の補助装置です。AIが触れた出力はすべて明示され、人間が出典を確認するまで「未確認」に留まります。</p>
+  <p>思想的源流・設計原理・再構築手順のすべては公開されています：
+  <a href="https://github.com/hand-shinya/dialexis/blob/main/GENESIS.md">GENESIS.md（憲法）</a></p>
+</div>
+{% else %}
+<div class="card">
+  <p><b>Dialexis</b> (διάλεξις, "discourse, reasoned examination") is a <b>Reflexive Philosophy Infrastructure</b>. To anyone with a philosophical question — from schoolchildren to specialists — it offers two things:</p>
+  <ol>
+    <li><b>A lens</b>: a keyless, unified window onto the world's living free scholarly foundations (Wikidata, OpenAlex, Crossref, OpenCitations, Wikipedia/Wikisource, Project Gutenberg), every item stamped with its source and retrieval time.</li>
+    <li><b>A research desk</b>: a research-process graph whose first-class citizens are questions, claims, evidence, counterclaims, uncertainties and decisions — recording not the results of knowledge but how an inquiry actually proceeded, confidence-classified and exportable with provenance.</li>
+  </ol>
+  <p>AI here is not an answer machine but an instrument for hypothesis generation, counterargument generation and level-adjusted explanation. Every AI-touched output is labeled, and remains "unverified" until a human checks the sources.</p>
+  <p>The full intellectual genealogy, design axioms and rebuild instructions are public:
+  <a href="https://github.com/hand-shinya/dialexis/blob/main/GENESIS.md">GENESIS.md (the constitution)</a></p>
+</div>
+{% endif %}
+{% endblock %}

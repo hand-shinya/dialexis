@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Dialexis harvester twice daily
+
+[Timer]
+OnCalendar=*-*-* 05:17:00
+OnCalendar=*-*-* 17:17:00
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

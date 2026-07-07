@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ t.app_name }}{% endblock %} — {{ t.app_name }}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <a class="brand" href="/">Dialexis<span class="brand-sub">{{ t.tagline }}</span></a>
+  <nav>
+    <a href="/" class="{{ 'on' if path == '/' }}">{{ t.nav_home }}</a>
+    <a href="/desk" class="{{ 'on' if path.startswith('/desk') or path.startswith('/project') }}">{{ t.nav_desk }}</a>
+    <a href="/watches" class="{{ 'on' if path.startswith('/watches') }}">{{ t.nav_watches }}</a>
+    <a href="/levels" class="{{ 'on' if path.startswith('/levels') }}">{{ t.nav_levels }}</a>
+    <a href="/settings" class="{{ 'on' if path.startswith('/settings') }}">{{ t.nav_settings }}</a>
+    <a href="/donate" class="{{ 'on' if path.startswith('/donate') }}">{{ t.nav_donate }}</a>
+    <a href="/about" class="{{ 'on' if path.startswith('/about') }}">{{ t.nav_about }}</a>
+    <span class="langsw">
+      <a href="?lang=ja" class="{{ 'on' if lang == 'ja' }}">日本語</a> /
+      <a href="?lang=en" class="{{ 'on' if lang == 'en' }}">EN</a>
+    </span>
+  </nav>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+<footer>
+  <p>Dialexis — Reflexive Philosophy Infrastructure ·
+     <a href="https://github.com/hand-shinya/dialexis">GitHub (AGPL-3.0)</a> ·
+     {% if lang == 'ja' %}取得時刻なき情報は表示しない（公理4）{% else %}No information shown without its retrieved-at timestamp (Axiom 4){% endif %}</p>
+</footer>
+<script>window.DIALEXIS_LANG = "{{ lang }}";</script>
+<script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

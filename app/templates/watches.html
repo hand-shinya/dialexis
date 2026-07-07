@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ t.watch_title }}{% endblock %}
+{% block content %}
+<h1>{{ t.watch_title }}</h1>
+<p class="muted">{{ t.watch_desc }}</p>
+<div class="card">
+  <h2>{{ t.watch_add }}</h2>
+  <div class="formrow">
+    <input id="w-label" placeholder="Karl Marx / Dasein / …">
+    <select id="w-kind">
+      <option value="author">author</option>
+      <option value="query">query</option>
+    </select>
+    <button onclick="watchAdd()">{{ t.watch_add }}</button>
+  </div>
+</div>
+<div id="watch-list"></div>
+{% endblock %}
+{% block scripts %}
+<script>watchesInit();</script>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ t.nav_home }}{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Dialexis</h1>
+  <p class="tagline">{{ t.tagline }}</p>
+  <form action="/explore" method="get" class="searchbox">
+    <input type="text" name="q" placeholder="{{ t.search_placeholder }}" autofocus>
+    <input type="hidden" name="lang" value="{{ lang }}">
+    <button type="submit">{{ t.search_button }}</button>
+  </form>
+</section>
+
+<section class="axioms">
+  <h2>{{ t.axioms_title }}</h2>
+  {% if lang == 'ja' %}
+  <ol>
+    <li><b>問いの変換</b> — 目的は知識の消費ではなく、あなたの問いをより深く・根拠あり・反証可能・共有可能にすること。</li>
+    <li><b>使用即貢献</b> — あなたが研究のためにここを使う行為そのものが（公開を選べば）次の利用者の土壌になる。</li>
+    <li><b>レンズ原理</b> — 知識は世界中の生きた学術情報源にある。ここが保存するのは来歴と研究痕跡だけ。</li>
+    <li><b>鮮度の刻印</b> — すべての外部情報に取得時刻を表示する。古い情報で黙って語らない。</li>
+    <li><b>退化階梯</b> — 全機能は無料・APIキー不要で動く（Level 0）。鍵は機能を昇格させるだけ。</li>
+    <li><b>AI透明性</b> — AIが触れた出力はすべて明示・分類され、確認されるまで「未確認」。</li>
+    <li><b>撤退可能性</b> — あなたの研究はいつでもMarkdown / JSON-LDで持ち出せる。</li>
+  </ol>
+  {% else %}
+  <ol>
+    <li><b>Question transformation</b> — the goal is not consuming knowledge but making your question deeper, grounded, falsifiable, shareable.</li>
+    <li><b>Use is contribution</b> — your own research here becomes (if you choose to publish) soil for the next inquirer.</li>
+    <li><b>Lens principle</b> — knowledge lives in the world's living scholarly sources; Dialexis stores only provenance and traces.</li>
+    <li><b>Freshness stamping</b> — every external item shows when it was retrieved. No silent staleness.</li>
+    <li><b>Degradation ladder</b> — everything works free and keyless (Level 0); an API key only elevates.</li>
+    <li><b>AI transparency</b> — every AI-touched output is labeled, and unverified until checked.</li>
+    <li><b>Exit-ability</b> — your research exports to Markdown / JSON-LD at any time.</li>
+  </ol>
+  {% endif %}
+</section>
+{% endblock %}

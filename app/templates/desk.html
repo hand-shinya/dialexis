@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ t.desk_title }}{% endblock %}
+{% block content %}
+<h1>{{ t.desk_title }}</h1>
+<div class="card">
+  <h2>{{ t.desk_new_project }}</h2>
+  <div class="formrow"><input id="np-title" placeholder="{{ t.desk_project_title }}"></div>
+  <div class="formrow"><input id="np-question" placeholder="{{ t.desk_question }}"></div>
+  <button onclick="deskCreate()">{{ t.desk_create }}</button>
+</div>
+<div id="project-list"></div>
+
+<div class="card">
+  <h2>{{ t.counter_title }}</h2>
+  <p class="muted">{{ t.counter_desc }}</p>
+  <div class="formrow"><textarea id="counter-claim" rows="2" placeholder="{{ t.counter_input }}"></textarea></div>
+  <button onclick="counterRun()">{{ t.counter_run }}</button>
+  <div id="counter-results"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>deskInit();</script>
+{% endblock %}

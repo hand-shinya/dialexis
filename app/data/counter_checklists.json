@@ -1,0 +1,113 @@
+{
+  "_comment": "Level-0 counterargument engine: deterministic, keyless. Each perspective interrogates a claim the way that discipline would. Used verbatim when no LLM key is present; used as scaffolding for the LLM when a key is present.",
+  "perspectives": [
+    {
+      "id": "philology",
+      "label": {"ja": "文献学・原典", "en": "Philology / primary texts"},
+      "questions": {
+        "ja": [
+          "この主張はどの原典箇所（版・頁・行）に依拠しているか。原文を確認したか、翻訳のみか。",
+          "依拠している版は批判版（校訂版）か。異文・版差は主張に影響しないか。",
+          "後代の編集・再構成（講義録・遺稿・編者の介入）が原著者の主張と混同されていないか。",
+          "引用は文脈から切り離されていないか。前後の議論は主張を支持するか。"
+        ],
+        "en": [
+          "Which primary passage (edition, page, line) does this claim rest on? Was the original checked, or only a translation?",
+          "Is the edition a critical edition? Could textual variants affect the claim?",
+          "Are later editorial layers (lecture notes, Nachlass, editors) being conflated with the author's own claim?",
+          "Is the quotation torn from context? Does the surrounding argument actually support the claim?"
+        ]
+      }
+    },
+    {
+      "id": "translation",
+      "label": {"ja": "翻訳・概念史", "en": "Translation / conceptual history"},
+      "questions": {
+        "ja": [
+          "鍵概念の原語は何か。訳語の選択が主張を作り出していないか（例: Leib/Körper→身体）。",
+          "その概念は著者の時代に現在と同じ意味で使われていたか（時代錯誤の検査）。",
+          "概念の意味は同一著者の中でも時期により変化していないか。",
+          "他言語の受容過程で付加された意味を、原著者に投影していないか。"
+        ],
+        "en": [
+          "What is the source-language term for each key concept? Could the translation choice be manufacturing the claim (e.g. Leib/Körper → body)?",
+          "Did the concept mean the same thing in the author's time (anachronism check)?",
+          "Does the concept shift within the author's own corpus over time?",
+          "Are meanings added during reception in another language being projected back onto the author?"
+        ]
+      }
+    },
+    {
+      "id": "analytic",
+      "label": {"ja": "分析哲学・論証構造", "en": "Analytic / argument structure"},
+      "questions": {
+        "ja": [
+          "主張を前提と結論に分解せよ。妥当な推論形式になっているか。隠れた前提は何か。",
+          "鍵となる語は多義的でないか。論証の途中で意味がすり替わっていないか（equivocation）。",
+          "反例を一つ構成できるか。主張はどのような観察・事例によって偽になりうるか。",
+          "類比に依存している場合、類比が成立する範囲と破綻する範囲を特定したか。"
+        ],
+        "en": [
+          "Decompose the claim into premises and conclusion. Is the inference valid? What hidden premises are needed?",
+          "Are key terms ambiguous? Does their meaning shift mid-argument (equivocation)?",
+          "Can you construct one counterexample? What observation would falsify the claim?",
+          "If the claim rests on an analogy, where exactly does the analogy hold and where does it break?"
+        ]
+      }
+    },
+    {
+      "id": "history",
+      "label": {"ja": "思想史・受容史", "en": "Intellectual history / reception"},
+      "questions": {
+        "ja": [
+          "この解釈は研究史上どの系譜に属するか。対立する主要解釈は何か。",
+          "その読みは特定の時代・政治状況・学派の関心によって形成されたものではないか。",
+          "著者の同時代の論争相手・文脈を無視して現代の問題を読み込んでいないか。",
+          "「影響」と「引用」と「後世の再構成」を区別しているか。"
+        ],
+        "en": [
+          "Where does this interpretation sit in the history of scholarship? What are the main rival readings?",
+          "Was this reading shaped by a particular era, political situation, or school?",
+          "Is a modern problem being read into the author while ignoring their actual contemporary debates?",
+          "Are 'influence', 'citation', and 'later reconstruction' being kept distinct?"
+        ]
+      }
+    },
+    {
+      "id": "science",
+      "label": {"ja": "科学・技術・AI研究", "en": "Science / technology / AI research"},
+      "questions": {
+        "ja": [
+          "主張が経験的事実に触れる場合、現在の科学的知見と整合するか。",
+          "技術についての哲学的主張は、その技術の実際の仕組みを正確に踏まえているか。",
+          "哲学的概念を技術に適用する際、メタファーと実在の主張を混同していないか。",
+          "その技術理解は何年時点のものか。技術の変化で主張は失効しないか。"
+        ],
+        "en": [
+          "Where the claim touches empirical matters, is it consistent with current scientific understanding?",
+          "Does the philosophical claim about a technology accurately reflect how that technology actually works?",
+          "When applying a philosophical concept to technology, is metaphor being confused with a literal claim?",
+          "What year's understanding of the technology does this rest on? Does technical change void the claim?"
+        ]
+      }
+    },
+    {
+      "id": "social",
+      "label": {"ja": "社会学・制度・法", "en": "Sociology / institutions / law"},
+      "questions": {
+        "ja": [
+          "主張は誰の視点から立てられているか。別の社会的立場からは異なる記述にならないか。",
+          "概念の適用範囲が特定の文化・地域・階層に暗黙に限定されていないか（西洋中心性の検査）。",
+          "制度・経済・権力関係を捨象したことで成立している主張ではないか。",
+          "この主張が実践・政策に適用された場合、誰が利益を得て誰が害を被るか。"
+        ],
+        "en": [
+          "From whose standpoint is the claim made? Would it read differently from another social position?",
+          "Is the concept's scope implicitly limited to one culture, region, or class (Eurocentrism check)?",
+          "Does the claim only hold because institutions, economics, or power relations were abstracted away?",
+          "If the claim were applied in practice or policy, who benefits and who is harmed?"
+        ]
+      }
+    }
+  ]
+}
