@@ -134,39 +134,58 @@ def healthz():
 async def api_explore(q: str, lang: str = "en"):
     if not q.strip():
         raise HTTPException(400, "empty query")
-    wd_task = wikidata.search(q, lang)
-    oa_w = openalex.search_works(q)
-    oa_a = openalex.search_authors(q)
-    cr = crossref.search_works(q)
-    gb = gutendex.search(q)
-    wd, oa_works, oa_authors, cr_works, gutenberg = await asyncio.gather(
-        wd_task, oa_w, oa_a, cr, gb)
 
+    # Step 1: resolve the query to a concept/person via Wikidata FIRST, so the
+    # scholarly search can be anchored on the resolved English term rather than
+    # a raw (often ambiguous) CJK word. This, plus OpenAlex's humanities lens,
+    # is what keeps a query like 存在 in philosophy instead of chemistry.
+    wd = await wikidata.search(q, lang)
     entity = None
     wiki = None
+    scholar_q = q          # term handed to scholarly APIs
+    is_person = False
     if not wd["error"] and wd["data"]:
-        top = wd["data"][0]
-        entity = await wikidata.entity(top["qid"], lang)
+        entity = await wikidata.entity(wd["data"][0]["qid"], lang)
         if not entity["error"]:
-            wp_titles = entity["data"]["wikipedia"]
+            ed = entity["data"]
+            is_person = ed.get("is_person", False)
+            # Persons: search scholarship by the unambiguous English name
+            # (Kant, Marx) — English scholarship dominates and names don't
+            # collide. Concepts: keep the user's original-language term so a
+            # Japanese query for 存在 returns Japanese 存在論 scholarship rather
+            # than Wikidata's sometimes-wrong English sense (存在→"entity").
+            # In both cases the OpenAlex humanities lens removes cross-domain noise.
+            scholar_q = (ed.get("label_en") or q) if is_person else q
+            wp_titles = ed["wikipedia"]
             title = wp_titles.get(lang) or wp_titles.get("en")
             wp_lang = lang if lang in wp_titles else "en"
             if title:
                 wiki = await wikipedia.summary(title, wp_lang)
-            # resolve claim QIDs to labels
-            claims = entity["data"]["claims"]
+            claims = ed["claims"]
             all_qids = [v for vs in claims.values() for v in vs if str(v).startswith("Q")]
             labels = await wikidata.resolve_labels(all_qids, lang)
-            entity["data"]["claims"] = {
-                k: [labels.get(v, v) for v in vs] for k, vs in claims.items()}
-            entity["data"]["wikisource_urls"] = {
-                lg: wikipedia.wikisource_url(t, lg)
-                for lg, t in entity["data"]["wikisource"].items()}
+            ed["claims"] = {k: [labels.get(v, v) for v in vs] for k, vs in claims.items()}
+            ed["wikisource_urls"] = {lg: wikipedia.wikisource_url(t, lg)
+                                     for lg, t in ed["wikisource"].items()}
 
-    return {"query": q, "lang": lang, "queried_at": now(),
+    # Step 2: scholarly sources, anchored on scholar_q, under the philosophy lens.
+    oa_works, oa_authors, cr_works, gutenberg = await asyncio.gather(
+        openalex.search_works(scholar_q),
+        openalex.search_authors(scholar_q) if is_person else _empty("openalex"),
+        crossref.search_works(scholar_q),
+        gutendex.search(scholar_q) if is_person else _empty("gutendex"))
+
+    return {"query": q, "resolved_term": scholar_q, "lang": lang, "queried_at": now(),
             "wikidata_search": wd, "entity": entity, "wikipedia": wiki,
             "openalex_works": oa_works, "openalex_authors": oa_authors,
             "crossref": cr_works, "gutenberg": gutenberg}
+
+
+async def _empty(source: str) -> dict:
+    """Placeholder for source branches skipped for concept (non-person) queries:
+    author/full-text-book search is only meaningful for people."""
+    return {"source": source, "retrieved_at": now(), "cached": False,
+            "error": None, "data": [], "skipped": True}
 
 
 @app.get("/api/citations")

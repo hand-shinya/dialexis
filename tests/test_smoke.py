@@ -61,6 +61,22 @@ def test_counter_level0_offline():
     assert body["level2"] is None  # no key supplied
 
 
+def test_openalex_philosophy_lens():
+    # The humanities lens must be present in the request params so a common CJK
+    # word cannot pull in natural-science papers (the 存在→chemistry bug).
+    from app.connectors import openalex
+    assert openalex.HUMANITIES_LENS == "12|32|33"
+    import inspect
+    src = inspect.getsource(openalex.search_works)
+    assert "primary_topic.field.id" in src
+
+
+def test_crossref_skips_untitled():
+    from app.connectors import crossref
+    import inspect
+    assert "skip untitled" in inspect.getsource(crossref.search_works)
+
+
 def test_levels_seed():
     r = client.get("/api/levels?concept=自由")
     assert r.status_code == 200 and "elementary" in r.json()["levels"]

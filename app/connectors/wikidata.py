@@ -45,11 +45,18 @@ async def entity(qid: str, lang: str = "en") -> dict:
         labels = ent.get("labels", {})
         descs = ent.get("descriptions", {})
         sitelinks = ent.get("sitelinks", {})
+        claims_raw = {name: _claim_ids(ent, pid) for pid, name in PROPS.items()}
+        # instance_of (P31) tells us person vs concept; used to route scholarly search.
+        instance_of = _claim_ids(ent, "P31")
         data = {
             "qid": qid,
             "label": (labels.get(lang) or labels.get("en") or {}).get("value", qid),
+            # English label is the canonical term for scholarly APIs (fixes CJK
+            # queries: 存在/自由 search OpenAlex as the resolved concept, not the raw word).
+            "label_en": (labels.get("en") or labels.get(lang) or {}).get("value", ""),
             "description": (descs.get(lang) or descs.get("en") or {}).get("value", ""),
-            "claims": {name: _claim_ids(ent, pid) for pid, name in PROPS.items()},
+            "is_person": "Q5" in instance_of,
+            "claims": claims_raw,
             "wikipedia": {k.replace("wiki", ""): v["title"]
                           for k, v in sitelinks.items()
                           if k.endswith("wiki") and k[:-4] in ("en", "ja", "de", "fr", "el", "zh")},

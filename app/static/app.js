@@ -80,7 +80,13 @@ async function exploreRun(q) {
       </div>`;
     }
 
+    if (d.resolved_term && d.resolved_term !== d.query) {
+      html += `<p class="srcline">${esc(d.query)} → <b>${esc(d.resolved_term)}</b>
+        ${LANG === "ja" ? "として学術情報源を照会" : "used to query scholarly sources"}</p>`;
+    }
+
     const sec = (title, res, fmt) => {
+      if (res.skipped) return "";  // source not meaningful for this query type
       let s = `<div class="card"><h2>${title}</h2>${freshBadge(res)}`;
       if (res.error) return s + "</div>";
       if (!res.data || !res.data.length) return s + `<p class="muted">${T.none}</p></div>`;
