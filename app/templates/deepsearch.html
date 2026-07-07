@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ t.nav_deepsearch }}{% endblock %}
+{% block content %}
+<h1>{{ t.nav_deepsearch }}</h1>
+{% if lang == 'ja' %}
+<p class="muted">深く・広く調べる作業を、あなたが使える別のAI（ChatGPT Deep Research・Gemini・Perplexity・Claude等）に任せるための、質の高い探索プロンプトを生成します。生成文には「あなたの本当の問いを言語化させ／語の系譜と翻訳で失われた区別を復元させ／一次資料の精密性を要求し／あなた自身のバイアスを点検させる」指示が組み込まれています。生成した文をコピーして、選んだサービスに貼り付けてください。</p>
+{% else %}
+<p class="muted">Generate a high-quality research prompt to hand the deep/wide searching to another AI you can use (ChatGPT Deep Research, Gemini, Perplexity, Claude…). The generated prompt makes that AI articulate your true question, recover distinctions lost in translation, demand primary-source precision, and check your own biases. Copy it and paste into your chosen service.</p>
+{% endif %}
+
+<div class="card">
+  <div class="formrow"><input id="ds-topic" placeholder="{{ '調べたい主題・語・問い（例：非有機的肉体、自由の概念史、AIの責任）' if lang=='ja' else 'Topic / term / question (e.g. Marx inorganic body, history of the concept of freedom)' }}"></div>
+  <div class="formrow"><textarea id="ds-goal" rows="2" placeholder="{{ '目的・文脈（任意）：何のために、どこまで、どの立場から知りたいか' if lang=='ja' else 'Goal / context (optional): why, how far, from which angle' }}"></textarea></div>
+  <div class="formrow">
+    <select id="ds-service">
+      {% for s in services %}<option value="{{ s.id }}">{{ s.label }}</option>{% endfor %}
+    </select>
+    <button onclick="deepsearchRun()">{{ '探索プロンプトを生成' if lang=='ja' else 'Generate prompt' }}</button>
+  </div>
+  <p id="ds-note" class="srcline"></p>
+</div>
+<div id="ds-result"></div>
+{% endblock %}
+{% block scripts %}
+<script>deepsearchInit({{ services | tojson }});</script>
+{% endblock %}

@@ -23,6 +23,7 @@ from . import db
 from .db import get_conn, init_db, now, rows
 from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl
 from . import citations as cites
+from . import deepsearch
 from .llm import adapter
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -105,6 +106,11 @@ def page_levels(request: Request):
     return render(request, "levels.html",
                   concepts=list(GLOSSARY["concepts"].keys()),
                   levels=GLOSSARY["levels"])
+
+
+@app.get("/deepsearch", response_class=HTMLResponse)
+def page_deepsearch(request: Request):
+    return render(request, "deepsearch.html", services=deepsearch.SERVICES)
 
 
 @app.get("/settings", response_class=HTMLResponse)
@@ -254,6 +260,47 @@ async def _empty(source: str) -> dict:
 @app.get("/api/citations")
 async def api_citations(doi: str):
     return await opencitations.citation_count(doi)
+
+
+@app.get("/api/deepsearch/services")
+def deepsearch_services():
+    return deepsearch.SERVICES
+
+
+@app.post("/api/deepsearch")
+async def api_deepsearch(request: Request):
+    """Generate a deep-research prompt for the user to paste into another AI.
+    Level 0 = deterministic template embedding the value proposition (true
+    intent, term genealogy / lost distinctions, source precision, bias check).
+    Level 2 = LLM refinement with the user's key."""
+    b = await request.json()
+    topic = (b.get("topic") or "").strip()
+    if not topic:
+        raise HTTPException(400, "topic required")
+    lang = b.get("lang", "ja")
+    service = b.get("service", "generic")
+    level0 = deepsearch.generate(topic, b.get("goal", ""), service, lang)
+
+    result = {"service": service, "level0": level0, "level2": None}
+    llm = b.get("llm") or {}
+    if llm.get("provider") and llm.get("key"):
+        sys_p = ("You refine deep-research prompts for humanities/philosophy. "
+                 "Given a draft prompt, improve it for the target service while "
+                 "PRESERVING its core demands: uncover the user's true question, "
+                 "trace term genealogy and translation history and recover lost "
+                 "distinctions (e.g. German Leib/Körper collapsed into one word), "
+                 "demand primary-source precision with critical editions and "
+                 "standard locators, check the asker's biases, and require "
+                 "confidence-graded, cited output. Return ONLY the improved "
+                 "prompt, in " + ("Japanese" if lang == "ja" else "English") + ".")
+        try:
+            out = await adapter.run(llm["provider"], llm.get("model", ""), llm["key"],
+                                    "deepsearch_prompt", sys_p,
+                                    f"Target service: {service}\n\nDraft:\n{level0}")
+            result["level2"] = out
+        except Exception as e:
+            result["level2"] = {"error": f"{type(e).__name__}: {e}"}
+    return result
 
 
 @app.get("/api/locator")

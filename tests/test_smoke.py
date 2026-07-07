@@ -78,6 +78,21 @@ def test_crossref_skips_untitled():
     assert "skip untitled" in inspect.getsource(crossref.search_works)
 
 
+def test_deepsearch_prompt():
+    # The generated prompt must embody the value proposition: true question,
+    # term genealogy / lost distinctions, primary-source precision, bias check.
+    svcs = client.get("/api/deepsearch/services").json()
+    assert any(s["id"] == "perplexity" for s in svcs)
+    r = client.post("/api/deepsearch", json={
+        "topic": "非有機的肉体", "service": "perplexity", "lang": "ja"}).json()
+    p = r["level0"]
+    assert "非有機的肉体" in p
+    for must in ["本当の問い", "失われた区別", "原語", "確定／高蓋然", "バイアス"]:
+        assert must in p, must
+    assert r["level2"] is None
+    assert client.post("/api/deepsearch", json={"topic": "", "lang": "ja"}).status_code == 400
+
+
 def test_standard_locator():
     # The reference unit of philosophy is the standard locator, not a DOI.
     r = client.get("/api/locator", params={"author": "Plato", "work": "Republic",

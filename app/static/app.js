@@ -431,6 +431,61 @@ async function levelsShow() {
   }
 }
 
+/* ---------- deep-search prompt generator ---------- */
+
+let DS_SERVICES = [];
+function deepsearchInit(services) {
+  DS_SERVICES = services || [];
+  const sel = $("ds-service");
+  const upd = () => {
+    const s = DS_SERVICES.find(x => x.id === sel.value);
+    $("ds-note").textContent = s ? ((LANG === "ja" ? s.note_ja : s.note_en)
+      + (s.free_ja && LANG === "ja" ? " ／ 無料: " + s.free_ja : "")) : "";
+  };
+  sel.addEventListener("change", upd);
+  upd();
+}
+
+async function deepsearchRun() {
+  const topic = $("ds-topic").value.trim();
+  if (!topic) return;
+  const out = $("ds-result");
+  out.innerHTML = `<p class="muted">${T.loading}</p>`;
+  const d = await api("/api/deepsearch", { method: "POST", body: {
+    topic, goal: $("ds-goal").value.trim(), service: $("ds-service").value,
+    lang: LANG, llm: llmConfig() } });
+
+  const block = (label, text, aiBadge) => {
+    const id = "ds-" + Math.abs(text.length + label.length);
+    return `<div class="card">
+      <h2>${label} ${aiBadge || ""}
+        <button class="small" onclick="dsCopy('${id}')">${LANG === "ja" ? "コピー" : "Copy"}</button></h2>
+      <pre class="llm" id="${id}">${esc(text)}</pre></div>`;
+  };
+  let html = "";
+  if (d.level2 && !d.level2.error) {
+    html += block(LANG === "ja" ? "生成プロンプト（AI精緻化）" : "Prompt (AI-refined)",
+      d.level2.text, `<span class="badge ai">AI · ${esc(d.level2.provider)}</span>`);
+  } else if (d.level2 && d.level2.error) {
+    html += `<p class="badge err">${esc(d.level2.error)}</p>`;
+  }
+  html += block(LANG === "ja" ? "生成プロンプト（そのまま使用可）" : "Prompt (ready to use)", d.level0);
+  html += `<p class="muted">${LANG === "ja"
+    ? "上をコピーし、選んだサービス（" + esc(($("ds-service").selectedOptions[0] || {}).text || "")
+      + "）に貼り付けてください。設定でAPIキーを入れると、サービス別に精緻化した版も生成されます。"
+    : "Copy the above and paste into your chosen service. Add an API key in Settings for a service-tuned refinement."}</p>`;
+  out.innerHTML = html;
+}
+
+function dsCopy(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent).then(() => {
+    const b = event.target; const o = b.textContent;
+    b.textContent = LANG === "ja" ? "コピー済" : "Copied"; setTimeout(() => (b.textContent = o), 1500);
+  });
+}
+
 /* ---------- settings ---------- */
 
 async function settingsInit() {
