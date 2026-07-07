@@ -62,3 +62,8 @@ table.plain th, table.plain td { text-align: left; padding: .35rem .5rem; border
   padding: .6rem .9rem; font-size: .85rem; font-family: system-ui, sans-serif; margin: .5rem 0; }
 pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
   border: 1px solid var(--line); border-radius: 4px; padding: .8rem; }
+.sep-card { border-left: 4px solid var(--accent2); }
+.sep-card h3 { font-size: .95rem; margin: .8rem 0 .3rem; }
+.debatemap li { margin: .2rem 0; font-weight: 600; }
+.biblist { font-family: system-ui, sans-serif; font-size: .82rem; }
+.biblist li { margin: .35rem 0; }

@@ -20,7 +20,8 @@ from fastapi.templating import Jinja2Templates
 
 from . import db
 from .db import get_conn, init_db, now, rows
-from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations
+from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep
+from . import citations as cites
 from .llm import adapter
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -143,6 +144,7 @@ async def api_explore(q: str, lang: str = "en"):
     entity = None
     wiki = None
     scholar_q = q          # term handed to scholarly APIs
+    sep_term = q           # term handed to SEP (English-only)
     is_person = False
     if not wd["error"] and wd["data"]:
         entity = await wikidata.entity(wd["data"][0]["qid"], lang)
@@ -156,6 +158,7 @@ async def api_explore(q: str, lang: str = "en"):
             # than Wikidata's sometimes-wrong English sense (存在→"entity").
             # In both cases the OpenAlex humanities lens removes cross-domain noise.
             scholar_q = (ed.get("label_en") or q) if is_person else q
+            sep_term = ed.get("label_en") or q  # SEP is English-only
             wp_titles = ed["wikipedia"]
             title = wp_titles.get(lang) or wp_titles.get("en")
             wp_lang = lang if lang in wp_titles else "en"
@@ -168,7 +171,17 @@ async def api_explore(q: str, lang: str = "en"):
             ed["wikisource_urls"] = {lg: wikipedia.wikisource_url(t, lg)
                                      for lg, t in ed["wikisource"].items()}
 
-    # Step 2: scholarly sources, anchored on scholar_q, under the philosophy lens.
+    # Step 2 (THE entry point): SEP orientation. Philosophers start here — the
+    # entry's section headings are the map of the debate, and its bibliography is
+    # the monograph-heavy literature that OpenAlex/Crossref structurally miss.
+    sep_result = await sep.search(sep_term)
+    sep_entry = None
+    if not sep_result["error"] and sep_result["data"]:
+        sep_entry = await sep.entry(sep_result["data"][0]["slug"])
+
+    # Step 3: scholarly sources, anchored on scholar_q, under the philosophy lens.
+    # These SUPPLEMENT the SEP orientation (recent journal articles, OA texts);
+    # they are no longer the primary answer.
     oa_works, oa_authors, cr_works, gutenberg = await asyncio.gather(
         openalex.search_works(scholar_q),
         openalex.search_authors(scholar_q) if is_person else _empty("openalex"),
@@ -176,6 +189,7 @@ async def api_explore(q: str, lang: str = "en"):
         gutendex.search(scholar_q) if is_person else _empty("gutendex"))
 
     return {"query": q, "resolved_term": scholar_q, "lang": lang, "queried_at": now(),
+            "sep_search": sep_result, "sep_entry": sep_entry,
             "wikidata_search": wd, "entity": entity, "wikipedia": wiki,
             "openalex_works": oa_works, "openalex_authors": oa_authors,
             "crossref": cr_works, "gutenberg": gutenberg}
@@ -191,6 +205,14 @@ async def _empty(source: str) -> dict:
 @app.get("/api/citations")
 async def api_citations(doi: str):
     return await opencitations.citation_count(doi)
+
+
+@app.get("/api/locator")
+def api_locator(author: str, work: str = "", locator: str = ""):
+    """Resolve a standard philosophical locator (Stephanus/Bekker/Kant A-B) to a
+    deep link + citation guidance — the reference unit philosophers actually use."""
+    return {"schemes": cites.SCHEMES,
+            "result": cites.resolve(author, work, locator) if author else None}
 
 
 # ---------- research desk (research-process graph) ----------

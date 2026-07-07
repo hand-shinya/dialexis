@@ -82,7 +82,37 @@ async function exploreRun(q) {
 
     if (d.resolved_term && d.resolved_term !== d.query) {
       html += `<p class="srcline">${esc(d.query)} → <b>${esc(d.resolved_term)}</b>
-        ${LANG === "ja" ? "として学術情報源を照会" : "used to query scholarly sources"}</p>`;
+        ${LANG === "ja" ? "として照会" : "used to query"}</p>`;
+    }
+
+    // SEP orientation — the real entry point: debate map + monograph bibliography.
+    const se = d.sep_entry;
+    if (se && !se.error && se.data) {
+      const s = se.data;
+      const jp = LANG === "ja";
+      html += `<div class="card sep-card">
+        <h2>📘 ${jp ? "オリエンテーション（SEP）" : "Orientation (SEP)"}
+          ${freshBadge(se)}</h2>
+        <p><a href="${esc(s.url)}" target="_blank"><b>${esc(s.title)}</b></a>
+           <span class="srcline">${esc(s.pubinfo)}</span></p>
+        <p class="muted">${jp
+          ? "哲学研究はここから始まります。下は論争の地図（各節が主要な立場・論点）と、そのまま使える文献リスト（書籍中心＝一般の論文検索が取りこぼす層）です。"
+          : "Where philosophers actually start. Below is the map of the debate (each section is a position/move) and a ready-to-mine bibliography (monograph-heavy — what article search misses)."}</p>
+        <h3>${jp ? "論争の地図" : "Map of the debate"}</h3>
+        <ol class="debatemap">${s.sections.map(x =>
+          `<li>${esc(x.replace(/^\d+(\.\d+)*\.?\s*/, ""))}</li>`).join("")}</ol>
+        <h3>${jp ? "文献（SEP書誌・検証済み）" : "Bibliography (SEP, curated)"}
+          <span class="srcline">${s.bibliography.length}</span></h3>
+        <ul class="biblist">${s.bibliography.slice(0, 12).map(b =>
+          `<li>${esc(b.text)}${b.url ? ` <a href="${esc(b.url)}" target="_blank">↗</a>` : ""}</li>`).join("")}</ul>
+        ${s.related.length ? `<p class="srcline">${jp ? "関連項目" : "Related"}:
+          ${s.related.slice(0, 10).map(r =>
+            `<a href="/explore?q=${encodeURIComponent(r.title)}&lang=${LANG}">${esc(r.title)}</a>`).join(" · ")}</p>` : ""}
+      </div>`;
+    } else if (d.sep_search && !d.sep_search.error && !(d.sep_search.data || []).length) {
+      html += `<p class="muted">${LANG === "ja"
+        ? "この語のSEP項目は見つかりませんでした（下は補助的な情報源です）。"
+        : "No SEP entry for this term (sources below are supplementary)."}</p>`;
     }
 
     const sec = (title, res, fmt) => {

@@ -78,6 +78,28 @@ def test_crossref_skips_untitled():
     assert "skip untitled" in inspect.getsource(crossref.search_works)
 
 
+def test_standard_locator():
+    # The reference unit of philosophy is the standard locator, not a DOI.
+    r = client.get("/api/locator", params={"author": "Plato", "work": "Republic",
+                                            "locator": "514a"}).json()
+    assert r["result"]["scheme"] == "Stephanus"
+    assert r["result"]["resolved"] and "perseus" in r["result"]["deep_link"]
+    a = client.get("/api/locator", params={"author": "Aristotle",
+                                            "work": "Nicomachean Ethics",
+                                            "locator": "1094a1"}).json()
+    assert a["result"]["scheme"] == "Bekker"
+    assert any(s["author"] == "Kant" for s in r["schemes"])
+
+
+def test_sep_connector_shape():
+    # SEP is the real entry point; the connector must expose the debate map and
+    # bibliography structure (network-independent structural check).
+    from app.connectors import sep
+    import inspect
+    src = inspect.getsource(sep.entry)
+    assert "sections" in src and "bibliography" in src and "related" in src
+
+
 def test_levels_seed():
     r = client.get("/api/levels?concept=自由")
     assert r.status_code == 200 and "elementary" in r.json()["levels"]
