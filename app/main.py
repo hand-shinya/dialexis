@@ -147,6 +147,7 @@ async def api_explore(q: str, lang: str = "en"):
     scholar_q = q          # term handed to scholarly APIs
     sep_term = q           # term handed to SEP (English-only)
     is_person = False
+    title, wp_lang, all_qids = None, "en", []  # safe defaults if no entity
     if not wd["error"] and wd["data"]:
         entity = await wikidata.entity(wd["data"][0]["qid"], lang)
         if not entity["error"]:
@@ -165,31 +166,34 @@ async def api_explore(q: str, lang: str = "en"):
             sep_term = english_term  # SEP is English-only
             title = wp_titles.get(lang) or wp_titles.get("en")
             wp_lang = lang if lang in wp_titles else "en"
-            if title:
-                wiki = await wikipedia.summary(title, wp_lang)
-            claims = ed["claims"]
-            all_qids = [v for vs in claims.values() for v in vs if str(v).startswith("Q")]
-            labels = await wikidata.resolve_labels(all_qids, lang)
-            ed["claims"] = {k: [labels.get(v, v) for v in vs] for k, vs in claims.items()}
-            ed["wikisource_urls"] = {lg: wikipedia.wikisource_url(t, lg)
-                                     for lg, t in ed["wikisource"].items()}
+            all_qids = [v for vs in ed["claims"].values()
+                        for v in vs if str(v).startswith("Q")]
 
-    # Step 2 (THE entry point): SEP orientation. Philosophers start here — the
-    # entry's section headings are the map of the debate, and its bibliography is
-    # the monograph-heavy literature that OpenAlex/Crossref structurally miss.
-    sep_result = await sep.search(sep_term)
-    sep_entry = None
-    if not sep_result["error"] and sep_result["data"]:
-        sep_entry = await sep.entry(sep_result["data"][0]["slug"])
+    # Everything below depends only on the resolved entity, so run the branches
+    # concurrently instead of in one long sequential chain (cold-load latency:
+    # ~6 serial round-trips + 2 large SEP fetches → one parallel wave).
+    async def sep_chain():
+        r = await sep.search(sep_term)
+        e = await sep.entry(r["data"][0]["slug"]) if (not r["error"] and r["data"]) else None
+        return r, e
 
-    # Step 3: primary texts (public-domain editions the reader can actually open)
-    # and, only as a clearly-secondary supplement, recent journal articles.
-    # Crossref is dropped from the default view: for philosophy it returned
-    # untitled/irrelevant records (RESEARCH_REALITY.md §2). The literature that
-    # matters is the SEP bibliography above; OpenAlex is "recent articles",
-    # strictly filtered so it self-suppresses rather than showing noise.
-    gutenberg = await (gutendex.search(scholar_q) if is_person else _empty("gutendex"))
-    oa_works = await openalex.search_works(scholar_q)
+    async def wiki_summary():
+        return await wikipedia.summary(title, wp_lang) if (entity and title) else None
+
+    async def labels_resolve():
+        return await wikidata.resolve_labels(all_qids, lang) if all_qids else {}
+
+    (sep_pair, wiki, labels, gutenberg, oa_works) = await asyncio.gather(
+        sep_chain(), wiki_summary(), labels_resolve(),
+        gutendex.search(scholar_q) if is_person else _empty("gutendex"),
+        openalex.search_works(scholar_q))
+    sep_result, sep_entry = sep_pair
+
+    if entity and not entity["error"]:
+        ed = entity["data"]
+        ed["claims"] = {k: [labels.get(v, v) for v in vs] for k, vs in ed["claims"].items()}
+        ed["wikisource_urls"] = {lg: wikipedia.wikisource_url(t, lg)
+                                 for lg, t in ed["wikisource"].items()}
     if not oa_works["error"] and oa_works["data"]:
         oa_works["data"] = _relevant(oa_works["data"], english_term if is_person else q)
 
