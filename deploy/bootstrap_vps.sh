@@ -28,6 +28,7 @@ else
   git clone "$REPO" "$APP_DIR"
 fi
 chown -R dialexis:dialexis "$APP_DIR"
+install -d -o dialexis -g dialexis "$APP_DIR/data"
 
 echo "== [3/8] venv =="
 sudo -u dialexis python3 -m venv "$APP_DIR/.venv"
