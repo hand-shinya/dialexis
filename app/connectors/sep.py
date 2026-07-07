@@ -91,15 +91,19 @@ async def entry(slug: str) -> dict:
         pub = re.search(r'id="pubinfo"[^>]*>(.*?)</', h, re.S)
         pubinfo = _clean(pub.group(1)) if pub else ""
 
-        # Debate map: TOC section headings (drop boilerplate). These headings
-        # are the positions/moves in the debate — the orientation payload.
-        sections = []
+        # Debate map: TOC section headings. Keep only TOP-LEVEL numbered
+        # sections ("1. …", "2. …") — sub-items (1.1, 1.2) clutter the map.
+        # Fall back to the boilerplate-filtered list if an entry isn't numbered.
+        top, allsecs = [], []
         for m in re.finditer(r'<li><a href="#[^"]+">(.*?)</a>', h, re.S):
             s = _clean(m.group(1))
             base = re.sub(r"^\d+(\.\d+)*\.?\s*", "", s)
             if base.lower() in _BOILER or not base:
                 continue
-            sections.append(s)
+            allsecs.append(s)
+            if re.match(r"^\d+\.\s", s):
+                top.append(s)
+        sections = top or allsecs
 
         # Bibliography (monograph-heavy — the reason to prefer SEP over OpenAlex).
         bib = []
@@ -119,10 +123,13 @@ async def entry(slug: str) -> dict:
         if ri < 0:
             ri = h.find("Related Entries")
         if ri > 0:
-            seg = h[ri:ri + 6000]
+            # Bound to the Related-Entries <p> block; a fixed window overran into
+            # the site footer ("Support the SEP", "Archives", …).
+            end = h.find("</p>", ri)
+            seg = h[ri:end if end > ri else ri + 4000]
             for m in re.finditer(r'\.\./([a-z0-9-]+)/"[^>]*>(.*?)</a>', seg, re.S):
                 rslug, rtitle = m.group(1), _clean(m.group(2))
-                if rtitle and rslug != slug:
+                if rtitle and rslug != slug and "support" not in rslug:
                     related.append({"slug": rslug, "title": rtitle,
                                     "url": f"{BASE}/entries/{rslug}/"})
 

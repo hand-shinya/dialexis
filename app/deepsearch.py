@@ -15,6 +15,7 @@ asker's own possible errors and biases.
 Level 0 (this module, keyless, deterministic) emits a complete, ready-to-paste
 prompt. Level 2 (with the user's LLM key) refines it conversationally.
 """
+import re
 
 SERVICES = [
     {"id": "openai_deep", "label": "ChatGPT (Deep Research / o3)",
@@ -62,92 +63,181 @@ _TUNE_EN = {
 }
 
 
-def generate(topic: str, goal: str, service: str, lang: str = "ja") -> str:
+def generate(topic: str, goal: str, service: str, lang: str = "ja", ctx: dict | None = None) -> str:
+    """Generate a deep-search prompt ADAPTED to the specific term.
+
+    ctx (from the system's own Wikidata + SEP resolution) makes the prompt
+    concrete rather than a fill-in-the-blank template: it names the actual
+    original-language term(s), the actual adjacent concepts / figures, the
+    actual debate structure, and turns the user's stated goal into targeted
+    sub-questions. Without ctx it degrades to the generic (weaker) form.
+    """
     topic = (topic or "").strip()
     goal = (goal or "").strip()
     if service not in SERVICE_IDS:
         service = "generic"
-    if lang == "ja":
-        return _ja(topic, goal, service)
-    return _en(topic, goal, service)
+    ctx = ctx or {}
+    return (_ja if lang == "ja" else _en)(topic, goal, service, ctx)
 
 
-def _ja(topic: str, goal: str, service: str) -> str:
+def _sub_questions(goal: str) -> list:
+    """Split the user's free-text goal into discrete research asks. Purely
+    mechanical (punctuation split) — no interpretation, so it never invents."""
+    if not goal:
+        return []
+    parts = re.split(r"[。\n！？・、,;]|そして|また|および", goal)
+    return [p.strip() for p in parts if len(p.strip()) >= 6]
+
+
+def _orig_line(ctx: dict, jp: bool) -> str:
+    labels = ctx.get("orig_labels") or {}
+    names = {"en": "英", "de": "独", "fr": "仏", "el": "希", "grc": "古希",
+             "la": "羅", "it": "伊"} if jp else {}
+    if not labels:
+        return ""
+    pairs = [f"{v}（{names.get(k, k)}）" if jp else f"{v} ({k})"
+             for k, v in labels.items()]
+    return " / ".join(pairs)
+
+
+def _ja(topic: str, goal: str, service: str, ctx: dict) -> str:
     tune = _TUNE_JA.get(service, "")
-    goal_line = f"\n- 私の目的・文脈: {goal}" if goal else ""
+    orig = _orig_line(ctx, True)
+    desc = (ctx.get("description") or "").strip()
+    related = ctx.get("related") or []
+    influences = ctx.get("influences") or []
+    debate = ctx.get("debate") or []
+    sep_title = ctx.get("sep_title") or ""
+    subs = _sub_questions(goal)
+
+    # Term-specific header grounding the request in real, resolved facts.
+    grounded = []
+    if desc:
+        grounded.append(f"- この語の位置づけ（Wikidata要約）: {desc}")
+    if orig:
+        grounded.append(f"- 確認された原語候補: **{orig}** ／ これらが同一の日本語「{topic}」に"
+                        f"潰れていないか、原語間の意味差を必ず検査してください。")
+    if sep_title:
+        grounded.append(f"- 専門事典の該当項目: SEP『{sep_title}』（一次の定位に使用）")
+    if debate:
+        grounded.append("- この主題の論争構造（SEPの節見出し＝主要な立場・論点）:\n    "
+                        + "\n    ".join(f"・{d}" for d in debate[:8]))
+    if related:
+        grounded.append(f"- 隣接概念（必ず関係を検討）: {', '.join(related[:10])}")
+    if influences:
+        grounded.append(f"- 系譜上の関連人物: {', '.join(influences[:8])}")
+    grounded_block = ("\n\n## 0. 既に判明している手がかり（これを踏まえて深掘りせよ）\n"
+                      + "\n".join(grounded)) if grounded else ""
+
+    if subs:
+        sub_block = ("\n\n## あなた（依頼者）の具体的な問い（各々に個別に答えよ）\n"
+                     + "\n".join(f"{i+1}. {s}" for i, s in enumerate(subs)))
+    else:
+        sub_block = f"\n- 私の目的・文脈: {goal}" if goal else ""
+
+    # The lost-distinction instruction is now anchored on the ACTUAL original
+    # term, with Leib/Körper demoted to a one-line illustration of the pattern.
+    if orig:
+        lost = (f"- 上記の原語（{orig}）のそれぞれについて、**日本語で同じ「{topic}」に"
+                f"訳される近縁の別語が存在しないか**を検査してください。原語間で意味・"
+                f"含意・使用文脈がどう違い、翻訳でどの区別が消えたかを、原文の該当箇所"
+                f"とともに示してください。")
+    else:
+        lost = ("- 「{t}」が翻訳語であれば原語を特定し、**原語では別語だったものが日本語で"
+                "一語に潰れていないか**を検査してください。").format(t=topic)
+    lost_illus = ("（この種の「失われた区別」の一例：マルクスの「非有機的肉体」は独語で "
+                  "unorganischer Leib と Körper の2語がありうるが日本語では「非有機的」一語に潰れる。）")
+
     return f"""{tune}
 
-# 調査依頼: 「{topic}」
+# 調査依頼: 「{topic}」{('（' + orig + '）') if orig else ''}
 
-私は上記について、表面的な要約ではなく、資料に接地した精密な理解を求めています。{goal_line}
-
-以下の手順で、テキストベースで徹底的に調査し、報告してください。
+私は上記について、表面的な要約ではなく、資料に接地した精密な理解を求めています。上記の「既に判明している手がかり」は出発点にすぎません。ここから一次・二次資料を巡回し、深掘りしてください。{grounded_block}{sub_block}
 
 ## 1. 私の本当の問いを先に言語化する
-- 私が「{topic}」という言葉で本当に知りたいことは何か、複数の解釈候補を挙げて明示してください。
-- 私がこの問いの立て方において、誤解・思い込み・自己バイアスに陥っている可能性があれば、遠慮なく指摘してください（例：用語の混同、時代錯誤、特定の立場の暗黙の前提）。
+- 私が「{topic}」で本当に知りたいことを、複数の解釈候補として明示してください（上の具体的な問いも踏まえて）。
+- 私の問いの立て方に、誤解・思い込み・自己バイアス（用語の混同、時代錯誤、特定立場の暗黙の前提）があれば、遠慮なく指摘してください。
 
-## 2. 語の系譜・翻訳史・失われた区別を復元する（最重要）
-- 「{topic}」に含まれる鍵概念について、初出・原語・時代を特定してください。日本語の場合、それが翻訳語なら**原語は何か**を必ず示してください。
-- **原語では元々複数の異なる語であったものが、翻訳で一語に潰れていないか**を検査してください。
-  （典型例：マルクスの「非有機的肉体」は独語で unorganischer **Leib** と unorganischer **Körper** の2語がありうるが、日本語ではどちらも「非有機的（肉体/身体）」に潰れ、区別が消えている。このように、境目が元々1つではなかった、という失われた区別を探してください。）
-- 各語がどの一次文献のどの箇所に現れるか、原文（該当言語）とともに示してください。
+## 2. 語の系譜・翻訳史・失われた区別（最重要）
+{lost}
+- 各語の初出・時代・提唱者を特定し、どの一次文献のどの箇所に現れるかを原文とともに示してください。
+{lost_illus}
 
 ## 3. 一次資料の精密性
-- 一次資料（原著・書簡・草稿・講義録）を、校訂版（例：Marx=MEGA, Kant=アカデミー版）と標準ロケータで特定してください。
-- 邦訳がある場合は**訳者・版・出版社・年**を併記し、訳語選択が解釈に与える差異を指摘してください。
+- 一次資料を校訂版（例：Marx=MEGA, Kant=アカデミー版, Husserl=Husserliana）と標準ロケータで特定してください。
+- 邦訳は**訳者・版・出版社・年**を併記し、訳語選択が解釈に与える差異を指摘してください。
 - 二次文献は「研究史上の位置」（主要説・対立説）とともに挙げてください。
 
 ## 4. 立場の対立と反証
-- この主題をめぐる主要な立場と、それらの対立点・反論を整理してください。
-- 私の想定に対する最も強い反証を、専門分野別（文献学／哲学史／該当分野）に提示してください。
+- 主要な立場とその対立点・反論を整理してください（上のSEP論争構造を出発点に）。
+- 私の想定への最も強い反証を、専門分野別に提示してください。
 
 ## 5. 出力の規律
-各主張に次の確度分類を付けてください：**確定／高蓋然／未確認／解釈仮説／思弁**。
-- 「学術的に確立していること」「解釈にとどまること」「思弁にすぎないこと」を必ず分けてください。
-- 出典（原文の該当箇所・書誌）を各主張に付けてください。出典を確認できないものは「未確認」と明記し、捏造しないでください。
-- 最後に「私が次に当たるべき一次資料」を3〜5点、理由付きで挙げてください。
+各主張に確度分類（**確定／高蓋然／未確認／解釈仮説／思弁**）を付け、学術的に確立したこと・解釈・思弁を分けてください。出典を各主張に付け、確認できないものは「未確認」と明記し捏造しないこと。最後に「次に当たるべき一次資料」を3〜5点、理由付きで挙げてください。
 
 ## 範囲外
-流暢な一般論・出典なき要約・通俗的な紹介は不要です。資料に接地しない断定は避けてください。
+流暢な一般論・出典なき要約・通俗的紹介は不要。資料に接地しない断定は避けてください。
 """.strip()
 
 
-def _en(topic: str, goal: str, service: str) -> str:
+def _en(topic: str, goal: str, service: str, ctx: dict) -> str:
     tune = _TUNE_EN.get(service, "")
-    goal_line = f"\n- My aim / context: {goal}" if goal else ""
+    orig = _orig_line(ctx, False)
+    desc = (ctx.get("description") or "").strip()
+    related = ctx.get("related") or []
+    debate = ctx.get("debate") or []
+    sep_title = ctx.get("sep_title") or ""
+    subs = _sub_questions(goal)
+
+    grounded = []
+    if desc:
+        grounded.append(f"- What this term is (Wikidata): {desc}")
+    if orig:
+        grounded.append(f"- Confirmed original-language term(s): **{orig}** — check whether these collapse into one word and how their senses differ.")
+    if sep_title:
+        grounded.append(f"- Encyclopedia entry: SEP '{sep_title}'.")
+    if debate:
+        grounded.append("- Debate structure (SEP section headings = positions):\n    "
+                        + "\n    ".join(f"- {d}" for d in debate[:8]))
+    if related:
+        grounded.append(f"- Adjacent concepts to examine: {', '.join(related[:10])}")
+    grounded_block = ("\n\n## 0. Leads already found (build on these)\n" + "\n".join(grounded)) if grounded else ""
+    sub_block = ("\n\n## My specific questions (answer each)\n"
+                 + "\n".join(f"{i+1}. {s}" for i, s in enumerate(subs))) if subs else (
+                 f"\n- Aim/context: {goal}" if goal else "")
+
+    if orig:
+        lost = (f"- For each original term ({orig}), check whether a NEAR-SYNONYM is "
+                f"collapsed into the same word in translation; show how their senses/uses differ and which distinction was lost, with source passages.")
+    else:
+        lost = f'- If "{topic}" is a translation, identify the original word and check whether several distinct originals collapsed into one.'
+
     return f"""{tune}
 
-# Research request: "{topic}"
+# Research request: "{topic}"{(' (' + orig + ')') if orig else ''}
 
-I want a source-grounded, precise understanding — not a fluent summary.{goal_line}
-
-Work through the following, text-based and thoroughly.
+I want a source-grounded, precise understanding — not a fluent summary. The leads below are only a starting point; browse primary and secondary sources from here.{grounded_block}{sub_block}
 
 ## 1. First, articulate my real question
-- State several candidate readings of what I actually want to know by "{topic}".
-- If my framing shows a likely misunderstanding, assumption, or self-bias, say so plainly (e.g. conflated terms, anachronism, an unstated commitment to one position).
+- Give several candidate readings of what I actually want (using my specific questions above).
+- Flag any misunderstanding, assumption, or self-bias in my framing.
 
-## 2. Recover the term's genealogy, translation history, and LOST DISTINCTIONS (most important)
-- For each key concept in "{topic}", identify its first appearance, original language, and period. If a term is a translation, state the ORIGINAL-language word.
-- Check whether SEVERAL distinct original words were collapsed into one in translation. (Paradigm: Marx's "inorganic body" can be unorganischer **Leib** vs **Körper** in German — two words — flattened into one in other languages, hiding that the organic/inorganic boundary was never single. Hunt for exactly this kind of lost distinction.)
-- Show which primary text and passage each word appears in, with the original-language wording.
+## 2. Genealogy, translation history, LOST DISTINCTIONS (most important)
+{lost}
+- Identify each term's first appearance, period, and coiner, with the primary passage in the original language.
+(Example of a lost distinction: Marx's "inorganic body" is Leib vs Körper in German, flattened into one word elsewhere.)
 
 ## 3. Primary-source precision
-- Identify primary sources (works, letters, drafts, lectures) by their critical edition (e.g. Marx=MEGA, Kant=Akademie) and standard locator.
-- Where translations exist, give translator/edition/publisher/year and note how translation choices change the interpretation.
-- List secondary literature with its place in the history of scholarship (main vs rival readings).
+- Identify primary sources by critical edition (Marx=MEGA, Kant=Akademie, Husserl=Husserliana) and standard locator.
+- For translations, give translator/edition/publisher/year and how the choice changes interpretation.
+- Place secondary literature in the history of scholarship (main vs rival).
 
 ## 4. Positions and counterarguments
-- Map the main positions and their points of disagreement.
-- Give the strongest counterargument to my assumption, per discipline (philology / history of philosophy / the relevant field).
+- Map the main positions and disagreements (start from the SEP structure above); give the strongest counterargument to my assumption, per discipline.
 
 ## 5. Output discipline
-Tag each claim: **confirmed / highly-probable / unverified / interpretive-hypothesis / speculation**.
-- Separate established scholarship from interpretation from speculation.
-- Attach a source to each claim; mark anything you cannot verify as "unverified" and do not fabricate citations.
-- End with 3–5 primary sources I should read next, with reasons.
+Tag each claim (confirmed / highly-probable / unverified / interpretive-hypothesis / speculation); separate scholarship from interpretation from speculation; cite each claim; mark unverifiable as "unverified"; never fabricate. End with 3–5 primary sources to read next, with reasons.
 
 ## Out of scope
-No fluent generalities, no source-less summaries, no popular overviews.
+No fluent generalities, no source-less summaries.
 """.strip()

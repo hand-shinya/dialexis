@@ -267,6 +267,40 @@ def deepsearch_services():
     return deepsearch.SERVICES
 
 
+async def _deepsearch_context(topic: str, lang: str) -> dict:
+    """Resolve a term via Wikidata + SEP to ground the deep-search prompt.
+    Best-effort: any failed source is simply omitted (never fabricated)."""
+    ctx = {}
+    try:
+        wd = await wikidata.search(topic, lang)
+        if not wd["error"] and wd["data"]:
+            ent = await wikidata.entity(wd["data"][0]["qid"], lang)
+            if not ent["error"]:
+                ed = ent["data"]
+                ctx["orig_labels"] = ed.get("orig_labels", {})
+                ctx["description"] = ed.get("description", "")
+                infl = ed.get("claims", {}).get("influenced_by", [])
+                labels = await wikidata.resolve_labels(
+                    [q for q in infl if str(q).startswith("Q")], lang)
+                ctx["influences"] = [labels.get(q, q) for q in infl][:8]
+                sep_term = ed.get("wikipedia", {}).get("en") or ed.get("orig_labels", {}).get("en") or topic
+            else:
+                sep_term = topic
+        else:
+            sep_term = topic
+        sr = await sep.search(sep_term)
+        if not sr["error"] and sr["data"]:
+            se = await sep.entry(sr["data"][0]["slug"])
+            if not se["error"]:
+                ctx["sep_title"] = se["data"]["title"]
+                ctx["debate"] = [re.sub(r"^\d+(\.\d+)*\.?\s*", "", s)
+                                 for s in se["data"]["sections"]][:8]
+                ctx["related"] = [r["title"] for r in se["data"]["related"]][:10]
+    except Exception:
+        pass  # grounding is a bonus; never block prompt generation on it
+    return ctx
+
+
 @app.post("/api/deepsearch")
 async def api_deepsearch(request: Request):
     """Generate a deep-research prompt for the user to paste into another AI.
@@ -279,7 +313,12 @@ async def api_deepsearch(request: Request):
         raise HTTPException(400, "topic required")
     lang = b.get("lang", "ja")
     service = b.get("service", "generic")
-    level0 = deepsearch.generate(topic, b.get("goal", ""), service, lang)
+
+    # Ground the prompt in the system's own knowledge so it ADAPTS to the term
+    # (original-language word, adjacent concepts, debate structure) instead of
+    # being a fill-in-the-blank template.
+    ctx = await _deepsearch_context(topic, lang)
+    level0 = deepsearch.generate(topic, b.get("goal", ""), service, lang, ctx)
 
     result = {"service": service, "level0": level0, "level2": None}
     llm = b.get("llm") or {}

@@ -56,6 +56,12 @@ async def entity(qid: str, lang: str = "en") -> dict:
             "label_en": (labels.get("en") or labels.get(lang) or {}).get("value", ""),
             "description": (descs.get(lang) or descs.get("en") or {}).get("value", ""),
             "is_person": "Q5" in instance_of,
+            # Original-language labels in scholarly languages — the raw material
+            # for naming the source-language term(s) in a deep-search prompt
+            # (間主観 → Intersubjektivität; 疎外 → Entfremdung).
+            "orig_labels": {lg: labels[lg]["value"]
+                            for lg in ("en", "de", "fr", "el", "grc", "la", "it")
+                            if lg in labels and labels[lg].get("value")},
             "claims": claims_raw,
             "wikipedia": {k.replace("wiki", ""): v["title"]
                           for k, v in sitelinks.items()
