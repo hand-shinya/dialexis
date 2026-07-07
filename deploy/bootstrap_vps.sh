@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Dialexis VPS bootstrap — Rocky Linux 9/10 (tested target: Sakura VPS 2G, Rocky 10)
+# Dialexis VPS bootstrap — Ubuntu Server 22.04/24.04 and Rocky/RHEL 9/10.
+# (tested target: Sakura VPS 2G, Ubuntu Server, Osaka #3)
 # Run as root on a fresh VPS:
-#   curl -sL https://raw.githubusercontent.com/hand-shinya/dialexis/main/deploy/bootstrap_vps.sh | bash
+#   curl -sL https://raw.githubusercontent.com/hand-shinya/dialexis/main/deploy/bootstrap_vps.sh | sudo -E bash
 # Idempotent: safe to re-run.
 set -euo pipefail
 
@@ -9,11 +10,18 @@ REPO="https://github.com/hand-shinya/dialexis.git"
 APP_DIR="/opt/dialexis"
 CONTACT="${DIALEXIS_CONTACT:-}"   # export DIALEXIS_CONTACT=you@example.com before running (recommended)
 
-echo "== [1/8] packages =="
-dnf -y install git python3 python3-pip nginx sqlite firewalld policycoreutils-python-utils
+if command -v apt-get >/dev/null; then FAMILY=debian; else FAMILY=rhel; fi
+echo "== [1/8] packages ($FAMILY) =="
+if [ "$FAMILY" = debian ]; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -q
+  apt-get install -qy git python3 python3-venv python3-pip nginx sqlite3
+else
+  dnf -y install git python3 python3-pip nginx sqlite firewalld policycoreutils-python-utils
+fi
 
 echo "== [2/8] user + code =="
-id dialexis &>/dev/null || useradd -r -m -d /var/lib/dialexis -s /sbin/nologin dialexis
+id dialexis &>/dev/null || useradd -r -m -d /var/lib/dialexis -s /usr/sbin/nologin dialexis
 if [ -d "$APP_DIR/.git" ]; then
   git -C "$APP_DIR" pull
 else
@@ -35,16 +43,27 @@ cp "$APP_DIR/deploy/systemd/dialexis-harvester.service" /etc/systemd/system/
 cp "$APP_DIR/deploy/systemd/dialexis-harvester.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now dialexis dialexis-harvester.timer
+systemctl restart dialexis
 
-echo "== [6/8] nginx + SELinux =="
+echo "== [6/8] nginx =="
 cp "$APP_DIR/deploy/nginx-dialexis.conf" /etc/nginx/conf.d/dialexis.conf
-setsebool -P httpd_can_network_connect 1
+rm -f /etc/nginx/sites-enabled/default   # Ubuntu: remove competing default_server
+if [ "$FAMILY" = rhel ]; then setsebool -P httpd_can_network_connect 1; fi
 nginx -t && systemctl enable --now nginx && systemctl reload nginx
 
 echo "== [7/8] firewall =="
-systemctl enable --now firewalld
-firewall-cmd --permanent --add-service=http --add-service=https
-firewall-cmd --reload
+if [ "$FAMILY" = debian ]; then
+  if command -v ufw >/dev/null; then
+    ufw allow OpenSSH >/dev/null || true
+    ufw allow 'Nginx Full' >/dev/null 2>&1 || { ufw allow 80/tcp; ufw allow 443/tcp; }
+    # do NOT force-enable ufw here (avoid remote lockout); Sakura packet filter governs
+    ufw status | head -3 || true
+  fi
+else
+  systemctl enable --now firewalld
+  firewall-cmd --permanent --add-service=http --add-service=https
+  firewall-cmd --reload
+fi
 
 echo "== [8/8] daily DB backup =="
 mkdir -p /var/backups/dialexis

@@ -1,13 +1,13 @@
 # DEPLOY_SAKURA_VPS.md — さくらVPS公開手順書
 
-対象環境：**さくらのVPS v5・2Gプラン・Rocky Linux 10**（本プロジェクトの実際の契約環境。IPv4: 219.94.244.239 / ホスト名: os3-284-31735.vs.sakura.ne.jp）。他のVPS・他のRHEL系でもほぼ同一。
+対象環境：**さくらのVPS v5・2Gプラン・Ubuntu Server**（本プロジェクトの実際の契約環境。IPv4: 219.94.244.239 / ホスト名: os3-284-31735.vs.sakura.ne.jp）。bootstrap は Ubuntu（apt）と Rocky/RHEL（dnf）の両方を自動判別して対応する。
 
 所要時間：初回約20分（うちコマンド実行は数分）。
 
 ## 1. 事前準備（さくらのコントロールパネル）
 
 1. https://secure.sakura.ad.jp/vps/ にログイン → 対象サーバー
-2. **OS確認**：Rocky Linux 10 がインストール済みであること（OS再インストール時に管理ユーザーのパスワード／公開鍵を設定する）
+2. **OS確認**：Ubuntu Server がインストール済みであること（OS再インストール時に管理ユーザー（既定 `ubuntu`）のパスワード／公開鍵を設定する）
 3. **パケットフィルター**：「設定」→ パケットフィルター →
    - SSH（22）: 許可（既定）
    - **Web（80/443）: 許可を追加** ← これを忘れるとnginxが動いていても外から見えない
@@ -16,10 +16,10 @@
 ## 2. SSH接続
 
 ```
-ssh <管理ユーザー名>@219.94.244.239
+ssh ubuntu@219.94.244.239
 ```
 
-初回接続でホスト鍵の確認が出たら yes。以後の手順はサーバー上で実行（管理ユーザーが一般ユーザーの場合はコマンド頭に `sudo` を付けるか `sudo -i` でrootに）。
+（ユーザー名はOSインストール時に設定したもの。さくらのUbuntuイメージの既定は `ubuntu`）。初回接続でホスト鍵の確認が出たら yes。パスワードはOSインストール時に設定したもの。
 
 ## 3. 一括構築（bootstrap）
 
@@ -49,7 +49,8 @@ http://219.94.244.239/
 |---|---|
 | ブラウザから見えない | §1-3 パケットフィルターでWeb許可を追加したか（最頻出） |
 | curlでlocalhostは見えるが外から見えない | 同上＋ `firewall-cmd --list-services` に http があるか |
-| 502 | `setsebool -P httpd_can_network_connect 1`（bootstrapが実施済のはず）→ `journalctl -u dialexis -n 50` |
+| 502 | `journalctl -u dialexis -n 50` でアプリ状態確認。Rocky/RHEL系のみ `setsebool -P httpd_can_network_connect 1`（bootstrapが実施済のはず） |
+| nginxが起動しない（Ubuntu） | 既定サイトとの競合。`rm -f /etc/nginx/sites-enabled/default && nginx -t && systemctl reload nginx`（bootstrapが実施済のはず） |
 | bootstrapがテストで停止 | 正しい挙動（壊れた状態で公開しない）。エラー全文をGitHub Issueへ |
 
 ## 6. 独自ドメイン（任意）
@@ -61,7 +62,8 @@ http://219.94.244.239/
 ## 7. HTTPS化（ドメイン取得後に必ず実施）
 
 ```bash
-sudo dnf -y install certbot python3-certbot-nginx
+sudo apt-get install -y certbot python3-certbot-nginx   # Ubuntu
+# Rocky/RHEL: sudo dnf -y install certbot python3-certbot-nginx
 sudo certbot --nginx -d dialexis.example.com --agree-tos -m あなたのメール
 # 自動更新タイマーは certbot が登録する。確認: systemctl list-timers | grep certbot
 ```
