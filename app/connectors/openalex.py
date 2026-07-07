@@ -1,13 +1,18 @@
 """OpenAlex connector — free, keyless scholarly catalog (works/authors/citations).
 
 The "philosophy lens" (GENESIS axiom: this is a philosophy tool, not a general
-scholarly search) is implemented here as a domain filter over OpenAlex topic
-fields, so a common CJK word like 存在 no longer surfaces plutonium chemistry.
-Fields (verified against api.openalex.org/fields):
-  12 Arts and Humanities · 32 Psychology · 33 Social Sciences.
-This union keeps philosophy of mind (psychology) and political philosophy /
-Sen (social sciences) while excluding the natural sciences that caused noise.
-Callers may widen/narrow via field_filter (future research modes).
+scholarly search) is a domain filter over OpenAlex's topic taxonomy, so a
+common CJK word like 存在 returns Levinas-on-Being, not plutonium chemistry
+or tourism research.
+
+Default lens = the Philosophy SUBFIELD (precision). Verified against
+api.openalex.org/subfields:
+  1211 Philosophy · 1207 History and Philosophy of Science.
+The subfield is far tighter than the field union (12|32|33), which for an
+ultra-common word like 存在 ("existence/presence") let urban-planning and
+tourism abstracts through. Precision is the right default for a philosophy
+tool; a future interdisciplinary "research mode" can widen to WIDE_LENS
+(GENESIS: research modes). Callers pass a full OpenAlex filter fragment.
 """
 import os
 
@@ -15,8 +20,10 @@ from .base import cached_get_json, ok, err
 
 BASE = "https://api.openalex.org"
 
-# OpenAlex field ids; "" disables the lens (raw cross-disciplinary search).
-HUMANITIES_LENS = "12|32|33"
+# Full OpenAlex filter fragments; "" disables the lens (raw search).
+PHILOSOPHY_LENS = "primary_topic.subfield.id:1211|1207"
+WIDE_LENS = "primary_topic.field.id:12|32|33"   # humanities+psych+social (future modes)
+HUMANITIES_LENS = PHILOSOPHY_LENS               # current default
 
 # OpenAlex "polite pool": including a contact mailto gets faster, more reliable
 # service and avoids the shared-pool 429s. Set DIALEXIS_CONTACT in the env.
@@ -46,10 +53,10 @@ def _work(w: dict) -> dict:
 
 
 async def search_works(q: str, limit: int = 10,
-                       field_filter: str = HUMANITIES_LENS) -> dict:
+                       lens: str = HUMANITIES_LENS) -> dict:
     params = {"search": q, "per-page": limit, "sort": "relevance_score:desc"}
-    if field_filter:
-        params["filter"] = f"primary_topic.field.id:{field_filter}"
+    if lens:
+        params["filter"] = lens
     try:
         body, ts, cached = await cached_get_json(f"{BASE}/works", _p(params))
         return ok("openalex", ts, cached, [_work(w) for w in body.get("results", [])])
@@ -86,10 +93,10 @@ async def works_by_author(author_id: str, from_date: str = "", limit: int = 25) 
 
 
 async def works_search_since(q: str, from_date: str, limit: int = 25,
-                             field_filter: str = HUMANITIES_LENS) -> dict:
+                             lens: str = HUMANITIES_LENS) -> dict:
     flt = f"from_publication_date:{from_date}"
-    if field_filter:
-        flt += f",primary_topic.field.id:{field_filter}"
+    if lens:
+        flt += f",{lens}"
     try:
         body, ts, cached = await cached_get_json(f"{BASE}/works", _p({
             "search": q, "filter": flt,

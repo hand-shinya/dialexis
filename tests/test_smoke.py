@@ -65,10 +65,11 @@ def test_openalex_philosophy_lens():
     # The humanities lens must be present in the request params so a common CJK
     # word cannot pull in natural-science papers (the 存在→chemistry bug).
     from app.connectors import openalex
-    assert openalex.HUMANITIES_LENS == "12|32|33"
+    assert openalex.HUMANITIES_LENS == openalex.PHILOSOPHY_LENS
+    assert "subfield.id:1211" in openalex.PHILOSOPHY_LENS
     import inspect
     src = inspect.getsource(openalex.search_works)
-    assert "primary_topic.field.id" in src
+    assert "lens" in src and "params[\"filter\"]" in src
 
 
 def test_crossref_skips_untitled():
