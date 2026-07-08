@@ -1,0 +1,15 @@
+# Dialexis hands-free deploy — minimal-privilege sudo grant for user `ubuntu`.
+#
+# Install (one time, needs the sudo password ONCE):
+#   sudo visudo -cf /opt/dialexis/deploy/dialexis-deploy.sudoers   # validate first
+#   sudo install -m 0440 -o root -g root \
+#        /opt/dialexis/deploy/dialexis-deploy.sudoers /etc/sudoers.d/dialexis-deploy
+#
+# Only TWO exact commands are permitted. No wildcards on git/pip/systemctl, so
+# this does NOT hand `ubuntu` a shell as dialexis or root:
+#   1. the fixed update script, run as the app user `dialexis` (not root);
+#   2. exactly `systemctl restart dialexis`, run as root — nothing else.
+# The update script lives in the dialexis-owned repo dir, which `ubuntu` cannot
+# write, so it cannot be altered to escalate.
+ubuntu ALL=(dialexis) NOPASSWD: /opt/dialexis/deploy/vps_update.sh
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart dialexis
