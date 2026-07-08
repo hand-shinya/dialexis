@@ -20,6 +20,15 @@ ORIGINS = ("human", "ai", "external")
 STATUSES = ("open", "adopted", "held", "rejected")
 RELATIONS = ("supports", "contradicts", "answers", "refines", "derives_from",
              "cites", "about", "responds_to")
+# Argument-reconstruction vocabularies (E1-E5). These are NEW domain vocabularies
+# for the argument layer; they do not touch the confidence classification that
+# GENESIS axiom 6 fixes, nor NODE_TYPES/RELATIONS. Validity and soundness are
+# kept as SEPARATE fields on purpose (妥当性 ≠ 健全性 must never be conflated).
+VALIDITY = ("valid", "invalid", "unassessed")
+SOUNDNESS = ("sound", "unsound", "unassessed")
+# "voice" (whose philosophical claim a premise reconstructs) is distinct from
+# nodes.origin (who created the row in the tool: human/ai/external).
+VOICES = ("author", "commentator", "self")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects(
@@ -92,6 +101,31 @@ CREATE TABLE IF NOT EXISTS ai_ledger(
   task TEXT,
   project_id INTEGER,
   summary TEXT);
+
+CREATE TABLE IF NOT EXISTS arguments(
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  conclusion TEXT DEFAULT '',
+  conclusion_node_id INTEGER REFERENCES nodes(id) ON DELETE SET NULL,
+  validity TEXT DEFAULT 'unassessed',
+  soundness TEXT DEFAULT 'unassessed',
+  note TEXT DEFAULT '',
+  created_at TEXT, updated_at TEXT);
+
+CREATE TABLE IF NOT EXISTS argument_premises(
+  id INTEGER PRIMARY KEY,
+  argument_id INTEGER NOT NULL REFERENCES arguments(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL DEFAULT 0,
+  text TEXT DEFAULT '',
+  hidden INTEGER DEFAULT 0,
+  voice TEXT DEFAULT 'author',
+  node_id INTEGER REFERENCES nodes(id) ON DELETE SET NULL,
+  locator TEXT DEFAULT '',
+  source_name TEXT DEFAULT '',
+  source_url TEXT DEFAULT '',
+  quote TEXT DEFAULT '',
+  retrieved_at TEXT DEFAULT '');
 """
 
 
@@ -108,9 +142,24 @@ def get_conn() -> sqlite3.Connection:
     return conn
 
 
+def _column_exists(conn, table: str, col: str) -> bool:
+    return any(r["name"] == col
+              for r in conn.execute(f"PRAGMA table_info({table})"))
+
+
+def _migrate(conn) -> None:
+    """Additive, idempotent column adds for tables that already shipped.
+    New tables are handled by CREATE TABLE IF NOT EXISTS in SCHEMA; this only
+    covers columns added to pre-existing tables (rollback-safe: old code ignores
+    the extra column). See docs/IMPROVEMENT_PROTOCOL.md §3."""
+    if not _column_exists(conn, "provenance", "locator"):
+        conn.execute("ALTER TABLE provenance ADD COLUMN locator TEXT DEFAULT ''")
+
+
 def init_db() -> None:
     conn = get_conn()
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.commit()
     conn.close()
 

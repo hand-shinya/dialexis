@@ -9,14 +9,28 @@ const T = {
         needKey: "この機能のLevel 2にはAPIキーが必要です（設定→鍵スイッチ盤）。Level 0の結果を表示しています。",
         saved: "保存しました（このブラウザ内のみ）", cleared: "削除しました",
         oppLit: "対立文献の候補（OpenAlex検索）", works: "関連論文・著作", authors: "研究者", books: "無料で読める原典（Gutenberg）",
-        wikisource: "Wikisource原典", notable: "主要著作", influenced: "影響を受けた", occupation: "職業", born: "生", died: "没" },
+        wikisource: "Wikisource原典", notable: "主要著作", influenced: "影響を受けた", occupation: "職業", born: "生", died: "没",
+        argNone: "まだ論証はありません。前提P1..Pnと結論Cを組み立て、妥当性と健全性を別々に評価してください。",
+        premise: "前提", premiseAdd: "前提を追加", hidden: "隠れた前提", therefore: "ゆえに",
+        voice: "声", validity: "妥当性", soundness: "健全性", locator: "ロケータ", suggestHidden: "隠れた前提をAIに提案",
+        premisePh: "前提の文", locatorPh: "ロケータ（例: Republic 514a）",
+        voice_author: "著者", voice_commentator: "注釈者", voice_self: "自分",
+        validity_valid: "妥当", validity_invalid: "不当", validity_unassessed: "未評価",
+        soundness_sound: "健全", soundness_unsound: "不健全", soundness_unassessed: "未評価" },
   en: { retrieved: "retrieved", live: "live", cached: "cached", error: "source error (shown, not silenced)",
         loading: "Querying live scholarly sources…", none: "No results", del: "Delete", open: "Open",
         newHits: "new", checked: "checked", aiNotice: "AI-generated, unverified. Treat as unverified until sources are checked.",
         needKey: "Level 2 needs an API key (Settings → Key Switchboard). Showing Level 0.",
         saved: "Saved (this browser only)", cleared: "Cleared",
         oppLit: "Candidate opposing literature (OpenAlex)", works: "Related works & papers", authors: "Scholars", books: "Free primary texts (Gutenberg)",
-        wikisource: "Wikisource texts", notable: "Notable works", influenced: "Influenced by", occupation: "Occupation", born: "Born", died: "Died" }
+        wikisource: "Wikisource texts", notable: "Notable works", influenced: "Influenced by", occupation: "Occupation", born: "Born", died: "Died",
+        argNone: "No arguments yet. Build premises P1..Pn and a conclusion C, then assess validity and soundness separately.",
+        premise: "Premise", premiseAdd: "Add premise", hidden: "Hidden premise", therefore: "Therefore",
+        voice: "Voice", validity: "Validity", soundness: "Soundness", locator: "Locator", suggestHidden: "Suggest hidden premises (AI)",
+        premisePh: "Premise text", locatorPh: "Locator (e.g. Republic 514a)",
+        voice_author: "Author", voice_commentator: "Commentator", voice_self: "Researcher",
+        validity_valid: "Valid", validity_invalid: "Invalid", validity_unassessed: "Unassessed",
+        soundness_sound: "Sound", soundness_unsound: "Unsound", soundness_unassessed: "Unassessed" }
 }[LANG] || {};
 
 const $ = (id) => document.getElementById(id);
@@ -256,6 +270,10 @@ async function projRefresh() {
     $(selId).innerHTML = g.nodes.map(n =>
       `<option value="${n.id}">[${n.type}] ${esc(n.title.slice(0, 40))}</option>`).join("");
   }
+  const nodeOpts = g.nodes.map(n =>
+    `<option value="${n.id}">[${n.type}] ${esc(n.title.slice(0, 40))}</option>`).join("");
+  if ($("arg-cnode")) $("arg-cnode").innerHTML = `<option value="">— ${T.arg_conclusion || "conclusion node"} —</option>` + nodeOpts;
+  argRender(g.arguments || []);
 
   if (window.cytoscape) {
     const cy = cytoscape({
@@ -345,6 +363,120 @@ async function projAddEdge() {
   await api(`/api/projects/${PROJ}/edges`, { method: "POST", body: {
     src: $("e-src").value, dst: $("e-dst").value, rel: $("e-rel").value } });
   projRefresh();
+}
+
+/* ---------- argument reconstruction (E1-E5) ---------- */
+
+const VOICES = ["author", "commentator", "self"];
+const VALIDITY = ["valid", "invalid", "unassessed"];
+const SOUNDNESS = ["sound", "unsound", "unassessed"];
+let ARG_CACHE = {};  // aid -> ordered premise ids, for up/down reordering
+
+function optList(kinds, prefix, selected) {
+  return kinds.map(k =>
+    `<option value="${k}"${k === selected ? " selected" : ""}>${esc(T[prefix + "_" + k] || k)}</option>`).join("");
+}
+
+async function argAdd() {
+  const title = $("arg-title").value.trim();
+  if (!title) return;
+  await api(`/api/projects/${PROJ}/arguments`, { method: "POST", body: {
+    title, conclusion: $("arg-conclusion").value.trim(),
+    conclusion_node_id: $("arg-cnode").value ? Number($("arg-cnode").value) : null } });
+  $("arg-title").value = ""; $("arg-conclusion").value = "";
+  projRefresh();
+}
+
+function argRender(args) {
+  ARG_CACHE = {};
+  if (!args.length) { $("arg-list").innerHTML = `<p class="muted">${T.argNone}</p>`; return; }
+  $("arg-list").innerHTML = args.map(a => {
+    ARG_CACHE[a.id] = a.premises.map(p => p.id);
+    const prems = a.premises.map((p, i) => `<div class="result-item">
+      <b>P${i + 1}.</b> ${esc(p.text)}
+      ${p.hidden ? `<span class="badge">${T.hidden}</span>` : ""}
+      <span class="srcline">(${T.voice}: ${esc(T["voice_" + p.voice] || p.voice)})${p.locator ? ` — ${esc(p.locator)}` : ""}
+        ${p.source_url ? ` <a href="${esc(p.source_url)}" target="_blank">↗</a>` : ""}</span>
+      <button class="small secondary" onclick="argMove(${a.id},${p.id},-1)">↑</button>
+      <button class="small secondary" onclick="argMove(${a.id},${p.id},1)">↓</button>
+      <button class="small secondary" onclick="argDelPremise(${p.id})">×</button>
+    </div>`).join("");
+    return `<div class="card" style="border-left:3px solid #7a5c2e">
+      <h3>${esc(a.title)}</h3>
+      ${prems}
+      <div class="formrow" style="align-items:center;gap:.5rem;flex-wrap:wrap">
+        <input id="ap-text-${a.id}" placeholder="${T.premisePh}" style="flex:1;min-width:180px">
+        <label class="srcline"><input type="checkbox" id="ap-hidden-${a.id}"> ${T.hidden}</label>
+        <select id="ap-voice-${a.id}">${optList(VOICES, "voice", "author")}</select>
+        <input id="ap-loc-${a.id}" placeholder="${T.locatorPh}" style="width:180px">
+        <button class="small" onclick="argAddPremise(${a.id})">${T.premiseAdd}</button>
+      </div>
+      <p style="margin:.4rem 0"><b>${T.therefore} ∴ C.</b> ${esc(a.conclusion)}</p>
+      <div class="formrow" style="gap:1rem;flex-wrap:wrap">
+        <label class="srcline">${T.validity}:
+          <select onchange="argSetValidity(${a.id},this.value)">${optList(VALIDITY, "validity", a.validity)}</select></label>
+        <label class="srcline">${T.soundness}:
+          <select onchange="argSetSoundness(${a.id},this.value)">${optList(SOUNDNESS, "soundness", a.soundness)}</select></label>
+        <button class="small secondary" onclick="argSuggestHidden(${a.id})">${T.suggestHidden}</button>
+        <button class="small secondary" onclick="argDel(${a.id})">${T.del}</button>
+      </div>
+      <div id="arg-ai-${a.id}"></div>
+    </div>`;
+  }).join("");
+}
+
+async function argAddPremise(aid) {
+  const text = $(`ap-text-${aid}`).value.trim();
+  if (!text) return;
+  await api(`/api/arguments/${aid}/premises`, { method: "POST", body: {
+    text, hidden: $(`ap-hidden-${aid}`).checked ? 1 : 0,
+    voice: $(`ap-voice-${aid}`).value, locator: $(`ap-loc-${aid}`).value.trim() } });
+  projRefresh();
+}
+
+async function argDelPremise(prid) {
+  await api(`/api/premises/${prid}`, { method: "DELETE" });
+  projRefresh();
+}
+
+async function argMove(aid, prid, dir) {
+  const order = (ARG_CACHE[aid] || []).slice();
+  const i = order.indexOf(prid);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= order.length) return;
+  [order[i], order[j]] = [order[j], order[i]];
+  await api(`/api/arguments/${aid}/premises/reorder`, { method: "POST", body: { order } });
+  projRefresh();
+}
+
+async function argSetValidity(aid, validity) {
+  await api(`/api/arguments/${aid}`, { method: "PATCH", body: { validity } });
+}
+
+async function argSetSoundness(aid, soundness) {
+  await api(`/api/arguments/${aid}`, { method: "PATCH", body: { soundness } });
+}
+
+async function argDel(aid) {
+  if (!confirm("Delete argument?")) return;
+  await api(`/api/arguments/${aid}`, { method: "DELETE" });
+  projRefresh();
+}
+
+async function argSuggestHidden(aid) {
+  const out = $(`arg-ai-${aid}`);
+  const cfg = llmConfig();
+  if (!cfg) { out.innerHTML = `<p class="muted">${T.needKey}</p>`; return; }
+  out.innerHTML = `<p class="muted">${T.loading}</p>`;
+  try {
+    const d = await api(`/api/arguments/${aid}/suggest_hidden`, { method: "POST",
+      body: { lang: LANG, llm: cfg } });
+    if (d.level2 && d.level2.error) { out.innerHTML = `<p class="badge err">${esc(d.level2.error)}</p>`; return; }
+    out.innerHTML = `<div class="notice-ai"><span class="badge ai">AI · ${esc(d.level2.provider)}</span>
+      ${T.aiNotice}</div><pre class="llm">${esc(d.level2.text)}</pre>`;
+  } catch (e) {
+    out.innerHTML = `<p class="badge err">${esc(e.message)}</p>`;
+  }
 }
 
 /* ---------- watches ---------- */

@@ -392,6 +392,22 @@ def delete_project(pid: int):
     return {"ok": True}
 
 
+def _load_arguments(conn, pid: int) -> list:
+    """Load a project's reconstructed arguments (E1-E5), each with its ordered
+    premises (P1..Pn). Shared by the graph endpoint and the exporters."""
+    args = rows(conn.execute(
+        "SELECT * FROM arguments WHERE project_id=? ORDER BY id", (pid,)))
+    by_arg = {a["id"]: a for a in args}
+    for a in args:
+        a["premises"] = []
+    for pr in rows(conn.execute(
+            "SELECT ap.* FROM argument_premises ap"
+            " JOIN arguments a ON ap.argument_id=a.id"
+            " WHERE a.project_id=? ORDER BY ap.argument_id, ap.seq, ap.id", (pid,))):
+        by_arg[pr["argument_id"]]["premises"].append(pr)
+    return args
+
+
 @app.get("/api/projects/{pid}/graph")
 def project_graph(pid: int):
     conn = get_conn()
@@ -404,8 +420,10 @@ def project_graph(pid: int):
     prov = rows(conn.execute(
         "SELECT pr.* FROM provenance pr JOIN nodes n ON pr.node_id=n.id"
         " WHERE n.project_id=?", (pid,)))
+    args = _load_arguments(conn, pid)
     conn.close()
-    return {"project": dict(p), "nodes": nodes, "edges": edges, "provenance": prov}
+    return {"project": dict(p), "nodes": nodes, "edges": edges,
+            "provenance": prov, "arguments": args}
 
 
 @app.post("/api/projects/{pid}/nodes")
@@ -429,9 +447,10 @@ async def create_node(pid: int, request: Request):
     for pv in b.get("provenance", []):
         conn.execute(
             "INSERT INTO provenance(node_id, source_name, source_url, retrieved_at,"
-            " quote, note) VALUES(?,?,?,?,?,?)",
+            " quote, note, locator) VALUES(?,?,?,?,?,?,?)",
             (nid, pv.get("source_name", ""), pv.get("source_url", ""),
-             pv.get("retrieved_at", now()), pv.get("quote", ""), pv.get("note", "")))
+             pv.get("retrieved_at", now()), pv.get("quote", ""), pv.get("note", ""),
+             pv.get("locator", "")))
     conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (now(), pid))
     conn.commit()
     conn.close()
@@ -494,14 +513,214 @@ async def add_provenance(nid: int, request: Request):
     b = await request.json()
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO provenance(node_id, source_name, source_url, retrieved_at, quote, note)"
-        " VALUES(?,?,?,?,?,?)",
+        "INSERT INTO provenance(node_id, source_name, source_url, retrieved_at,"
+        " quote, note, locator) VALUES(?,?,?,?,?,?,?)",
         (nid, b.get("source_name", ""), b.get("source_url", ""),
-         b.get("retrieved_at", now()), b.get("quote", ""), b.get("note", "")))
+         b.get("retrieved_at", now()), b.get("quote", ""), b.get("note", ""),
+         b.get("locator", "")))
     conn.commit()
     pvid = cur.lastrowid
     conn.close()
     return {"id": pvid}
+
+
+# ---------- argument reconstruction (E1-E5: P1..C, hidden premises, voice,
+#            per-premise locator, validity ≠ soundness) ----------
+
+def _argument_or_404(conn, aid: int):
+    a = conn.execute("SELECT * FROM arguments WHERE id=?", (aid,)).fetchone()
+    if not a:
+        conn.close()
+        raise HTTPException(404, "argument not found")
+    return a
+
+
+@app.get("/api/projects/{pid}/arguments")
+def list_arguments(pid: int):
+    conn = get_conn()
+    data = _load_arguments(conn, pid)
+    conn.close()
+    return data
+
+
+@app.post("/api/projects/{pid}/arguments")
+async def create_argument(pid: int, request: Request):
+    b = await request.json()
+    if not b.get("title", "").strip():
+        raise HTTPException(400, "title required")
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO arguments(project_id, title, conclusion, conclusion_node_id,"
+        " note, created_at, updated_at) VALUES(?,?,?,?,?,?,?)",
+        (pid, b["title"].strip(), b.get("conclusion", ""),
+         b.get("conclusion_node_id"), b.get("note", ""), now(), now()))
+    aid = cur.lastrowid
+    conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (now(), pid))
+    conn.commit()
+    conn.close()
+    return {"id": aid}
+
+
+@app.get("/api/arguments/{aid}")
+def get_argument(aid: int):
+    conn = get_conn()
+    a = dict(_argument_or_404(conn, aid))
+    a["premises"] = rows(conn.execute(
+        "SELECT * FROM argument_premises WHERE argument_id=? ORDER BY seq, id", (aid,)))
+    conn.close()
+    return a
+
+
+@app.patch("/api/arguments/{aid}")
+async def update_argument(aid: int, request: Request):
+    b = await request.json()
+    if "validity" in b and b["validity"] not in db.VALIDITY:
+        raise HTTPException(400, f"validity must be one of {db.VALIDITY}")
+    if "soundness" in b and b["soundness"] not in db.SOUNDNESS:
+        raise HTTPException(400, f"soundness must be one of {db.SOUNDNESS}")
+    fields, vals = [], []
+    for k in ("title", "conclusion", "conclusion_node_id", "note",
+              "validity", "soundness"):
+        if k in b:
+            fields.append(f"{k}=?")
+            vals.append(b[k])
+    if not fields:
+        raise HTTPException(400, "nothing to update")
+    vals += [now(), aid]
+    conn = get_conn()
+    _argument_or_404(conn, aid)
+    conn.execute(f"UPDATE arguments SET {', '.join(fields)}, updated_at=? WHERE id=?",
+                 vals)
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.delete("/api/arguments/{aid}")
+def delete_argument(aid: int):
+    conn = get_conn()
+    conn.execute("DELETE FROM arguments WHERE id=?", (aid,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/api/arguments/{aid}/premises")
+async def add_premise(aid: int, request: Request):
+    b = await request.json()
+    voice = b.get("voice", "author")
+    if voice not in db.VOICES:
+        raise HTTPException(400, f"voice must be one of {db.VOICES}")
+    conn = get_conn()
+    _argument_or_404(conn, aid)
+    seq = conn.execute(
+        "SELECT COALESCE(MAX(seq),0)+1 FROM argument_premises WHERE argument_id=?",
+        (aid,)).fetchone()[0]
+    cur = conn.execute(
+        "INSERT INTO argument_premises(argument_id, seq, text, hidden, voice,"
+        " node_id, locator, source_name, source_url, quote, retrieved_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        (aid, seq, b.get("text", ""), 1 if b.get("hidden") else 0, voice,
+         b.get("node_id"), b.get("locator", ""), b.get("source_name", ""),
+         b.get("source_url", ""), b.get("quote", ""),
+         b.get("retrieved_at") or now()))
+    conn.execute("UPDATE arguments SET updated_at=? WHERE id=?", (now(), aid))
+    prid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return {"id": prid, "seq": seq}
+
+
+@app.patch("/api/premises/{prid}")
+async def update_premise(prid: int, request: Request):
+    b = await request.json()
+    if "voice" in b and b["voice"] not in db.VOICES:
+        raise HTTPException(400, f"voice must be one of {db.VOICES}")
+    fields, vals = [], []
+    for k in ("text", "voice", "node_id", "locator", "source_name",
+              "source_url", "quote", "retrieved_at"):
+        if k in b:
+            fields.append(f"{k}=?")
+            vals.append(b[k])
+    if "hidden" in b:
+        fields.append("hidden=?")
+        vals.append(1 if b["hidden"] else 0)
+    if not fields:
+        raise HTTPException(400, "nothing to update")
+    vals.append(prid)
+    conn = get_conn()
+    pr = conn.execute("SELECT argument_id FROM argument_premises WHERE id=?",
+                      (prid,)).fetchone()
+    if not pr:
+        conn.close()
+        raise HTTPException(404, "premise not found")
+    conn.execute(f"UPDATE argument_premises SET {', '.join(fields)} WHERE id=?", vals)
+    conn.execute("UPDATE arguments SET updated_at=? WHERE id=?",
+                 (now(), pr["argument_id"]))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.delete("/api/premises/{prid}")
+def delete_premise(prid: int):
+    conn = get_conn()
+    conn.execute("DELETE FROM argument_premises WHERE id=?", (prid,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/api/arguments/{aid}/premises/reorder")
+async def reorder_premises(aid: int, request: Request):
+    b = await request.json()
+    order = b.get("order") or []
+    conn = get_conn()
+    _argument_or_404(conn, aid)
+    owned = {r["id"] for r in conn.execute(
+        "SELECT id FROM argument_premises WHERE argument_id=?", (aid,))}
+    seq = 0
+    for prid in order:
+        if int(prid) in owned:
+            seq += 1
+            conn.execute("UPDATE argument_premises SET seq=? WHERE id=?",
+                         (seq, int(prid)))
+    conn.execute("UPDATE arguments SET updated_at=? WHERE id=?", (now(), aid))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/api/arguments/{aid}/suggest_hidden")
+async def suggest_hidden(aid: int, request: Request):
+    """Level 2 only: ask a BYO-key LLM to name suppressed premises under the
+    principle of charity. The Level 0 path for this feature is the user adding a
+    premise with hidden=1 by hand, which always works keyless (axiom 5). We never
+    auto-insert the suggestion — the human confirms and adds it (axiom 6)."""
+    b = await request.json()
+    lang = b.get("lang", "en")
+    llm = b.get("llm") or {}
+    if not (llm.get("provider") and llm.get("key")):
+        raise HTTPException(400, "LLM key required for hidden-premise suggestion (Level 2)")
+    conn = get_conn()
+    a = dict(_argument_or_404(conn, aid))
+    prems = rows(conn.execute(
+        "SELECT * FROM argument_premises WHERE argument_id=? ORDER BY seq, id", (aid,)))
+    conn.close()
+    stated = "\n".join(f"P{i+1}. {p['text']}" for i, p in enumerate(prems)) or "(none stated)"
+    user = f"Argument: {a['title']}\nStated premises:\n{stated}\nConclusion: {a['conclusion']}"
+    sys_p = ("Reconstruct the SUPPRESSED (hidden) premises this argument needs to be "
+             "valid, using the principle of charity — supply the premises that make it "
+             "the strongest version, not a straw man. List each as 'Ph. <premise>'. "
+             "Separate established scholarship from interpretation from speculation, and "
+             "never invent textual quotations. Do NOT restate the given premises. "
+             f"Answer in {'Japanese' if lang == 'ja' else 'English'}.")
+    try:
+        out = await adapter.run(llm["provider"], llm.get("model", ""), llm["key"],
+                                "hidden_premise", sys_p, user, a["project_id"])
+    except Exception as e:
+        return {"level2": {"error": f"{type(e).__name__}: {e}"}}
+    return {"level2": out, "notice": "unverified"}
 
 
 # ---------- export (axiom 7: exit-ability) ----------
@@ -539,13 +758,31 @@ def export_md(pid: int):
                 lines += ["", n["body"]]
             for pv in prov_by_node.get(n["id"], []):
                 src = pv["source_name"] or pv["source_url"]
-                lines.append(f"- source: {src} ({pv['source_url']})"
+                loc = f" @ {pv['locator']}" if pv.get("locator") else ""
+                lines.append(f"- source: {src} ({pv['source_url']}){loc}"
                              f" retrieved {pv['retrieved_at']}"
                              + (f" — “{pv['quote']}”" if pv["quote"] else ""))
             outgoing = [e for e in edges if e["src"] == n["id"]]
             for e in outgoing:
                 lines.append(f"- → *{e['rel']}* → {titles.get(e['dst'], e['dst'])}")
             lines.append("")
+    for a in g["arguments"]:
+        lines.append("## 論証再構成 / Argument reconstruction")
+        lines.append(f"### {a['title']}")
+        lines.append(f"- validity: **{a['validity']}** | soundness: **{a['soundness']}**")
+        if a["note"]:
+            lines += ["", a["note"]]
+        for i, pr in enumerate(a["premises"]):
+            tags = " [hidden]" if pr["hidden"] else ""
+            tags += f" (voice: {pr['voice']})"
+            loc = f" — {pr['locator']}" if pr["locator"] else ""
+            src = ""
+            if pr["source_name"] or pr["source_url"]:
+                src = f" [{pr['source_name'] or pr['source_url']}]({pr['source_url']})"
+            quote = f" “{pr['quote']}”" if pr["quote"] else ""
+            lines.append(f"P{i + 1}. {pr['text']}{tags}{loc}{src}{quote}")
+        lines.append(f"∴ C. {a['conclusion']}")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -559,6 +796,8 @@ def export_jsonld(pid: int):
         "created": "http://purl.org/dc/terms/created",
         "source_url": {"@id": "prov:hadPrimarySource", "@type": "@id"},
         "retrieved_at": "prov:generatedAtTime",
+        "hasPremise": {"@id": "https://dialexis.org/vocab#hasPremise",
+                       "@container": "@list"},
     }
     prov_by_node = {}
     for pv in g["provenance"]:
@@ -578,6 +817,23 @@ def export_jsonld(pid: int):
         graph.append({"@id": f"edge:{e['id']}", "@type": "Relation",
                       "rel": e["rel"], "from": f"node:{e['src']}",
                       "to": f"node:{e['dst']}"})
+    for a in g["arguments"]:
+        premises = []
+        for i, pr in enumerate(a["premises"]):
+            entry = {"@id": f"premise:{pr['id']}", "@type": "Premise",
+                     "seq": i + 1, "text": pr["text"], "hidden": bool(pr["hidden"]),
+                     "voice": pr["voice"], "locator": pr["locator"],
+                     "source_url": pr["source_url"], "retrieved_at": pr["retrieved_at"]}
+            if pr["node_id"]:
+                entry["premiseNode"] = f"node:{pr['node_id']}"
+            premises.append(entry)
+        arg = {"@id": f"argument:{a['id']}", "@type": "Argument",
+               "title": a["title"], "conclusion": a["conclusion"],
+               "validity": a["validity"], "soundness": a["soundness"],
+               "hasPremise": premises}
+        if a["conclusion_node_id"]:
+            arg["conclusionNode"] = f"node:{a['conclusion_node_id']}"
+        graph.append(arg)
     return JSONResponse({"@context": ctx, "project": g["project"]["title"],
                          "exported_at": now(), "@graph": graph},
                         media_type="application/ld+json")

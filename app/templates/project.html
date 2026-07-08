@@ -56,6 +56,18 @@
     <div id="node-detail" class="card" style="display:none"></div>
   </div>
 </div>
+
+<div class="card">
+  <h2>{{ t.arg_panel_title }}</h2>
+  <p class="muted">P1..Pn ⊢ C — {{ t.arg_hidden }} · {{ t.arg_voice }} · {{ t.arg_locator }} · {{ t.arg_validity }} ≠ {{ t.arg_soundness }}</p>
+  <div class="formrow">
+    <input id="arg-title" placeholder="{{ t.arg_title }}">
+    <input id="arg-conclusion" placeholder="{{ t.arg_conclusion }}">
+    <select id="arg-cnode"></select>
+  </div>
+  <button onclick="argAdd()">{{ t.arg_add }}</button>
+  <div id="arg-list"></div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script src="/static/vendor/cytoscape.min.js"></script>

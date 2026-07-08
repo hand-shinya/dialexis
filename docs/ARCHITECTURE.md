@@ -28,7 +28,7 @@ GENESIS の6層構想（Source / Concept / Argument / Historical / Research Proc
 |---|---|---|
 | Source 資料層 | connectors（ライブ参照）＋ provenance | TEI/IIIF接続、PhilPapers |
 | Concept 概念層 | Wikidata QID をアンカーに使用 | 概念重力ビュー、訳語ノード |
-| Argument 論証層 | nodes/edges（claim, evidence, counterclaim…） | 論証構造の形式分解 |
+| Argument 論証層 | nodes/edges ＋ arguments/argument_premises（P1..C 標準形・隠れた前提・声・頁ロケータ・妥当性≠健全性の形式分解） | 論証チェイン・PhilPapers 引用チェイン |
 | Historical 歴史層 | Wikidata claims（生没・影響） | 受容史・論争再構成ビュー |
 | Research Process 研究過程層 | **中核実装済**（projects + nodes + decisions + provenance） | 公開研究痕跡コモンズ |
 | Reflexive 反省層 | ai_ledger, origin/confidence 分類 | 研究者立場宣言、偏り検査 |
@@ -36,9 +36,11 @@ GENESIS の6層構想（Source / Concept / Argument / Historical / Research Proc
 ## 3. データモデル（SQLite・app/db.py が唯一の定義）
 
 ```
-projects 1─n nodes 1─n provenance
+projects 1─n nodes 1─n provenance（source_name/url/quote/retrieved_at/locator）
               │
               └─n edges（src/dst は nodes.id）
+projects 1─n arguments 1─n argument_premises（P1..Pn・seq 順）
+              └ conclusion_node_id? / premises.node_id? → nodes.id（ON DELETE SET NULL）
 watches 1─n watch_hits
 api_cache（URL→JSON、TTL付き）
 ai_ledger（AI呼び出しの追記型台帳）
@@ -49,6 +51,8 @@ ai_ledger（AI呼び出しの追記型台帳）
 - `nodes.origin`: human / ai / external
 - `nodes.status`: open / adopted / held / rejected（採用/保留/棄却）
 - `edges.rel`: supports / contradicts / answers / refines / derives_from / cites / about / responds_to
+- `arguments.validity`: valid / invalid / unassessed／`arguments.soundness`: sound / unsound / unassessed（**新規ドメイン語彙。妥当性と健全性は常に別フィールド。GENESIS 固定の確度語彙とは別物であり D級憲法変更ではない**）
+- `argument_premises.voice`: author / commentator / self（**新規ドメイン語彙。`nodes.origin`＝ツール上の作成主体 とは別意味の「哲学的な声」**）／`hidden`: 隠れた前提フラグ（寛容の原理）／`locator`: 標準ロケータ（Stephanus/Bekker/A-B）
 
 Graph DB（Neo4j等）への移行は、公開研究痕跡の横断検索（フェーズ2）で辺数が単一SQLiteの実用限界を超えたときに検討する。エクスポートがJSON-LDである時点で移行コストは限定的。
 
