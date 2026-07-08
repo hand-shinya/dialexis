@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import db
 from .db import get_conn, init_db, now, rows
-from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl
+from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii
 from . import citations as cites
 from . import deepsearch
 from .llm import adapter
@@ -138,6 +138,43 @@ def healthz():
 
 # ---------- explore (lens over live sources) ----------
 
+_CJK = re.compile(r"[぀-ヿ㐀-䶿一-鿿豈-﫿]")
+
+
+def _has_cjk(s: str) -> bool:
+    return bool(_CJK.search(s or ""))
+
+
+def _sig_tokens(term: str) -> list:
+    toks = [t for t in re.split(r"\W+", (term or "").lower()) if len(t) >= 4]
+    return toks or [(term or "").lower()]
+
+
+def orientation_plan(q: str, entity: dict | None) -> dict:
+    """Choose orientation sources by the subject's intellectual tradition instead
+    of assuming one universal entry point (SEP is Anglophone-Western). This is the
+    routing framework — extend the branch for other traditions (zh/hi/ar).
+
+    SEP is always attempted but its result is relevance-gated (see _sep_relevant);
+    Japanese-tradition subjects additionally get NDL + CiNii, the specialist
+    Japanese scholarly indexes that actually cover the subject and its literature."""
+    ed = entity["data"] if entity and not entity.get("error") and entity.get("data") else {}
+    sitelinks = ed.get("wikipedia", {}) or {}
+    japanese = _has_cjk(q) or (bool(sitelinks.get("ja")) and not sitelinks.get("en"))
+    tradition = "japanese" if japanese else "western"
+    return {"tradition": tradition, "sep": True, "ndl": japanese, "cinii": japanese}
+
+
+def _sep_relevant(entry_title: str, sep_term: str) -> bool:
+    """Guard against SEP's fuzzy fallback (共同幻想論 → 'Laozi'). SEP is English-
+    only, so a CJK/non-Latin term can never legitimately match — suppress. Else
+    the entry title must share a significant token with the term."""
+    if _has_cjk(sep_term) or not re.search(r"[A-Za-z]", sep_term or ""):
+        return False
+    hay = (entry_title or "").lower()
+    return any(t in hay for t in _sig_tokens(sep_term))
+
+
 @app.get("/api/explore")
 async def api_explore(q: str, lang: str = "en"):
     if not q.strip():
@@ -180,13 +217,45 @@ async def api_explore(q: str, lang: str = "en"):
     # Everything below depends only on the resolved entity, so run the branches
     # concurrently instead of in one long sequential chain (cold-load latency:
     # ~6 serial round-trips + 2 large SEP fetches → one parallel wave).
+    plan = orientation_plan(q, entity)
+
     async def sep_chain():
         r = await sep.search(sep_term)
         e = await sep.entry(r["data"][0]["slug"]) if (not r["error"] and r["data"]) else None
+        # Relevance gate: suppress an unrelated fallback entry (the 共同幻想論→Laozi
+        # leak) so a non-Western subject shows no SEP card rather than a wrong one.
+        if e and not e.get("error") and e.get("data") \
+                and not _sep_relevant(e["data"].get("title", ""), sep_term):
+            e = None
         return r, e
 
     async def wiki_summary():
         return await wikipedia.summary(title, wp_lang) if (entity and title) else None
+
+    # Japanese-tradition orientation: stand on the specialist Japanese indexes.
+    # NDL for books BY/ABOUT the subject; CiNii for Japanese scholarship. These
+    # are what surface 吉本隆明's own 共同幻想論 and the monographs about it.
+    async def ndl_orientation():
+        if not plan["ndl"]:
+            return await _empty("ndl")
+        calls = [ndl.by_title(q)] + ([ndl.by_author(q)] if is_person else [])
+        res = await asyncio.gather(*calls)
+        seen, merged = set(), []
+        for r in res:
+            if r["error"] or not r["data"]:
+                continue
+            for item in r["data"]:
+                k = (item.get("title", ""), item.get("url", ""))
+                if k in seen:
+                    continue
+                seen.add(k)
+                merged.append(item)
+        errs = [r["error"] for r in res if r["error"]]
+        return {"source": "ndl", "retrieved_at": now(),
+                "error": errs[0] if errs and not merged else None, "data": merged}
+
+    async def cinii_lookup():
+        return await cinii.search(q) if plan["cinii"] else await _empty("cinii")
 
     # Resolve QID labels up front: needed both to display the entity's claims and
     # to get the Japanese titles of the author's notable works for the 邦訳 lookup.
@@ -212,10 +281,12 @@ async def api_explore(q: str, lang: str = "en"):
         return {"source": "ndl", "retrieved_at": now(),
                 "error": errs[0] if errs and not data else None, "data": data}
 
-    (sep_pair, wiki, gutenberg, oa_works, ja_translations) = await asyncio.gather(
+    (sep_pair, wiki, gutenberg, oa_works, ja_translations,
+     ndl_orient, cinii_res) = await asyncio.gather(
         sep_chain(), wiki_summary(),
         gutendex.search(scholar_q) if is_person else _empty("gutendex"),
-        openalex.search_works(scholar_q), ja_translations_lookup())
+        openalex.search_works(scholar_q), ja_translations_lookup(),
+        ndl_orientation(), cinii_lookup())
     sep_result, sep_entry = sep_pair
 
     if entity and not entity["error"]:
@@ -227,9 +298,11 @@ async def api_explore(q: str, lang: str = "en"):
         oa_works["data"] = _relevant(oa_works["data"], english_term if is_person else q)
 
     return {"query": q, "resolved_term": scholar_q, "lang": lang, "queried_at": now(),
+            "orientation": plan,
             "sep_search": sep_result, "sep_entry": sep_entry,
             "wikidata_search": wd, "entity": entity, "wikipedia": wiki,
             "primary_texts": gutenberg, "japanese_translations": ja_translations,
+            "japanese_scholarship": ndl_orient, "cinii": cinii_res,
             "recent_scholarship": oa_works}
 
 
@@ -239,9 +312,7 @@ def _relevant(works: list, term: str) -> list:
     when nothing matches, so an unfiltered result is often pure noise (e.g. a
     Montesquieu query returning trout-fishing papers). Dropping non-matches makes
     the panel honest: it shows real hits or nothing."""
-    toks = [t for t in re.split(r"\W+", term.lower()) if len(t) >= 4]
-    if not toks:
-        toks = [term.lower()]
+    toks = _sig_tokens(term)
     out = []
     for w in works:
         hay = (w.get("title", "") + " " + " ".join(w.get("authors", []))).lower()

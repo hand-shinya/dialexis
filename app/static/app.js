@@ -131,6 +131,35 @@ async function exploreRun(q) {
 
     const jp = LANG === "ja";
 
+    // Japanese-tradition orientation (NDL + CiNii). For a Japanese subject the
+    // real first-hint bibliography is the National Diet Library (books by/about)
+    // and CiNii (scholarship) — the SEP is Anglophone and would return nothing
+    // useful. Stand on these specialist indexes, then expand secondarily.
+    const nd = d.japanese_scholarship, cn = d.cinii;
+    const ndHits = nd && !nd.error ? (nd.data || []) : [];
+    const cnHits = cn && !cn.error ? (cn.data || []) : [];
+    if (ndHits.length || cnHits.length || (nd && nd.error) || (cn && cn.error)) {
+      html += `<div class="card"><h2>📚 ${jp ? "日本語圏の学術（NDL・CiNii）" : "Japanese scholarship (NDL · CiNii)"}
+        ${nd ? freshBadge(nd) : ""} ${cn ? freshBadge(cn) : ""}</h2>
+        <p class="muted">${jp
+          ? "日本思想の一次ヒントは国立国会図書館サーチ（本人の著作・研究書）とCiNii（論文・書籍）。既存の専門索引を起点に、ここから2次・3次へ広げます。"
+          : "For a Japanese subject the first-hint bibliography is NDL Search (works by/about) and CiNii (scholarship). Start from these specialist indexes and expand outward."}</p>`;
+      if (ndHits.length) {
+        html += `<h3>${jp ? "著作・研究書（NDLサーチ）" : "Books by/about (NDL)"}</h3>
+          <ul class="biblist">${ndHits.map(b => `<li>
+            ${b.url ? `<a href="${esc(b.url)}" target="_blank">${esc(b.title)}</a>` : esc(b.title)}
+            — ${esc((b.creators || []).join(" / "))}${b.publisher ? ` · ${esc(b.publisher)}` : ""}${b.year ? ` · ${esc(b.year)}` : ""}</li>`).join("")}</ul>`;
+      }
+      if (cnHits.length) {
+        html += `<h3>${jp ? "論文・書籍（CiNii Research）" : "Articles & books (CiNii)"}</h3>
+          <ul class="biblist">${cnHits.map(w => `<li>
+            ${w.type ? `<span class="badge">${esc(w.type)}</span> ` : ""}
+            ${w.url ? `<a href="${esc(w.url)}" target="_blank">${esc(w.title)}</a>` : esc(w.title)}
+            — ${esc((w.creators || []).join(" / "))}${w.year ? ` · ${esc(w.year)}` : ""}</li>`).join("")}</ul>`;
+      }
+      html += "</div>";
+    }
+
     // Primary texts & editions — public-domain texts the reader can open now,
     // plus a pointer to standard-locator citation. This is core to real work.
     const wsUrls = (d.entity && !d.entity.error) ? (d.entity.data.wikisource_urls || {}) : {};
