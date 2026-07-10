@@ -67,3 +67,30 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .debatemap li { margin: .2rem 0; font-weight: 600; }
 .biblist { font-family: system-ui, sans-serif; font-size: .82rem; }
 .biblist li { margin: .35rem 0; }
+
+/* PoC-0: adopt bridge */
+.adopt-picker { font-family: system-ui, sans-serif; margin: .4rem 0 .8rem; }
+.adopt-picker select { width: auto; }
+.adopt-btn { padding: .12rem .5rem; font-size: .72rem; background: var(--accent2); }
+.adopt-btn.done { background: var(--ok); }
+
+/* PoC-1: reading-stance decision surface */
+.osf { font-family: system-ui, sans-serif; font-size: .85rem; background: #eef3f7;
+  border-left: 3px solid var(--accent2); border-radius: 0 5px 5px 0; padding: .5rem .8rem; margin: .5rem 0; }
+.gate-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .6rem 0; }
+.gatebtn { font-family: system-ui, sans-serif; font-size: .85rem; background: var(--paper);
+  color: var(--ink); border: 1px solid var(--line); border-radius: 5px; padding: .35rem .7rem; cursor: pointer; }
+.gatebtn.on { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+.fcards { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; margin: .7rem 0; }
+@media (max-width: 640px) { .fcards { grid-template-columns: 1fr; } }
+.fcard { border: 1px solid var(--line); border-radius: 6px; padding: .7rem .8rem; }
+.fcard.rec { border-left: 3px solid var(--accent); }
+.fcard h4 { font-family: system-ui, sans-serif; font-size: .9rem; margin: 0 0 .4rem; }
+.recbadge { font-family: system-ui, sans-serif; font-size: .62rem; background: var(--accent);
+  color: var(--paper); border-radius: 999px; padding: .05rem .5rem; }
+.facet { font-family: system-ui, sans-serif; font-size: .78rem; margin: .2rem 0; }
+.facet .fk { color: var(--muted); font-size: .68rem; margin-right: .35rem; }
+.facet.blind .fk { color: var(--bad); }
+.facet.out .fk { color: var(--accent2); }
+.llm-meta { font-family: system-ui, sans-serif; font-size: .8rem; background: #fff7ed;
+  border: 1px solid #fed7aa; border-radius: 5px; padding: .5rem .7rem; margin: .6rem 0; }

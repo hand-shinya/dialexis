@@ -62,13 +62,66 @@ function freshBadge(res) {
 
 /* ---------- explore ---------- */
 
+let ADOPT_PID = null, ADOPT_ITEMS = [];
+
+async function loadAdoptPicker() {
+  const el = $("adopt-picker");
+  if (!el) return;
+  try {
+    const ps = await api("/api/projects");
+    if (!ps.length) {
+      el.innerHTML = `<span class="srcline">${LANG === "ja"
+        ? "採用先プロジェクトがありません（研究デスクで作成すると、探索結果を接地ノードとして採用できます）"
+        : "No project yet — create one in the research desk to adopt findings as grounded nodes."}</span>`;
+      return;
+    }
+    el.innerHTML = `<label class="srcline">${LANG === "ja" ? "採用先プロジェクト" : "Adopt into"}:
+      <select id="adopt-pid"></select></label>`;
+    $("adopt-pid").innerHTML = ps.map(p =>
+      `<option value="${p.id}">${esc(p.title)}</option>`).join("");
+    ADOPT_PID = Number(ps[0].id);
+    $("adopt-pid").addEventListener("change", e => { ADOPT_PID = Number(e.target.value); });
+  } catch (e) { /* offline / no projects: adopt buttons simply stay hidden */ }
+}
+
+// One-click bridge from a live search result to a grounded node (source +
+// provenance + retrieved_at). This closes the search↔desk quality gap: the
+// automated quality of explore flows into the research graph with zero manual
+// re-entry. Buttons render only when an adopt-target project is chosen.
+function adoptBtn(title, url, source, retrieved) {
+  if (!ADOPT_PID || !title) return "";
+  const i = ADOPT_ITEMS.push({ title, url: url || "", source: source || "", retrieved: retrieved || "" }) - 1;
+  return ` <button type="button" class="small adopt-btn" data-i="${i}">${LANG === "ja" ? "＋採用" : "+ adopt"}</button>`;
+}
+
+async function adoptItem(i, btn) {
+  const it = ADOPT_ITEMS[i];
+  if (!it || !ADOPT_PID) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/projects/${ADOPT_PID}/nodes`, { method: "POST", body: {
+      type: "source", title: it.title, body: "",
+      confidence: "unverified", origin: "external",
+      provenance: [{ source_name: it.source, source_url: it.url, retrieved_at: it.retrieved, quote: "" }] } });
+    btn.textContent = LANG === "ja" ? "採用済 ✓" : "adopted ✓";
+    btn.classList.add("done");
+  } catch (e) { btn.disabled = false; btn.textContent = "✗"; }
+}
+
 function exploreInit(q) {
+  loadAdoptPicker();
+  const res = $("explore-results");
+  if (res) res.addEventListener("click", e => {
+    const b = e.target.closest(".adopt-btn");
+    if (b) adoptItem(Number(b.dataset.i), b);
+  });
   if (q && q.trim()) exploreRun(q.trim());
 }
 
 async function exploreRun(q) {
   $("explore-status").innerHTML = `<p class="muted">${T.loading}</p>`;
   $("explore-results").innerHTML = "";
+  ADOPT_ITEMS = [];
   try {
     const d = await api(`/api/explore?q=${encodeURIComponent(q)}&lang=${LANG}`);
     $("explore-status").innerHTML = "";
@@ -118,7 +171,7 @@ async function exploreRun(q) {
         <h3>${jp ? "文献（SEP書誌・検証済み）" : "Bibliography (SEP, curated)"}
           <span class="srcline">${s.bibliography.length}</span></h3>
         <ul class="biblist">${s.bibliography.slice(0, 12).map(b =>
-          `<li>${esc(b.text)}${b.url ? ` <a href="${esc(b.url)}" target="_blank">↗</a>` : ""}</li>`).join("")}</ul>
+          `<li>${esc(b.text)}${b.url ? ` <a href="${esc(b.url)}" target="_blank">↗</a>` : ""}${adoptBtn(b.text, b.url, "SEP", se.retrieved_at)}</li>`).join("")}</ul>
         ${s.related.length ? `<p class="srcline">${jp ? "関連項目" : "Related"}:
           ${s.related.slice(0, 10).map(r =>
             `<a href="/explore?q=${encodeURIComponent(r.title)}&lang=${LANG}">${esc(r.title)}</a>`).join(" · ")}</p>` : ""}
@@ -148,14 +201,14 @@ async function exploreRun(q) {
         html += `<h3>${jp ? "著作・研究書（NDLサーチ）" : "Books by/about (NDL)"}</h3>
           <ul class="biblist">${ndHits.map(b => `<li>
             ${b.url ? `<a href="${esc(b.url)}" target="_blank">${esc(b.title)}</a>` : esc(b.title)}
-            — ${esc((b.creators || []).join(" / "))}${b.publisher ? ` · ${esc(b.publisher)}` : ""}${b.year ? ` · ${esc(b.year)}` : ""}</li>`).join("")}</ul>`;
+            — ${esc((b.creators || []).join(" / "))}${b.publisher ? ` · ${esc(b.publisher)}` : ""}${b.year ? ` · ${esc(b.year)}` : ""}${adoptBtn(b.title, b.url, "NDL", nd.retrieved_at)}</li>`).join("")}</ul>`;
       }
       if (cnHits.length) {
         html += `<h3>${jp ? "論文・書籍（CiNii Research）" : "Articles & books (CiNii)"}</h3>
           <ul class="biblist">${cnHits.map(w => `<li>
             ${w.type ? `<span class="badge">${esc(w.type)}</span> ` : ""}
             ${w.url ? `<a href="${esc(w.url)}" target="_blank">${esc(w.title)}</a>` : esc(w.title)}
-            — ${esc((w.creators || []).join(" / "))}${w.year ? ` · ${esc(w.year)}` : ""}</li>`).join("")}</ul>`;
+            — ${esc((w.creators || []).join(" / "))}${w.year ? ` · ${esc(w.year)}` : ""}${adoptBtn(w.title, w.url, "CiNii", cn.retrieved_at)}</li>`).join("")}</ul>`;
       }
       html += "</div>";
     }
@@ -175,7 +228,7 @@ async function exploreRun(q) {
       if (hasGutenberg) {
         html += pt.data.map(b => `<div class="result-item">
           <a href="${esc(b.read_url)}" target="_blank"><b>${esc(b.title)}</b></a>
-          <div class="srcline">${esc(b.authors.join(", "))} · ${esc(b.languages.join(","))} · Project Gutenberg</div></div>`).join("");
+          <div class="srcline">${esc(b.authors.join(", "))} · ${esc(b.languages.join(","))} · Project Gutenberg${adoptBtn(b.title, b.read_url, "Project Gutenberg", pt.retrieved_at)}</div></div>`).join("");
       }
       html += `<p class="srcline">${jp
         ? "引用は標準ロケータで（Plato=Stephanus 514a / Aristotle=Bekker 1094a1 / Kant=A/B）。該当箇所への解決は今後の版で統合します。"
@@ -214,7 +267,7 @@ async function exploreRun(q) {
         <a href="${esc(w.url)}" target="_blank"><b>${esc(w.title)}</b></a>
         <span class="muted">(${esc(w.year ?? "?")})</span>
         ${w.open_access ? '<span class="badge live">OA</span>' : ""}
-        <div class="srcline">${esc(w.authors.join(", "))}${w.cited_by_count ? ` · cited ${w.cited_by_count}` : ""}</div></div>`).join("");
+        <div class="srcline">${esc(w.authors.join(", "))}${w.cited_by_count ? ` · cited ${w.cited_by_count}` : ""}${adoptBtn(w.title, w.url, "OpenAlex", rs.retrieved_at)}</div></div>`).join("");
       html += "</div>";
     }
 
@@ -288,6 +341,7 @@ const NODE_COLORS = { question: "#2e5c7a", claim: "#7a5c2e", evidence: "#2f7d4f"
 async function projectInit(pid) {
   PROJ = pid;
   await projRefresh();
+  forkRender();
 }
 
 async function projRefresh() {
@@ -391,6 +445,71 @@ async function projAddNode() {
 async function projAddEdge() {
   await api(`/api/projects/${PROJ}/edges`, { method: "POST", body: {
     src: $("e-src").value, dst: $("e-dst").value, rel: $("e-rel").value } });
+  projRefresh();
+}
+
+/* ---------- fork 4: reading-stance decision surface (PoC-1) ----------
+   The pivotal juncture: choosing the reading stance = choosing the
+   problématique = fixing the reach → the reachable conclusions. So it is a
+   decision-surface (options with reach/bias/blind-spot/outcome), not a picker,
+   and the analytic/historical GATE swaps the option SET (an analytic user must
+   not be shown a flat continental menu). The choice is recorded as a grounded
+   `decision` node — no schema change (decision ∈ NODE_TYPES). */
+const STANCES = {
+  historical: [
+    { k: "系譜学", by: "Foucault", reach: "権力/知の生成・主体の構成・実践の偶然性", bias: "制度・実践を前景化", blind: "著者の意図・論証の妥当性は射程外", out: "批判的・系譜学的貢献", rec: true },
+    { k: "概念史", by: "Koselleck", reach: "概念の意味変容・鞍の時代・対抗概念", bias: "意味構造の長期変動", blind: "個別論証の妥当性は中心化しない", out: "歴史的・統合的貢献" },
+    { k: "文脈主義", by: "Cambridge / Skinner", reach: "著者が『何をしていたか』・言語行為・論争文脈", bias: "同時代の意図を前景化", blind: "長期の意味変動・非意図的構造", out: "解釈的貢献（アナクロニズム回避）" },
+  ],
+  analytic: [
+    { k: "論証分析", by: "argument reconstruction", reach: "前提/結論の分離・推論の妥当性・隠れた前提", bias: "論理構造を前景化", blind: "歴史的生成・社会的文脈は射程外", out: "批判的・解釈的貢献", rec: true },
+    { k: "概念分析", by: "conceptual analysis", reach: "必要十分条件・直観・反例", bias: "非歴史的な本質", blind: "概念の歴史的変容", out: "解釈的貢献" },
+    { k: "思考実験", by: "thought experiment", reach: "直観の喚起・可能性空間・反例構成", bias: "論理的可能性を前景化", blind: "経験的妥当性・歴史的現実", out: "批判的・創造的貢献" },
+  ],
+};
+let FORK_BRANCH = "historical";
+
+function forkRender() {
+  const box = $("fork-stance");
+  if (!box) return;
+  const jp = LANG === "ja";
+  const gate = (b, label) =>
+    `<button type="button" class="gatebtn${FORK_BRANCH === b ? " on" : ""}" onclick="forkGate('${b}')">${label}</button>`;
+  const cards = STANCES[FORK_BRANCH].map((s, i) => `
+    <div class="fcard${s.rec ? " rec" : ""}">
+      <h4>${esc(s.k)} <span class="muted">${esc(s.by)}</span>${s.rec ? ` <span class="recbadge">${jp ? "推奨・上書き可" : "suggested"}</span>` : ""}</h4>
+      <div class="facet"><span class="fk">${jp ? "射程" : "reach"}</span>${esc(s.reach)}</div>
+      <div class="facet"><span class="fk">${jp ? "偏重" : "bias"}</span>${esc(s.bias)}</div>
+      <div class="facet blind"><span class="fk">${jp ? "死角" : "blind"}</span>${esc(s.blind)}</div>
+      <div class="facet out"><span class="fk">${jp ? "結末" : "outcome"}</span>${esc(s.out)}</div>
+      <button type="button" class="small" onclick="forkPick('${FORK_BRANCH}',${i})">${jp ? "この構えを選ぶ" : "choose this stance"}</button>
+    </div>`).join("");
+  box.innerHTML = `
+    <h2>${jp ? "岐路：読解の構え" : "Fork: reading stance"}</h2>
+    <div class="osf">${jp
+      ? "これらが「読み方」の道。選ぶのは<b>貴方</b>。道具は地図を描き、答えない。構えの選択は射程・方向・結論を規定する重要な場面です。"
+      : "These are the paths of reading. <b>You</b> choose; the tool maps, it does not answer. The stance governs reach, direction and conclusion."}</div>
+    <div class="gate-row"><span class="srcline">${jp ? "まず一つ：概念をどう見るか" : "First: how do you see concepts"}</span>
+      ${gate("analytic", jp ? "非歴史的な実体として" : "ahistorical entities")}
+      ${gate("historical", jp ? "歴史的な産物として" : "historically produced")}</div>
+    <div class="fcards">${cards}</div>
+    <div class="llm-meta">${jp
+      ? "🤖 <b>LLMのメタ認知</b>：このメニューは私の学習データの偏り（大陸系・英語圏寄り）を帯び、貴方を分析的伝統や非西洋の読解から逸らしうる。私が挙げていない構えを疑ってください。"
+      : "🤖 <b>LLM metacognition</b>: this menu carries my training bias; I may steer you away from analytic or non-Western readings. Doubt the stances I did not list."}</div>
+    <p class="srcline">${jp
+      ? "選ぶと「判断（decision）」ノードとして根拠つきで研究グラフに残ります。選択自体を論考したい場合は "
+      : "Your choice is recorded as a grounded decision node. To deliberate the choice itself, use "}<a href="/deepsearch">/deepsearch</a></p>`;
+}
+
+function forkGate(b) { FORK_BRANCH = b; forkRender(); }
+
+async function forkPick(branch, i) {
+  const s = STANCES[branch][i];
+  const gateLabel = branch === "historical" ? "歴史的な産物として" : "非歴史的な実体として";
+  const body = `ゲート：${gateLabel}\n射程：${s.reach}\n偏重：${s.bias}\n死角：${s.blind}\n結末：${s.out}`;
+  await api(`/api/projects/${PROJ}/nodes`, { method: "POST", body: {
+    type: "decision", title: `読解の構え：${s.k}（${s.by}）`, body,
+    confidence: "unverified", origin: "human", status: "adopted" } });
   projRefresh();
 }
 
