@@ -24,6 +24,7 @@ from .db import get_conn, init_db, now, rows
 from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii
 from . import citations as cites
 from . import deepsearch
+from . import bibliography
 from .llm import adapter
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -908,6 +909,59 @@ def export_jsonld(pid: int):
     return JSONResponse({"@context": ctx, "project": g["project"]["title"],
                          "exported_at": now(), "@graph": graph},
                         media_type="application/ld+json")
+
+
+def _collect_refs(g: dict) -> list:
+    """Gather a project's cited sources for bibliography export, deduped by URL
+    (or name+title when no URL). Sources come from node provenance, source-type
+    nodes, and argument-premise sources. No schema change: reads existing rows."""
+    seen = {}
+
+    def add(title, url, urldate, quote, locator, source_name):
+        title = (title or source_name or url or "").strip()
+        url = (url or "").strip()
+        if not title and not url:
+            return
+        key = url or f"name:{(source_name or '').strip()}|{title}"
+        if key in seen:
+            return
+        note = "; ".join(x for x in [(locator or "").strip(),
+                                     f'"{quote.strip()}"' if quote and quote.strip() else ""] if x)
+        seen[key] = {"title": title, "url": url,
+                     "urldate": (urldate or "").strip()[:10],
+                     "note": note, "source_name": (source_name or "").strip()}
+
+    prov_by_node = {}
+    for pv in g["provenance"]:
+        prov_by_node.setdefault(pv["node_id"], []).append(pv)
+    for n in g["nodes"]:
+        provs = prov_by_node.get(n["id"], [])
+        for pv in provs:
+            title = pv["source_name"] or (n["title"] if n["type"] == "source" else "")
+            add(title, pv["source_url"], pv["retrieved_at"],
+                pv.get("quote", ""), pv.get("locator", ""), pv["source_name"])
+        if n["type"] == "source" and not provs:
+            add(n["title"], "", n.get("updated_at", ""), "", "", "")
+    for a in g["arguments"]:
+        for pr in a["premises"]:
+            if pr.get("source_name") or pr.get("source_url"):
+                add(pr.get("source_name", ""), pr.get("source_url", ""),
+                    pr.get("retrieved_at", ""), pr.get("quote", ""),
+                    pr.get("locator", ""), pr.get("source_name", ""))
+    return list(seen.values())
+
+
+@app.get("/api/projects/{pid}/export.bib", response_class=PlainTextResponse)
+def export_bib(pid: int):
+    g = project_graph(pid)
+    return bibliography.to_bibtex(_collect_refs(g), project=g["project"]["title"])
+
+
+@app.get("/api/projects/{pid}/export.csl.json")
+def export_csl(pid: int):
+    g = project_graph(pid)
+    return JSONResponse(bibliography.to_csl(_collect_refs(g)),
+                        media_type="application/json")
 
 
 # ---------- counterargument engine (Level 0 always; Level 2 with key) ----------
