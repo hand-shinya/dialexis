@@ -1,0 +1,491 @@
+<title>Dialexis — 決定サーフェス（全体設定 v3.1）</title>
+<style>
+  :root{
+    --paper:#f7f5f0; --ink:#1d2430; --card:#ffffff; --line:#ddd6c8;
+    --accent:#7a5c2e; --accent2:#2e5c7a; --muted:#6b7280;
+    --ok:#2f7d4f; --warn:#b45309; --bad:#b91c1c;
+    --grid:rgba(122,92,46,.06); --chrome:#efe9dc; --frameline:#cfc6b3;
+    --anno:#2e5c7a; --anno-bg:#e7eef4;
+    --reach:#7a5c2e; --blind:#e9dcc4;
+    --serif:"Yu Mincho","Hiragino Mincho ProN","Noto Serif JP",Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#12161d; --ink:#e9e4d8; --card:#1b212b; --line:#333c49;
+      --accent:#c59a5d; --accent2:#82b2d6; --muted:#96a0b0;
+      --ok:#5aa77a; --warn:#d29344; --bad:#d97070;
+      --grid:rgba(197,154,93,.05); --chrome:#222a35; --frameline:#3a4553;
+      --anno:#82b2d6; --anno-bg:#1f2a36; --reach:#c59a5d; --blind:#3a4048;
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#f7f5f0; --ink:#1d2430; --card:#ffffff; --line:#ddd6c8;
+    --accent:#7a5c2e; --accent2:#2e5c7a; --muted:#6b7280; --ok:#2f7d4f; --warn:#b45309; --bad:#b91c1c;
+    --grid:rgba(122,92,46,.06); --chrome:#efe9dc; --frameline:#cfc6b3; --anno:#2e5c7a; --anno-bg:#e7eef4;
+    --reach:#7a5c2e; --blind:#e9dcc4;
+  }
+  :root[data-theme="dark"]{
+    --paper:#12161d; --ink:#e9e4d8; --card:#1b212b; --line:#333c49;
+    --accent:#c59a5d; --accent2:#82b2d6; --muted:#96a0b0; --ok:#5aa77a; --warn:#d29344; --bad:#d97070;
+    --grid:rgba(197,154,93,.05); --chrome:#222a35; --frameline:#3a4553; --anno:#82b2d6; --anno-bg:#1f2a36;
+    --reach:#c59a5d; --blind:#3a4048;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);line-height:1.7;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1160px;margin:0 auto;padding:2.4rem 1.3rem 4rem;}
+  .eyebrow{font-family:var(--sans);font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);margin:0 0 .5rem;}
+  h1{font-size:clamp(1.9rem,4vw,2.9rem);margin:0;letter-spacing:.04em;text-wrap:balance;line-height:1.25;}
+  h1 .en{display:block;font-family:var(--sans);font-size:.9rem;font-weight:400;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;margin-top:.6rem;}
+  .lede{max-width:66ch;font-size:1.05rem;margin:1.1rem 0 0;}
+  .lede b{color:var(--accent);}
+  .thesis{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;margin:1.3rem 0 0;font-family:var(--sans);font-size:.92rem;}
+  .thesis .was{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--bad);text-decoration-thickness:1px;}
+  .thesis .arrow{color:var(--accent);font-size:1.2rem;}
+  .thesis .now{color:var(--ink);font-weight:600;border-bottom:2px solid var(--accent);padding-bottom:1px;}
+  .themebtn{position:fixed;top:.9rem;right:.9rem;z-index:20;font-family:var(--sans);font-size:.75rem;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:.35rem .8rem;cursor:pointer;}
+  .themebtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  section{margin-top:3.2rem;}
+  .sec-h{font-family:var(--sans);font-size:.74rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:.5rem;margin:0 0 1.3rem;display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap;}
+  .sec-h b{color:var(--accent);font-weight:600;}
+
+  /* frame */
+  .frame{border:1px solid var(--frameline);border-radius:10px;overflow:hidden;box-shadow:0 18px 44px -28px rgba(29,36,48,.5);background:var(--card);}
+  .chrome{display:flex;align-items:center;gap:.6rem;background:var(--chrome);padding:.55rem .9rem;border-bottom:1px solid var(--frameline);font-family:var(--sans);}
+  .dots{display:flex;gap:.4rem;} .dots i{width:11px;height:11px;border-radius:50%;background:var(--frameline);display:block;}
+  .urlpill{flex:1;background:var(--paper);border:1px solid var(--frameline);border-radius:6px;font-size:.76rem;color:var(--muted);padding:.28rem .7rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+  .projbar{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1rem;padding:.9rem 1.2rem;border-bottom:1px solid var(--line);}
+  .projbar h2{font-size:1.12rem;margin:0;}
+  .projbar .q{font-family:var(--sans);font-size:.77rem;color:var(--muted);flex-basis:100%;margin-top:-.15rem;}
+  .trace{margin-left:auto;font-family:var(--sans);font-size:.72rem;color:var(--muted);display:flex;align-items:center;gap:.4rem;opacity:.8;}
+  .trace svg{width:20px;height:20px;}
+  .miniexport{font-family:var(--sans);font-size:.72rem;color:var(--accent2);border:1px solid var(--line);border-radius:5px;padding:.22rem .55rem;}
+
+  .stage3{display:grid;grid-template-columns:186px 1fr 232px;gap:0;}
+  @media(max-width:960px){.stage3{grid-template-columns:1fr;}}
+
+  /* fork-map rail */
+  .rail{border-right:1px solid var(--line);padding:1rem .85rem 1.2rem;background:linear-gradient(180deg,transparent,var(--grid));}
+  @media(max-width:960px){.rail{border-right:0;border-bottom:1px solid var(--line);}}
+  .rail h3{font-family:var(--sans);font-size:.66rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);margin:0 0 .7rem;}
+  .forkmap{list-style:none;margin:0;padding:0;font-family:var(--sans);}
+  .forkmap li{display:flex;align-items:flex-start;gap:.55rem;padding:.4rem .45rem;border-radius:6px;font-size:.83rem;}
+  .forkmap li .n{width:1.4rem;height:1.4rem;flex:none;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;font-size:.7rem;color:var(--muted);background:var(--card);font-variant-numeric:tabular-nums;}
+  .forkmap li.cur{background:var(--anno-bg);}
+  .forkmap li.cur .n{background:var(--accent);color:var(--paper);border-color:var(--accent);}
+  .forkmap li.cur .lab{font-weight:700;}
+  .forkmap li .lab .sub{display:block;font-size:.64rem;color:var(--muted);font-weight:400;}
+  .mapdiv{font-family:var(--sans);font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:.85rem 0 .35rem;padding-left:.45rem;}
+  .persist li .n{border-style:dashed;border-color:var(--accent2);color:var(--accent2);}
+  .tracelink{display:flex;align-items:center;gap:.4rem;font-family:var(--sans);font-size:.72rem;color:var(--muted);opacity:.7;padding:.35rem .45rem;}
+
+  /* active fork surface */
+  .surface{padding:1.1rem 1.2rem 1.4rem;min-width:0;border-right:1px solid var(--line);}
+  @media(max-width:960px){.surface{border-right:0;border-bottom:1px solid var(--line);}}
+  .osf{font-family:var(--sans);font-size:.78rem;background:var(--anno-bg);border:1px solid var(--line);border-left:3px solid var(--anno);border-radius:0 6px 6px 0;padding:.55rem .8rem;color:var(--ink);margin-bottom:1rem;}
+  .osf b{color:var(--anno);}
+  .forktitle{font-size:1.1rem;margin:.2rem 0 .1rem;}
+  .forktitle small{font-family:var(--sans);font-size:.72rem;color:var(--muted);font-weight:400;margin-left:.4rem;}
+
+  .gate{font-family:var(--sans);font-size:.8rem;background:var(--card);border:1px dashed var(--accent);border-radius:7px;padding:.7rem .85rem;margin:.7rem 0 1rem;}
+  .gate .gq{font-weight:600;margin-bottom:.5rem;display:block;}
+  .gate .gq b{color:var(--accent);}
+  .gatebtns{display:flex;gap:.5rem;flex-wrap:wrap;}
+  .gatebtn{font-family:var(--sans);font-size:.8rem;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:.4rem .8rem;cursor:pointer;}
+  .gatebtn[aria-pressed="true"]{background:var(--accent);color:var(--paper);border-color:var(--accent);}
+  .gatebtn:focus-visible{outline:2px solid var(--anno);outline-offset:2px;}
+  .gatenote{font-family:var(--sans);font-size:.72rem;color:var(--accent2);margin-top:.5rem;}
+
+  .toolbar{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;margin:.2rem 0 .8rem;font-family:var(--sans);font-size:.76rem;}
+  .switch{display:inline-flex;align-items:center;gap:.4rem;color:var(--muted);cursor:pointer;user-select:none;}
+  .switch input{width:auto;}
+
+  .forkcards{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;}
+  @media(max-width:560px){.forkcards{grid-template-columns:1fr;}}
+  .fcard{border:1px solid var(--line);border-radius:8px;padding:.85rem .9rem;background:var(--card);position:relative;transition:border-color .15s,box-shadow .15s;}
+  .fcard:hover{border-color:var(--accent);box-shadow:0 6px 18px -12px rgba(29,36,48,.4);}
+  .fcard.rec{border-left:4px solid var(--accent);}
+  .fcard h4{font-family:var(--sans);font-size:.92rem;margin:0 0 .5rem;display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;}
+  .recbadge{font-family:var(--sans);font-size:.62rem;background:var(--accent);color:var(--paper);border-radius:999px;padding:.08rem .5rem;}
+  .facet{font-family:var(--sans);font-size:.76rem;display:grid;grid-template-columns:3.4rem 1fr;gap:.2rem .5rem;margin:.2rem 0;line-height:1.45;}
+  .facet .k{color:var(--muted);font-size:.68rem;padding-top:.1rem;}
+  .facet.reach .k{color:var(--reach);} .facet.blind .k{color:var(--bad);}
+  .facet.結末 .k{color:var(--accent2);}
+  .reachmeter{display:flex;align-items:center;gap:.5rem;margin:.6rem 0 .1rem;font-family:var(--sans);font-size:.64rem;color:var(--muted);}
+  .rm{flex:1;height:7px;border-radius:4px;background:var(--blind);overflow:hidden;display:flex;}
+  .rm i{height:100%;background:var(--reach);display:block;}
+  .cprev{font-family:var(--sans);font-size:.7rem;color:var(--accent2);margin-top:.5rem;opacity:0;max-height:0;overflow:hidden;transition:opacity .15s,max-height .15s;}
+  .fcard:hover .cprev,.fcard:focus-within .cprev{opacity:1;max-height:3rem;}
+  .picknote{font-family:var(--sans);font-size:.74rem;color:var(--ok);background:var(--card);border:1px solid var(--line);border-left:3px solid var(--ok);border-radius:0 5px 5px 0;padding:.45rem .7rem;margin-top:.9rem;}
+  /* differences switch: dim shared 射程, spotlight 死角 */
+  .forkcards.diff .facet.reach{opacity:.32;}
+  .forkcards.diff .facet.blind{background:var(--anno-bg);border-radius:4px;padding:.15rem .3rem;margin-left:-.3rem;}
+  .hidden{display:none;}
+
+  /* persistent docks */
+  .docks{padding:1rem .9rem 1.2rem;background:linear-gradient(180deg,transparent,var(--grid));}
+  .dock{margin-bottom:1.1rem;}
+  .dock h3{font-family:var(--sans);font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent2);margin:0 0 .5rem;display:flex;align-items:center;gap:.4rem;}
+  .dock .always{font-size:.58rem;background:var(--anno-bg);color:var(--accent2);border-radius:999px;padding:.05rem .45rem;letter-spacing:.05em;}
+  .obj{font-family:var(--sans);font-size:.75rem;border-left:2px solid var(--bad);padding:.15rem .6rem;margin:.45rem 0;color:var(--ink);}
+  .obj .tag{color:var(--bad);font-weight:700;font-size:.66rem;}
+  .obj .g{display:block;color:var(--muted);font-size:.68rem;}
+  .steel{font-family:var(--sans);font-size:.7rem;color:var(--accent);margin-top:.3rem;}
+  .terms{font-family:var(--sans);font-size:.74rem;display:flex;flex-wrap:wrap;gap:.3rem;margin:.35rem 0;}
+  .terms span{background:var(--anno-bg);border-radius:4px;padding:.1rem .45rem;color:var(--accent2);}
+  .terms.dead span{background:transparent;border:1px dashed var(--line);color:var(--muted);text-decoration:line-through;}
+  .termlabel{font-family:var(--sans);font-size:.64rem;color:var(--muted);margin-top:.5rem;}
+
+  /* fork journey */
+  .journey{display:flex;flex-wrap:wrap;gap:.55rem;align-items:stretch;}
+  .jstep{flex:1 1 140px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.7rem .8rem;position:relative;}
+  .jstep .jn{font-family:var(--sans);font-size:.62rem;color:var(--muted);letter-spacing:.1em;}
+  .jstep h4{font-size:.95rem;margin:.15rem 0 .3rem;}
+  .jstep p{font-family:var(--sans);font-size:.72rem;color:var(--muted);margin:0;}
+  .jstep.persist{border-style:dashed;border-color:var(--accent2);}
+  .jstep.persist .jn{color:var(--accent2);}
+  .jstep.prod{background:linear-gradient(180deg,transparent,var(--grid));}
+  .jstep .verdict{position:absolute;top:.5rem;right:.6rem;font-family:var(--sans);font-size:.56rem;letter-spacing:.05em;padding:.05rem .4rem;border-radius:999px;}
+  .v-refine{background:var(--anno-bg);color:var(--accent2);}
+  .v-new{background:#e2f4e8;color:var(--ok);}
+  @media (prefers-color-scheme:dark){.v-new{background:#22352b;}}
+  :root[data-theme="dark"] .v-new{background:#22352b;} :root[data-theme="light"] .v-new{background:#e2f4e8;}
+
+  /* patterns */
+  .patterns{display:grid;grid-template-columns:repeat(2,1fr);gap:.8rem;}
+  @media(max-width:720px){.patterns{grid-template-columns:1fr;}}
+  .pat{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.9rem 1rem;border-left:3px solid var(--accent2);}
+  .pat h4{margin:0 0 .3rem;font-size:.98rem;}
+  .pat p{margin:0;font-family:var(--sans);font-size:.8rem;color:var(--muted);}
+  .pat .src{display:block;margin-top:.4rem;font-size:.66rem;color:var(--accent2);}
+
+  /* guardrails */
+  .guards{display:grid;grid-template-columns:repeat(2,1fr);gap:.7rem;}
+  @media(max-width:640px){.guards{grid-template-columns:1fr;}}
+  .guard{font-family:var(--sans);font-size:.82rem;background:var(--card);border:1px solid var(--line);border-radius:7px;padding:.7rem .85rem;display:flex;gap:.55rem;}
+  .guard b{color:var(--accent);}
+  .guard .ic{color:var(--ok);font-weight:700;flex:none;}
+
+  footer{margin-top:3.4rem;border-top:1px solid var(--line);padding-top:1.3rem;font-family:var(--sans);font-size:.8rem;color:var(--muted);}
+  .foot-note{margin-top:.6rem;max-width:74ch;line-height:1.6;}
+  /* fork 4 elevated */
+  .layers3{display:grid;grid-template-columns:1.1fr 1.4fr 1fr;gap:1rem;align-items:start;}
+  @media(max-width:900px){.layers3{grid-template-columns:1fr;}}
+  .reflect{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.9rem 1rem;}
+  .reflect .rrow{display:grid;grid-template-columns:6.6rem 1fr;gap:.55rem;padding:.5rem 0;border-bottom:1px dashed var(--line);font-family:var(--sans);font-size:.8rem;align-items:baseline;}
+  .reflect .rrow:last-child{border-bottom:0;}
+  .reflect .rk{color:var(--accent);font-size:.72rem;font-weight:600;}
+  .reflect .rk small{display:block;color:var(--muted);font-weight:400;font-size:.62rem;}
+  .reflect .rv{color:var(--ink);line-height:1.5;}
+  .reflect .rv em{color:var(--muted);font-style:italic;}
+  .llmmeta{background:#fff7ed;border:1px solid #fed7aa;border-radius:7px;padding:.7rem .85rem;margin-top:.8rem;font-family:var(--sans);font-size:.8rem;line-height:1.55;color:#7a4a12;}
+  .llmmeta b{color:#9a5b12;}
+  @media (prefers-color-scheme:dark){.llmmeta{background:#2a2015;border-color:#5a4326;color:#d7a869;}.llmmeta b{color:#e0b878;}}
+  :root[data-theme="dark"] .llmmeta{background:#2a2015;border-color:#5a4326;color:#d7a869;}
+  :root[data-theme="dark"] .llmmeta b{color:#e0b878;}
+  :root[data-theme="light"] .llmmeta{background:#fff7ed;border-color:#fed7aa;color:#7a4a12;}
+  :root[data-theme="light"] .llmmeta b{color:#9a5b12;}
+  .valchips{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem;}
+  .valchips span{font-family:var(--sans);font-size:.73rem;background:var(--anno-bg);color:var(--accent2);border-radius:999px;padding:.2rem .6rem;}
+  .minicards{display:flex;flex-direction:column;gap:.5rem;}
+  .minicard{border:1px solid var(--line);border-radius:6px;padding:.5rem .65rem;font-family:var(--sans);font-size:.78rem;}
+  .minicard.add{border-style:dashed;border-color:var(--accent);color:var(--accent);}
+  .minicard b{display:block;font-size:.82rem;margin-bottom:.1rem;}
+  .minicard small{color:var(--muted);font-size:.68rem;}
+  .layer-h{font-family:var(--sans);font-size:.72rem;font-weight:600;color:var(--accent);margin:0 0 .5rem;letter-spacing:.04em;}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+</style>
+
+<button class="themebtn" id="themebtn" aria-label="テーマ切替">◑ テーマ</button>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Dialexis · 全体設定 v3.1 · Wireframe · ★ 追加：Fork 4「構えの論考」</p>
+    <h1>決定サーフェス<span class="en">Decision Surface — the tool maps, it does not answer</span></h1>
+    <p class="lede">UIの主組織原理を、システムの<b>位相の螺旋</b>から、ユーザーの<b>岐路（fork）の可視化</b>へ転換する。
+      あらゆる岐路で、<b>選択肢を〈射程・偏重・死角・結末〉とともに</b>示し、人間が根拠をもって選ぶ。
+      システムは地図を描くが、決して代わりに選ばない。実在の研究ワークフロー・ツールUX・決定支援UIの調査に接地。</p>
+    <p class="thesis">
+      <span class="was">位相の螺旋（システムの枠）</span><span class="arrow">→</span>
+      <span class="now">岐路の可視化（ユーザーの決定）</span>
+    </p>
+  </header>
+
+  <!-- ============ THE DECISION SURFACE ============ -->
+  <section>
+    <p class="sec-h">再設計後の研究画面 <b>/project — 現在の岐路：読解の構え</b></p>
+    <div class="frame">
+      <div class="chrome">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <div class="urlpill">dialexis / project / 共同幻想論 — 主体の位置 · 岐路：読解の構え</div>
+      </div>
+      <div class="projbar">
+        <h2>「共同幻想論」における主体の位置</h2>
+        <span class="trace" title="螺旋は背景の痕跡に降格。決定の履歴だけ残る">
+          <svg id="tracesvg" viewBox="0 0 40 40" aria-hidden="true"></svg>螺旋の痕跡：決定7件</span>
+        <span class="miniexport">↧ 出力</span>
+        <div class="q">Q: 吉本の「共同幻想」は、個の自立をどの前提の上で可能にしているのか</div>
+      </div>
+
+      <div class="stage3">
+        <!-- fork map -->
+        <div class="rail">
+          <h3>岐路マップ / Forks</h3>
+          <ol class="forkmap">
+            <li><span class="n">1</span><span class="lab">問いの成立<span class="sub">面白い×扱える×文献密度</span></span></li>
+            <li><span class="n">2</span><span class="lab">定位入口<span class="sub">SEP/CiNii/PhilPapers</span></span></li>
+            <li><span class="n">3</span><span class="lab">着目点<span class="sub">論争地図のどこ</span></span></li>
+            <li class="cur"><span class="n">4</span><span class="lab">読解の構え<span class="sub">条件付き開示</span></span></li>
+            <li><span class="n">5</span><span class="lab">貢献の型<span class="sub">解釈/批判創造/統合</span></span></li>
+          </ol>
+          <div class="mapdiv">常時サーフェス</div>
+          <ol class="forkmap persist">
+            <li><span class="n">◆</span><span class="lab">反論ドック<span class="sub">見落とし不安に常時</span></span></li>
+            <li><span class="n">◆</span><span class="lab">語彙ループ<span class="sub">捨てた語も記憶</span></span></li>
+          </ol>
+          <div class="mapdiv">工程 / 背景</div>
+          <div class="tracelink">↧ 出力（Handoff）</div>
+          <div class="tracelink">◜ 螺旋の痕跡（背景）</div>
+        </div>
+
+        <!-- active fork -->
+        <div class="surface">
+          <div class="osf">これらが「読み方」の道。選ぶのは<b>貴方</b>。道具は地図を描き、<b>答えない</b>。いつでも上書き・中断できる。</div>
+          <h3 class="forktitle">読解の構えを選ぶ<small>Fork 4 · 方法/レンズ</small></h3>
+
+          <div class="gate">
+            <span class="gq">まず一つだけ：概念を <b>どう見るか</b>（これが選択肢集合を決める）</span>
+            <div class="gatebtns">
+              <button class="gatebtn" id="g-ahist" aria-pressed="false">非歴史的な実体として</button>
+              <button class="gatebtn" id="g-hist" aria-pressed="true">歴史的な産物として</button>
+            </div>
+            <p class="gatenote">※ 分析哲学は方法を自己同定しないことが多い。だから<b>平置きメニューを見せない</b>——先にこの一問で分岐する（実データ由来の是正）。</p>
+          </div>
+
+          <div class="toolbar">
+            <label class="switch"><input type="checkbox" id="diffsw"> Differences Switch（共通を畳み差分だけ）</label>
+          </div>
+
+          <!-- historical branch -->
+          <div class="forkcards" id="branch-hist">
+            <div class="fcard rec">
+              <h4>系譜学 <small style="color:var(--muted);font-weight:400">Foucault</small> <span class="recbadge">推奨・上書き可</span></h4>
+              <div class="facet reach"><span class="k">射程</span><span>権力/知の生成、主体の構成、実践の偶然性</span></div>
+              <div class="facet"><span class="k">偏重</span><span>制度・実践を前景化</span></div>
+              <div class="facet blind"><span class="k">死角</span><span>著者の意図・論証の妥当性は射程外</span></div>
+              <div class="facet 結末"><span class="k">結末</span><span>批判的・系譜学的貢献</span></div>
+              <div class="reachmeter"><span>捉える</span><span class="rm"><i style="width:62%"></i></span><span>落とす</span></div>
+              <div class="cprev">→ 次に至る：制度史・共産党内力学・68年5月（第2部＝社会的生成へ）</div>
+            </div>
+            <div class="fcard">
+              <h4>概念史 <small style="color:var(--muted);font-weight:400">Koselleck</small></h4>
+              <div class="facet reach"><span class="k">射程</span><span>概念の意味変容、鞍の時代、対抗概念</span></div>
+              <div class="facet"><span class="k">偏重</span><span>意味構造の長期変動</span></div>
+              <div class="facet blind"><span class="k">死角</span><span>個別論証の妥当性は中心化しない</span></div>
+              <div class="facet 結末"><span class="k">結末</span><span>歴史的・統合的貢献</span></div>
+              <div class="reachmeter"><span>捉える</span><span class="rm"><i style="width:54%"></i></span><span>落とす</span></div>
+              <div class="cprev">→ 次に至る：「共同幻想」概念の通時/共時分析、対抗概念の布置</div>
+            </div>
+            <div class="fcard">
+              <h4>文脈主義 <small style="color:var(--muted);font-weight:400">Cambridge / Skinner</small></h4>
+              <div class="facet reach"><span class="k">射程</span><span>著者が「何をしていたか」、言語行為、論争文脈</span></div>
+              <div class="facet"><span class="k">偏重</span><span>同時代の意図を前景化</span></div>
+              <div class="facet blind"><span class="k">死角</span><span>長期の意味変動・非意図的構造</span></div>
+              <div class="facet 結末"><span class="k">結末</span><span>解釈的貢献（アナクロニズム回避）</span></div>
+              <div class="reachmeter"><span>捉える</span><span class="rm"><i style="width:50%"></i></span><span>落とす</span></div>
+              <div class="cprev">→ 次に至る：吉本の同時代論争（60年代新左翼）での企図の復元</div>
+            </div>
+            <div class="fcard" style="display:grid;place-items:center;color:var(--muted);font-family:var(--sans);font-size:.8rem;border-style:dashed;">
+              ＋ さらに開く：徴候的読解・脱構築<br><span style="font-size:.68rem">（Progressive Disclosure）</span>
+            </div>
+          </div>
+
+          <!-- analytic branch (hidden until gate) -->
+          <div class="forkcards hidden" id="branch-ahist">
+            <div class="fcard rec">
+              <h4>論証分析 <small style="color:var(--muted);font-weight:400">argument reconstruction</small> <span class="recbadge">推奨・上書き可</span></h4>
+              <div class="facet reach"><span class="k">射程</span><span>前提/結論の分離、推論の妥当性、隠れた前提</span></div>
+              <div class="facet"><span class="k">偏重</span><span>論理構造を前景化</span></div>
+              <div class="facet blind"><span class="k">死角</span><span>歴史的生成・社会的文脈は射程外</span></div>
+              <div class="facet 結末"><span class="k">結末</span><span>批判的・解釈的貢献</span></div>
+              <div class="reachmeter"><span>捉える</span><span class="rm"><i style="width:58%"></i></span><span>落とす</span></div>
+              <div class="cprev">→ 次に至る：P1..C 標準形・寛容の原理での隠れ前提補填</div>
+            </div>
+            <div class="fcard">
+              <h4>概念分析 <small style="color:var(--muted);font-weight:400">conceptual analysis</small></h4>
+              <div class="facet reach"><span class="k">射程</span><span>必要十分条件、直観、反例</span></div>
+              <div class="facet"><span class="k">偏重</span><span>非歴史的な本質</span></div>
+              <div class="facet blind"><span class="k">死角</span><span>概念の歴史的変容</span></div>
+              <div class="facet 結末"><span class="k">結末</span><span>解釈的貢献</span></div>
+              <div class="reachmeter"><span>捉える</span><span class="rm"><i style="width:46%"></i></span><span>落とす</span></div>
+              <div class="cprev">→ 次に至る：「共同幻想」の分析的定義と反例テスト</div>
+            </div>
+            <div class="fcard">
+              <h4>思考実験 <small style="color:var(--muted);font-weight:400">thought experiment</small></h4>
+              <div class="facet reach"><span class="k">射程</span><span>直観の喚起、可能性空間、反例構成</span></div>
+              <div class="facet"><span class="k">偏重</span><span>論理的可能性を前景化</span></div>
+              <div class="facet blind"><span class="k">死角</span><span>経験的妥当性・歴史的現実</span></div>
+              <div class="facet 結末"><span class="k">結末</span><span>批判的・創造的貢献</span></div>
+              <div class="reachmeter"><span>捉える</span><span class="rm"><i style="width:42%"></i></span><span>落とす</span></div>
+              <div class="cprev">→ 次に至る：個の自立が成立/破綻する境界事例の設計</div>
+            </div>
+          </div>
+
+          <p class="picknote">選ぶと <b>根拠つき決定ノード</b>（Decision Ledger）として残る：「歴史的産物と見る → 系譜学。理由：第2部で社会的生成を扱うため」。後で撤回・分岐できる。</p>
+        </div>
+
+        <!-- persistent docks -->
+        <div class="docks">
+          <div class="dock">
+            <h3>◆ 反論ドック <span class="always">常時</span></h3>
+            <div class="obj"><span class="tag">[e] 外在</span> 呼びかけ論から見れば「自立」自体がイデオロギー的誤認では
+              <span class="g">根拠：Althusser, ISA論文（要一次確認）</span></div>
+            <div class="obj"><span class="tag">[i] 内在</span> テクストは対幻想の分離でなく相互浸透を示唆
+              <span class="g">根拠：共同幻想論 該当節（頁ロケータ未）</span></div>
+            <div class="steel">🛡 最強形にして提示（steelman）</div>
+          </div>
+          <div class="dock">
+            <h3>◆ 語彙ループ <span class="always">常時</span></h3>
+            <div class="terms"><span>共同幻想</span><span>対幻想</span><span>自己幻想</span></div>
+            <div class="termlabel">試して外した語（記憶）</div>
+            <div class="terms dead"><span>collective illusion</span><span>national fantasy</span></div>
+            <div class="steel" style="color:var(--accent2)">検索は与えた語の質までしか良くならない</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FORK 4 ELEVATED ============ -->
+  <section>
+    <p class="sec-h"><span style="color:var(--ok);font-weight:700">★ v3.1 追加 —</span> この岐路は特別だ <b>構えを「選ぶ」から「論考する」へ — 選択が射程・方向・結論を規定する</b></p>
+    <div class="osf" style="border-left-color:var(--accent);font-size:.88rem;margin-bottom:1.1rem">
+      <b>構えの選択＝プロブレマティークの選択＝射程の決定＝到達可能な結論の先取り。</b>
+      研究全体で最高レバレッジの契機。だからポータルは「ここは重要な場面だ」と意識し、メニューを差し出すだけで済ませない。提案はする、が<b>選択自体を吟味の対象にする</b>。
+    </div>
+
+    <div class="layers3">
+      <!-- layer 1: extensible -->
+      <div>
+        <p class="layer-h">① 拡張可能なメニュー</p>
+        <div class="minicards">
+          <div class="minicard"><b>AI提案の6構え</b><small>系譜学・概念史・文脈主義／論証分析・概念分析・思考実験（足場）</small></div>
+          <div class="minicard add"><b>＋ 自分で構えを定義</b><small>独自の読解枠・規準を登録</small></div>
+          <div class="minicard add"><b>＋ 複数を三角測量</b><small>例：系譜学 × 精神分析（学際的統合）</small></div>
+        </div>
+        <p class="muted" style="font-size:.76rem;margin-top:.6rem;font-family:var(--sans)">固定メニューは<b style="color:var(--accent)">足場であって檻ではない</b>。閉じた選択肢集合は、それ自体が押し付けになる。</p>
+      </div>
+
+      <!-- layer 2: the deliberation (J-layer) -->
+      <div>
+        <p class="layer-h">② 選択自体を論考する（AI特性の活用＝J層）</p>
+        <div class="reflect">
+          <div class="rrow"><span class="rk">目的<small>本当の問い</small></span><span class="rv">「主体の位置」を問うのは、<em>個の自立の可能性</em>を擁護したいのか、それとも<em>その不可能性</em>を暴きたいのか？ 目的が構えを変える。</span></div>
+          <div class="rrow"><span class="rk">背景<small>ハビトゥス</small></span><span class="rv">貴方の訓練は分析系？大陸系？ どの構えを「自然」と感じるかは、その傾きの現れ（Bourdieu）。</span></div>
+          <div class="rrow"><span class="rk">誤謬<small>枠の前提</small></span><span class="rv">「自立」を自明の善と前提していないか？ その前提が系譜学を最初から遠ざけているかも。</span></div>
+          <div class="rrow"><span class="rk">メタ認知<small>自覚の促し</small></span><span class="rv">この構えを選ぶと、<em>到達できる結論の範囲がここで決まる</em>。それを承知で選びますか？</span></div>
+          <div class="llmmeta">🤖 <b>LLMのメタ認知（自己申告）</b>：このメニューは私の学習データの偏り（大陸系・英語圏寄り）を帯びています。私は貴方を<b>分析的伝統や非西洋の読解から逸らしている</b>かもしれない。私が挙げていない構えを、貴方自身が疑ってください。<br><span style="opacity:.85">＝公理6（自己申告≠検証）・公理7（形式充足≠真理）・自己不信の可視化。オラクルでないことの最も深い形。</span></div>
+        </div>
+      </div>
+
+      <!-- layer 3: philosophy's priorities -->
+      <div>
+        <p class="layer-h">③ 哲学の優先順位で統べる</p>
+        <p class="muted" style="font-size:.78rem;font-family:var(--sans);margin:0 0 .3rem">この対話は恣意でなく、哲学が重視する価値で導かれる：</p>
+        <div class="valchips">
+          <span>一次資料への忠実</span><span>妥当性 ≠ 健全性</span><span>問いの真正性</span>
+          <span>前提の可視化</span><span>反証可能性</span><span>寛容の原理</span>
+          <span>統合不能の保持</span><span>立場の再帰的自覚</span>
+        </div>
+        <p class="muted" style="font-size:.74rem;font-family:var(--sans);margin-top:.6rem">論考が漂流しないための<b style="color:var(--accent2)">規準</b>。どの構えも、これらに照らして射程と死角が測られる。</p>
+      </div>
+    </div>
+
+    <p class="picknote" style="margin-top:1rem">負荷とのバランス：論考は<b>opt-in</b>。素早く選びたい人には Guided Default が残り、深く構えたい人に論考モードが開く（Progressive Disclosure）。「重要な場面だと意識する」ことと「毎回長い対話を強制する」ことは違う。</p>
+  </section>
+
+  <!-- ============ REVISED FORK JOURNEY ============ -->
+  <section>
+    <p class="sec-h">改訂された研究の岐路 <b>外部調査で検証：確認3・修正2・反証1・追加2</b></p>
+    <div class="journey">
+      <div class="jstep"><div class="jn">FORK 1</div><h4>問いの成立</h4><p>面白い×扱える×文献密度。「意味 ⇄ 論文になる」の緊張を可視化。</p><span class="verdict v-refine">修正</span></div>
+      <div class="jstep"><div class="jn">FORK 2</div><h4>定位入口</h4><p>伝統で情報源を選ぶ。PhilPapersはbrowse↔searchの二モード。</p></div>
+      <div class="jstep"><div class="jn">FORK 3</div><h4>着目点</h4><p>論争地図のどの立場・論点に立つか。</p></div>
+      <div class="jstep"><div class="jn">FORK 4</div><h4>読解の構え</h4><p>「非歴史的/歴史的」ゲートで選択肢集合ごと入替（条件付き）。</p><span class="verdict v-refine">修正</span></div>
+      <div class="jstep"><div class="jn">FORK 5</div><h4>貢献の型</h4><p>解釈/批判・創造/統合。批判と創造は融合。</p></div>
+      <div class="jstep persist"><div class="jn">常時</div><h4>◆ 反論ドック</h4><p>「決定的反論の見落とし」不安に、セッション全体で常時。</p><span class="verdict v-new">追加</span></div>
+      <div class="jstep persist"><div class="jn">常時</div><h4>◆ 語彙ループ</h4><p>反復するキーワード精緻化。捨てた語も記憶。</p><span class="verdict v-new">追加</span></div>
+      <div class="jstep prod"><div class="jn">工程</div><h4>↧ 出力 Handoff</h4><p>用途×粒度×形式。研究の岐路でなく<b>執筆/持出しの工程</b>に再分類。</p><span class="verdict v-refine">再分類</span></div>
+    </div>
+    <p class="lede" style="font-size:.86rem;margin-top:1rem;color:var(--muted)">
+      ※「統合 vs 保持」は独立岐路としては実証が弱く、Fork 5 内の一選択へ降格。旧「7方法の平置きメニュー」は<b>システム中心の押し付け</b>としてデータが否定→ゲートで条件化。</p>
+  </section>
+
+  <!-- ============ 7 PATTERNS ============ -->
+  <section>
+    <p class="sec-h">決定サーフェスの7パターン <b>Horvitz混合主導性・MS Human-AI指針・NN/gに接地</b></p>
+    <div class="patterns">
+      <div class="pat"><h4>1. Fork Cards</h4><p>一岐路＝カード群。各カードに固定4スロット〈射程・偏重・死角・結末〉。トレードオフを走査可能な構造に。<span class="src">comparison-table / pros-cons（NN/g）</span></p></div>
+      <div class="pat"><h4>2. Reach / Blind-spot メーター</h4><p>各選択肢が捉える範囲と落とす範囲を被覆バーで。<b>判定でなく</b>被覆の提示。<span class="src">CDS証拠段階表示・仮説駆動支援（arXiv 2302.12389）</span></p></div>
+      <div class="pat"><h4>3. Differences Switch</h4><p>共通地を畳み、射程と死角の<b>分岐だけ</b>を前景化。<span class="src">comparison-table differences switch（uxpatterns.dev）</span></p></div>
+      <div class="pat"><h4>4. Progressive Fork Disclosure</h4><p>主要な岐路を一行で。深部・サブ岐路は要求時に開示（選択過多を防ぐ・同時≤5）。<span class="src">NN/g Progressive Disclosure</span></p></div>
+      <div class="pat"><h4>5. Guided Default ＋ Escape Hatch</h4><p>地図製作者の推奨を予め点す。<b>常に上書き・中断可能</b>。システムは岐路を自動で進めない。<span class="src">Horvitz sensible defaults / MS G9・G17</span></p></div>
+      <div class="pat"><h4>6. Consequence Preview（結末トレース）</h4><p>岐路にホバーで「その先に至る問い・伝統」を確定前にプレビュー。可逆。<span class="src">Horvitz「誤推測のコスト最小化」</span></p></div>
+      <div class="pat"><h4>7. Option-Space Framing Header</h4><p>各岐路に「これらが道。選ぶのは貴方。道具は地図を描き答えない」を明示。オラクル化を打ち消す。<span class="src">Lawfare「AIオラクルの神話」/ 一橋「地図製作者」</span></p></div>
+    </div>
+  </section>
+
+  <!-- ============ GUARDRAILS ============ -->
+  <section>
+    <p class="sec-h">ツールUXの鉄則 <b>採用/離脱の実データ（r/ObsidianMD・PKM・Elicit・Zotero）</b></p>
+    <div class="guards">
+      <div class="guard"><span class="ic">✓</span><span><b>装飾グラフを作らない</b>。グローバルグラフは「見て楽しいが使えない毛玉／優先度・状態・鮮度を運ばない」。有界・局所の地図のみ。</span></div>
+      <div class="guard"><span class="ic">✓</span><span><b>構造を思考の途中で強制しない</b>。分類は作業前に要求せず、創発させる。</span></div>
+      <div class="guard"><span class="ic">✓</span><span><b>既存ツールの「上に乗る」</b>。Zotero/PhilPapers/Obsidianへ低摩擦で入出力。移行を強制しない。</span></div>
+      <div class="guard"><span class="ic">✓</span><span><b>可搬。消えても各ファイルは残る</b>。素のMarkdown/BibTeX/JSONで持ち出せる（退場可能性）。</span></div>
+      <div class="guard"><span class="ic">✓</span><span><b>道具作りを仕事にしない</b>。時間内滞在でなく「決定と成果」を最適化（M0 C7）。</span></div>
+      <div class="guard"><span class="ic">✓</span><span><b>判断を出す、データ投棄で終わらない</b>。統合されたトレードオフを示し、不確実性は明示（Elicitの離脱理由の回避）。</span></div>
+    </div>
+  </section>
+
+  <footer>
+    Dialexis 全体設定 v3.1 — 決定サーフェス。実在の哲学研究ワークフロー／研究ツールUX／決定支援UIの外部調査（全URL付き・半田様承認済モデル）に接地。v3.1でFork 4「構えの論考」（ユーザー独自定義＋選択自体の論考＋LLMメタ認知＋哲学の優先順位）を追加。
+    <p class="foot-note">本ワイヤーフレームは情報設計の提案であり実装確定物ではない。基層（コネクタ・provenance・SQLite）は既存流用、変更は主にIA（岐路サーフェス化）と可視化＝GENESIS A/B級（憲法変更なし）。数値・例（決定7件・CiNii項目・反論内容）は構造説明のためのモックで実データではない。未検証（第5条）：これは公開資料への接地であり、実在の哲学研究者へのユーザーテストは未実施。</p>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement, btn=document.getElementById('themebtn');
+  function cur(){var s=root.getAttribute('data-theme');return s||(window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}
+  btn.addEventListener('click',function(){root.setAttribute('data-theme', cur()==='dark'?'light':'dark');});
+
+  // gate: swap the visible option-card set (conditional disclosure = the empirical fix)
+  var gH=document.getElementById('g-hist'), gA=document.getElementById('g-ahist');
+  var bH=document.getElementById('branch-hist'), bA=document.getElementById('branch-ahist');
+  function setGate(hist){
+    gH.setAttribute('aria-pressed', hist?'true':'false');
+    gA.setAttribute('aria-pressed', hist?'false':'true');
+    bH.classList.toggle('hidden', !hist);
+    bA.classList.toggle('hidden', hist);
+  }
+  gH.addEventListener('click',function(){setGate(true);});
+  gA.addEventListener('click',function(){setGate(false);});
+
+  // differences switch
+  var sw=document.getElementById('diffsw');
+  sw.addEventListener('change',function(){
+    bH.classList.toggle('diff', sw.checked);
+    bA.classList.toggle('diff', sw.checked);
+  });
+
+  // demoted spiral: a tiny corner trace glyph (background, not the navigator)
+  var svg=document.getElementById('tracesvg'), NS='http://www.w3.org/2000/svg';
+  var d='', cx=20, cy=20, a0=-Math.PI/2, turns=1.4, steps=60, rOut=15, rIn=3;
+  for(var s=0;s<=steps;s++){var f=s/steps, th=a0+turns*2*Math.PI*f, r=rOut-(rOut-rIn)*f;
+    d+=(s===0?'M':'L')+(cx+r*Math.cos(th)).toFixed(1)+' '+(cy+r*Math.sin(th)).toFixed(1);}
+  var p=document.createElementNS(NS,'path');
+  p.setAttribute('d',d);p.setAttribute('fill','none');p.setAttribute('stroke','currentColor');
+  p.setAttribute('stroke-width','1.3');p.setAttribute('opacity','.55');svg.appendChild(p);
+})();
+</script>
