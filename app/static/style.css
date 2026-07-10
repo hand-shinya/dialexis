@@ -94,3 +94,14 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .facet.out .fk { color: var(--accent2); }
 .llm-meta { font-family: system-ui, sans-serif; font-size: .8rem; background: #fff7ed;
   border: 1px solid #fed7aa; border-radius: 5px; padding: .5rem .7rem; margin: .6rem 0; }
+
+/* structure-bearing view (replaces the decorative cose graph) */
+.struct-h { font-family: system-ui, sans-serif; font-size: .9rem; border-left: 4px solid var(--line);
+  padding-left: .5rem; margin: 1rem 0 .4rem; }
+.struct-node { border-left: 3px solid var(--line); padding: .4rem .7rem; margin: .3rem 0;
+  cursor: pointer; border-radius: 0 4px 4px 0; }
+.struct-node:hover, .struct-node:focus-visible { background: #faf8f3; outline: 2px solid var(--accent); outline-offset: -2px; }
+.struct-node b { font-weight: 600; }
+.struct-rel { margin-top: .2rem; }
+.struct-rel i { font-style: italic; color: var(--accent); }
+#manual-entry summary { font-family: system-ui, sans-serif; font-size: .85rem; cursor: pointer; color: var(--muted); }

@@ -333,7 +333,9 @@ async function counterRun() {
 
 /* ---------- project graph ---------- */
 
-let PROJ = null;
+let PROJ = null, PROJ_G = null, PROJ_PROV = {};
+// Type accent color for the structure view's left border: meaning-bearing type
+// coding in a readable list, NOT a decorative dot cloud (the removed cose graph).
 const NODE_COLORS = { question: "#2e5c7a", claim: "#7a5c2e", evidence: "#2f7d4f",
   counterclaim: "#b91c1c", uncertainty: "#b45309", interpretation: "#6d28d9",
   decision: "#1d2430", note: "#6b7280", source: "#0e7490" };
@@ -348,6 +350,7 @@ async function projRefresh() {
   const g = await api(`/api/projects/${PROJ}/graph`);
   const provByNode = {};
   g.provenance.forEach(p => (provByNode[p.node_id] ||= []).push(p));
+  PROJ_G = g; PROJ_PROV = provByNode;
 
   for (const selId of ["e-src", "e-dst"]) {
     $(selId).innerHTML = g.nodes.map(n =>
@@ -358,37 +361,62 @@ async function projRefresh() {
   if ($("arg-cnode")) $("arg-cnode").innerHTML = `<option value="">— ${T.arg_conclusion || "conclusion node"} —</option>` + nodeOpts;
   argRender(g.arguments || []);
 
-  if (window.cytoscape) {
-    const cy = cytoscape({
-      container: $("graph"),
-      elements: [
-        ...g.nodes.map(n => ({ data: { id: "n" + n.id, label: n.title.slice(0, 30),
-          type: n.type, raw: n } })),
-        ...g.edges.map(e => ({ data: { id: "e" + e.id, source: "n" + e.src,
-          target: "n" + e.dst, label: e.rel } })),
-      ],
-      style: [
-        { selector: "node", style: {
-          "background-color": ele => NODE_COLORS[ele.data("type")] || "#888",
-          label: "data(label)", "font-size": "10px", "text-wrap": "wrap",
-          "text-max-width": "90px", "text-valign": "bottom", "text-margin-y": "4px",
-          width: 26, height: 26 } },
-        { selector: "edge", style: {
-          width: 1.5, "line-color": "#b9b09c", "target-arrow-shape": "triangle",
-          "target-arrow-color": "#b9b09c", "curve-style": "bezier",
-          label: "data(label)", "font-size": "8px", color: "#6b7280" } },
-      ],
-      layout: { name: "cose", animate: false },
-    });
-    cy.on("tap", "node", evt => projShowNode(evt.target.data("raw"), provByNode));
-    $("graph-fallback").innerHTML = "";
-  } else {
-    $("graph").style.display = "none";
-    $("graph-fallback").innerHTML = `<div class="card"><table class="plain">` +
-      g.nodes.map(n => `<tr><td><span class="badge">${n.type}</span></td>
-        <td>${esc(n.title)}</td><td><span class="badge conf-${n.confidence}">${n.confidence}</span></td></tr>`).join("")
-      + "</table></div>";
+  renderStructure(g, provByNode);
+}
+
+// Structure-bearing view of the research process — replaces the decorative
+// force-graph (a "hairball that carries no priority/status/freshness", per the
+// tool-UX research and 半田様's critique). Nodes are grouped by type in a reading
+// order; each shows confidence, provenance count and outgoing relations. Decisions
+// (reading-stance choices) and counterclaims (objections) are first-class rows,
+// not dots. Click/Enter opens the node detail.
+const STRUCT_ORDER = ["question", "decision", "claim", "counterclaim", "evidence",
+  "interpretation", "uncertainty", "source", "note"];
+
+function renderStructure(g, provByNode) {
+  const box = $("structure");
+  if (!box) return;
+  const jp = LANG === "ja";
+  if (!g.nodes.length) {
+    box.innerHTML = `<div class="card"><h2>${jp ? "研究過程の構造" : "Research structure"}</h2>
+      <p class="muted">${jp
+        ? "まだノードがありません。探索（/explore）で見つけた出典を「採用」するか、下の「読解の構え」を選ぶと、ここに研究過程が構造として現れます。"
+        : "No nodes yet. Adopt sources from /explore, or choose a reading stance below — the research process appears here as structure."}</p></div>`;
+    return;
   }
+  const titles = {};
+  g.nodes.forEach(n => { titles[n.id] = n.title; });
+  const edgeBySrc = {};
+  g.edges.forEach(e => (edgeBySrc[e.src] ||= []).push(e));
+  let html = `<div class="card"><h2>${jp ? "研究過程の構造" : "Research structure"}</h2>`;
+  for (const t of STRUCT_ORDER) {
+    const group = g.nodes.filter(n => n.type === t);
+    if (!group.length) continue;
+    const col = NODE_COLORS[t] || "#888";
+    html += `<h3 class="struct-h" style="border-left-color:${col}">${esc(T["type_" + t] || t)}
+      <span class="muted">${group.length}</span></h3>`;
+    for (const n of group) {
+      const provs = provByNode[n.id] || [];
+      const rels = (edgeBySrc[n.id] || []).map(e =>
+        `→ <i>${esc(e.rel)}</i> → ${esc(titles[e.dst] || e.dst)}`).join(" · ");
+      html += `<div class="struct-node" style="border-left-color:${col}"
+          tabindex="0" role="button" onclick="projShowNodeById(${n.id})"
+          onkeydown="if(event.key==='Enter')projShowNodeById(${n.id})">
+        <span class="badge conf-${n.confidence}">${esc(n.confidence)}</span>
+        <b>${esc(n.title)}</b>
+        ${n.origin === "ai" ? `<span class="badge ai">ai</span>` : ""}
+        ${provs.length ? `<span class="srcline">· ${provs.length} ${jp ? "出典" : "src"}</span>` : ""}
+        ${rels ? `<div class="srcline struct-rel">${rels}</div>` : ""}
+      </div>`;
+    }
+  }
+  html += `</div>`;
+  box.innerHTML = html;
+}
+
+function projShowNodeById(id) {
+  const n = ((PROJ_G && PROJ_G.nodes) || []).find(x => x.id === id);
+  if (n) projShowNode(n, PROJ_PROV || {});
 }
 
 function projShowNode(n, provByNode) {

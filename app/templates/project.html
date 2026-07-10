@@ -7,13 +7,30 @@
   <a class="btn" href="/api/projects/{{ project.id }}/export.md" target="_blank">{{ t.export_md }}</a>
   <a class="btn" href="/api/projects/{{ project.id }}/export.jsonld" target="_blank">{{ t.export_jsonld }}</a>
 </p>
-<div class="two-col">
-  <div>
-    <div id="graph" class="graphbox"></div>
-    <div id="graph-fallback"></div>
+<!-- primary: structure-bearing view of the research process (replaces the
+     decorative force-graph). Manual node/edge entry is demoted to <details>
+     below (structure should emerge, not be demanded up front). -->
+<div id="structure"></div>
+<div id="node-detail" class="card" style="display:none"></div>
+
+<div class="card">
+  <h2>{{ t.arg_panel_title }}</h2>
+  <p class="muted">P1..Pn ⊢ C — {{ t.arg_hidden }} · {{ t.arg_voice }} · {{ t.arg_locator }} · {{ t.arg_validity }} ≠ {{ t.arg_soundness }}</p>
+  <div class="formrow">
+    <input id="arg-title" placeholder="{{ t.arg_title }}">
+    <input id="arg-conclusion" placeholder="{{ t.arg_conclusion }}">
+    <select id="arg-cnode"></select>
   </div>
-  <div>
-    <div class="card">
+  <button onclick="argAdd()">{{ t.arg_add }}</button>
+  <div id="arg-list"></div>
+</div>
+
+<div class="card" id="fork-stance"></div>
+
+<details class="card" id="manual-entry">
+  <summary>手動で追加（上級） / Add manually (advanced)</summary>
+  <div class="two-col" style="margin-top:.8rem">
+    <div>
       <h2>{{ t.node_add }}</h2>
       <div class="formrow">
         <select id="n-type">
@@ -40,7 +57,7 @@
       </div>
       <button onclick="projAddNode()">{{ t.node_add }}</button>
     </div>
-    <div class="card">
+    <div>
       <h2>{{ t.edge_add }}</h2>
       <div class="formrow">
         <select id="e-src"></select>
@@ -53,25 +70,9 @@
       </div>
       <button onclick="projAddEdge()">{{ t.edge_add }}</button>
     </div>
-    <div id="node-detail" class="card" style="display:none"></div>
   </div>
-</div>
-
-<div class="card">
-  <h2>{{ t.arg_panel_title }}</h2>
-  <p class="muted">P1..Pn ⊢ C — {{ t.arg_hidden }} · {{ t.arg_voice }} · {{ t.arg_locator }} · {{ t.arg_validity }} ≠ {{ t.arg_soundness }}</p>
-  <div class="formrow">
-    <input id="arg-title" placeholder="{{ t.arg_title }}">
-    <input id="arg-conclusion" placeholder="{{ t.arg_conclusion }}">
-    <select id="arg-cnode"></select>
-  </div>
-  <button onclick="argAdd()">{{ t.arg_add }}</button>
-  <div id="arg-list"></div>
-</div>
-
-<div class="card" id="fork-stance"></div>
+</details>
 {% endblock %}
 {% block scripts %}
-<script src="/static/vendor/cytoscape.min.js"></script>
 <script>projectInit({{ project.id }});</script>
 {% endblock %}
