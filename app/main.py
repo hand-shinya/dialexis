@@ -205,6 +205,80 @@ def _sep_relevant(entry_title: str, sep_term: str) -> bool:
     return any(t in hay for t in _sig_tokens(sep_term))
 
 
+def _has_latin(s: str) -> bool:
+    return bool(re.search(r"[A-Za-z]", s or ""))
+
+
+def _entity_anchor(ent: dict) -> str | None:
+    """The English anchor a concept would hand to SEP (English-only). None if the
+    entity has no English sitelink/label — then SEP cannot be probed for it."""
+    ed = ent["data"]
+    return ed["wikipedia"].get("en") or ed.get("label_en") or None
+
+
+def _pick_resolution(scored: list) -> str | None:
+    """Choose which Wikidata candidate to resolve a CONCEPT query to. Wikidata's
+    search ranks a narrower/unit/name sense first for bare polysemous nouns
+    (時間→'hour' not 'Time'; 存在→'Entity' not 'Existence'), so blindly taking
+    [0] loses the philosophical sense. Rule, conservative & strictly-improving:
+      • keep [0] when it is a person, or already yields a relevant SEP entry
+        (every currently-working query is untouched — no regression);
+      • only when [0] is a concept with NO relevant SEP entry, prefer the first
+        sibling that DOES (the philosophy authority disambiguates the sense);
+      • if none qualifies, fall back to [0] (徳→all names: unchanged).
+    `scored` is in Wikidata order: [{qid, is_person, anchor, sep_ok}]."""
+    if not scored:
+        return None
+    top = scored[0]
+    if top["is_person"] or top["sep_ok"]:
+        return top["qid"]
+    for c in scored[1:]:
+        if c["sep_ok"] and not c["is_person"]:
+            return c["qid"]
+    return top["qid"]
+
+
+async def _sep_ok(anchor: str) -> bool:
+    """Does SEP have an entry whose first hit is actually relevant to `anchor`?
+    Uses the search-result title only (cheap; no full-entry fetch)."""
+    r = await sep.search(anchor)
+    return (not r["error"] and bool(r["data"])
+            and _sep_relevant(r["data"][0].get("title", ""), anchor))
+
+
+async def _resolve_entity(cands: list, lang: str, n: int = 4) -> dict:
+    """SEP-guided concept disambiguation (see _pick_resolution). Fetches [0]
+    first and returns it unchanged for persons or when it already resolves to a
+    relevant SEP sense — so the common good case costs one entity fetch and one
+    (later-cached) SEP probe. Only a concept [0] with no SEP entry pays for the
+    bounded sibling scan."""
+    e0 = await wikidata.entity(cands[0]["qid"], lang)
+    if e0["error"]:
+        return e0
+    a0 = _entity_anchor(e0)
+    if e0["data"].get("is_person") or not a0 or not _has_latin(a0) or await _sep_ok(a0):
+        return e0  # [0] is a person or already good → untouched (no regression)
+    sibs = cands[1:n]
+    if not sibs:
+        return e0
+    ents = await asyncio.gather(*[wikidata.entity(c["qid"], lang) for c in sibs])
+    scored = [{"qid": cands[0]["qid"], "is_person": bool(e0["data"].get("is_person")),
+               "anchor": a0, "sep_ok": False, "ent": e0}]
+    for c, e in zip(sibs, ents):
+        isp = bool(e["data"].get("is_person")) if not e["error"] else False
+        anc = _entity_anchor(e) if not e["error"] else None
+        scored.append({"qid": c["qid"], "is_person": isp, "anchor": anc,
+                       "sep_ok": False, "ent": e})
+    idxs = [i for i, s in enumerate(scored)
+            if i > 0 and not s["is_person"] and s["anchor"] and _has_latin(s["anchor"])]
+    oks = await asyncio.gather(*[_sep_ok(scored[i]["anchor"]) for i in idxs])
+    for i, ok in zip(idxs, oks):
+        scored[i]["sep_ok"] = ok
+    qid = _pick_resolution([{k: s[k] for k in ("qid", "is_person", "anchor", "sep_ok")}
+                            for s in scored])
+    return next((s["ent"] for s in scored if s["qid"] == qid), e0)
+
+
 @app.get("/api/explore")
 async def api_explore(q: str, lang: str = "en"):
     if not q.strip():
@@ -223,7 +297,11 @@ async def api_explore(q: str, lang: str = "en"):
     author_ja = ""
     title, wp_lang, all_qids = None, "en", []  # safe defaults if no entity
     if not wd["error"] and wd["data"]:
-        entity = await wikidata.entity(wd["data"][0]["qid"], lang)
+        # SEP-guided disambiguation instead of a blind [0]: bare polysemous CJK
+        # nouns rank a unit/name sense first (時間→hour, 存在→Entity), which lost
+        # the philosophical entry. Strictly-improving: persons and already-good
+        # top hits are untouched (see _resolve_entity / _pick_resolution).
+        entity = await _resolve_entity(wd["data"], lang)
         if not entity["error"]:
             ed = entity["data"]
             is_person = ed.get("is_person", False)
