@@ -72,9 +72,38 @@ def render(request: Request, name: str, **ctx):
 
 # ---------- pages ----------
 
+# Question-first entry (PoC A): a curious person who does not yet know any
+# philosopher's name still needs a door. Each door is a human-language question
+# (the novice's own voice) that runs the existing /explore on a concept SEED.
+# Every seed below was EMPIRICALLY VERIFIED (2026-07-12, per-language) to return
+# a real SEP entry + scholarship — known wrong-sense resolutions (時間→Hour,
+# 存在→Entity, 徳→誤爆; en justice→None, freedom→"Divine Freedom") are excluded
+# so no door leads to an empty room. Extend only with re-verified seeds.
+QUESTION_DOORS = {
+    "ja": [
+        {"seed": "愛", "q": "愛とは何か"},
+        {"seed": "自由", "q": "自由とは何か"},
+        {"seed": "正義", "q": "「正しさ」とは何か"},
+        {"seed": "幸福", "q": "どう生きれば幸せか"},
+        {"seed": "真理", "q": "「本当のこと」はあるのか"},
+        {"seed": "意識", "q": "心とは何か"},
+        {"seed": "美", "q": "美しさとは何か"},
+    ],
+    "en": [
+        {"seed": "love", "q": "What is love?"},
+        {"seed": "happiness", "q": "How should I live to be happy?"},
+        {"seed": "truth", "q": "Is there such a thing as truth?"},
+        {"seed": "consciousness", "q": "What is the mind?"},
+        {"seed": "beauty", "q": "What is beauty?"},
+    ],
+}
+
+
 @app.get("/", response_class=HTMLResponse)
 def page_home(request: Request):
-    return render(request, "index.html")
+    lang = pick_lang(request)
+    return render(request, "index.html",
+                  question_doors=QUESTION_DOORS.get(lang, QUESTION_DOORS["en"]))
 
 
 @app.get("/explore", response_class=HTMLResponse)

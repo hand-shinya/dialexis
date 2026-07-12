@@ -25,6 +25,17 @@ h2 { font-size: 1.15rem; border-left: 4px solid var(--accent); padding-left: .6r
 .tagline { color: var(--muted); }
 .searchbox { display: flex; gap: .5rem; max-width: 640px; margin: 1.2rem auto; }
 .searchbox input[type=text] { flex: 1; }
+/* Question-first entry (PoC A): a door for the nameless-curious. Blue accent =
+   invitation/wonder, set apart from the scholarly brown of the results below. */
+.qdoors-wrap { max-width: 720px; margin: 1.4rem auto 0; text-align: center; }
+.qdoors-title { font-size: .95rem; color: var(--ink); margin: 0 0 .7rem; }
+.qdoors { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; }
+.qdoor { display: inline-block; padding: .5rem .9rem; font-size: .95rem;
+  color: var(--accent2); background: var(--card); text-decoration: none;
+  border: 1px solid var(--accent2); border-radius: 999px; transition: all .12s ease; }
+.qdoor:hover, .qdoor:focus { background: var(--accent2); color: var(--paper); }
+.qdoors-hint { margin: .8rem 0 0; }
+@media (prefers-reduced-motion: reduce) { .qdoor { transition: none; } }
 input, select, textarea { font: inherit; padding: .5rem .7rem; border: 1px solid var(--line);
   border-radius: 4px; background: var(--card); width: 100%; }
 .formrow { display: flex; gap: .5rem; margin: .5rem 0; }

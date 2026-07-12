@@ -9,6 +9,17 @@
     <input type="hidden" name="lang" value="{{ lang }}">
     <button type="submit">{{ t.search_button }}</button>
   </form>
+  {% if question_doors %}
+  <div class="qdoors-wrap">
+    <p class="qdoors-title">{{ t.qdoors_title }}</p>
+    <nav class="qdoors" aria-label="{{ t.qdoors_title }}">
+      {% for d in question_doors %}
+      <a class="qdoor" href="/explore?q={{ d.seed | urlencode }}&amp;lang={{ lang }}">{{ d.q }}</a>
+      {% endfor %}
+    </nav>
+    <p class="qdoors-hint muted">{{ t.qdoors_hint }}</p>
+  </div>
+  {% endif %}
 </section>
 
 <section class="axioms">
