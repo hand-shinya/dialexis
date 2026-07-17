@@ -56,6 +56,9 @@ async def entity(qid: str, lang: str = "en") -> dict:
             "label_en": (labels.get("en") or labels.get(lang) or {}).get("value", ""),
             "description": (descs.get(lang) or descs.get("en") or {}).get("value", ""),
             "is_person": "Q5" in instance_of,
+            # raw P31 class QIDs — lets the resolver tell a concept from a
+            # same-named song/name (freedom → 2016 Beyoncé single).
+            "instance_of": instance_of,
             # Original-language labels in scholarly languages — the raw material
             # for naming the source-language term(s) in a deep-search prompt
             # (間主観 → Intersubjektivität; 疎外 → Entfremdung).

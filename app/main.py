@@ -209,6 +209,32 @@ def _has_latin(s: str) -> bool:
     return bool(re.search(r"[A-Za-z]", s or ""))
 
 
+# Wikidata P31 classes that can never be the philosophical sense of a bare
+# concept query — creative works and person-names whose TITLES shadow concept
+# words and defeat the token-overlap SEP gate (freedom → 'Freedom (Beyoncé
+# song)' shares the token 'freedom' with SEP's 'Divine Freedom'; 徳 → given
+# name 'De'). Small, verified against real entities — not exhaustive.
+NONCONCEPT_P31 = frozenset({
+    "Q101352",     # family name
+    "Q202444",     # given name
+    "Q22809413",   # Chinese given name (徳 → 'De')
+    "Q11879590", "Q12308941", "Q3409032",   # female/male/unisex given name
+    "Q105543609",  # musical work/composition (freedom → Beyoncé single)
+    "Q7366", "Q134556", "Q482994",          # song / single / album
+    "Q11424", "Q5398426",                   # film / TV series
+    "Q215380",     # musical group (truth/en → Indonesian band 'Truth')
+    "Q4167410",    # Wikimedia disambiguation page
+})
+
+
+def _nonconcept(ent: dict) -> bool:
+    """True when the entity's P31 marks it as a work/name sense that must not
+    anchor SEP nor be a rerank target (its title-token overlap is spurious)."""
+    if not ent or ent.get("error"):
+        return False
+    return any(p in NONCONCEPT_P31 for p in ent["data"].get("instance_of", []))
+
+
 def _entity_anchor(ent: dict) -> str | None:
     """The English anchor a concept would hand to SEP (English-only). None if the
     entity has no English sitelink/label — then SEP cannot be probed for it."""
@@ -223,9 +249,10 @@ def _pick_resolution(scored: list) -> str | None:
     [0] loses the philosophical sense. Rule, conservative & strictly-improving:
       • keep [0] when it is a person, or already yields a relevant SEP entry
         (every currently-working query is untouched — no regression);
-      • only when [0] is a concept with NO relevant SEP entry, prefer the first
-        sibling that DOES (the philosophy authority disambiguates the sense);
-      • if none qualifies, fall back to [0] (徳→all names: unchanged).
+      • only when [0] is a concept with NO relevant SEP entry — or a non-concept
+        work/name sense, encoded upstream as sep_ok=False (_nonconcept) — prefer
+        the first sibling that DOES (the philosophy authority disambiguates);
+      • if none qualifies, fall back to [0] (all-names query: unchanged).
     `scored` is in Wikidata order: [{qid, is_person, anchor, sep_ok}]."""
     if not scored:
         return None
@@ -238,26 +265,43 @@ def _pick_resolution(scored: list) -> str | None:
     return top["qid"]
 
 
+def _sep_anchor_match(entry_title: str, anchor: str) -> bool:
+    """STRICT relevance for the rerank probe only (the display gate stays
+    _sep_relevant). One shared token is too weak here: anchor 'Edo period'
+    matched SEP 'Plato's Middle Period…' on 'period' alone and outranked
+    virtue. Require EVERY significant token (len>=3, so 'Edo' counts) of the
+    anchor to appear in the SEP title."""
+    if _has_cjk(anchor) or not _has_latin(anchor):
+        return False
+    hay = (entry_title or "").lower()
+    toks = [t for t in re.findall(r"[a-z]+", (anchor or "").lower()) if len(t) >= 3]
+    return bool(toks) and all(t in hay for t in toks)
+
+
 async def _sep_ok(anchor: str) -> bool:
-    """Does SEP have an entry whose first hit is actually relevant to `anchor`?
+    """Does SEP have an entry whose first hit strictly matches `anchor`?
     Uses the search-result title only (cheap; no full-entry fetch)."""
     r = await sep.search(anchor)
     return (not r["error"] and bool(r["data"])
-            and _sep_relevant(r["data"][0].get("title", ""), anchor))
+            and _sep_anchor_match(r["data"][0].get("title", ""), anchor))
 
 
-async def _resolve_entity(cands: list, lang: str, n: int = 4) -> dict:
+async def _resolve_entity(cands: list, lang: str, n: int = 12, probes: int = 8) -> dict:
     """SEP-guided concept disambiguation (see _pick_resolution). Fetches [0]
     first and returns it unchanged for persons or when it already resolves to a
     relevant SEP sense — so the common good case costs one entity fetch and one
-    (later-cached) SEP probe. Only a concept [0] with no SEP entry pays for the
-    bounded sibling scan."""
+    (later-cached) SEP probe. Only a concept [0] with no SEP entry — or a
+    non-concept [0] (song/name, whose spurious title-token overlap must not
+    self-certify) — pays for the bounded sibling scan (`n` siblings fetched in
+    parallel & day-cached; at most `probes` SEP probes)."""
     e0 = await wikidata.entity(cands[0]["qid"], lang)
     if e0["error"]:
         return e0
     a0 = _entity_anchor(e0)
-    if e0["data"].get("is_person") or not a0 or not _has_latin(a0) or await _sep_ok(a0):
-        return e0  # [0] is a person or already good → untouched (no regression)
+    if e0["data"].get("is_person") or not a0 or not _has_latin(a0):
+        return e0  # person (or un-probe-able) top → untouched (no regression)
+    if not _nonconcept(e0) and await _sep_ok(a0):
+        return e0  # [0] already resolves to a relevant SEP sense → untouched
     sibs = cands[1:n]
     if not sibs:
         return e0
@@ -270,7 +314,8 @@ async def _resolve_entity(cands: list, lang: str, n: int = 4) -> dict:
         scored.append({"qid": c["qid"], "is_person": isp, "anchor": anc,
                        "sep_ok": False, "ent": e})
     idxs = [i for i, s in enumerate(scored)
-            if i > 0 and not s["is_person"] and s["anchor"] and _has_latin(s["anchor"])]
+            if i > 0 and not s["is_person"] and s["anchor"] and _has_latin(s["anchor"])
+            and not _nonconcept(s["ent"])][:probes]
     oks = await asyncio.gather(*[_sep_ok(scored[i]["anchor"]) for i in idxs])
     for i, ok in zip(idxs, oks):
         scored[i]["sep_ok"] = ok
@@ -288,7 +333,10 @@ async def api_explore(q: str, lang: str = "en"):
     # scholarly search can be anchored on the resolved English term rather than
     # a raw (often ambiguous) CJK word. This, plus OpenAlex's humanities lens,
     # is what keeps a query like 存在 in philosophy instead of chemistry.
-    wd = await wikidata.search(q, lang)
+    # limit=20: the philosophical sense of a bare CJK noun can rank deep below
+    # name/place senses (徳 → virtue at index 11) — the resolver's sibling scan
+    # needs the tail; the UI does not render this list, so display is unaffected.
+    wd = await wikidata.search(q, lang, limit=20)
     entity = None
     wiki = None
     scholar_q = q          # term handed to scholarly APIs
