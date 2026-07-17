@@ -10,15 +10,14 @@
 <header>
   <a class="brand" href="/">Dialexis<span class="brand-sub">{{ t.tagline }}</span></a>
   <nav>
+    {# 原語による探求へ一本化（2026-07-17）: menuは核＋深掘り探索プロンプト＋設定＋支援＋
+       言語切り替えのみ。研究デスク/ウォッチ/読解レベル/Aboutは一旦保留＝menu非掲載（route自体は
+       残置・裏で稼働。復帰は本コメント下に該当<a>を戻すだけ）。 #}
     <a href="/" class="{{ 'on' if path == '/' }}">{{ t.nav_home }}</a>
-    <a href="/desk" class="{{ 'on' if path.startswith('/desk') or path.startswith('/project') }}">{{ t.nav_desk }}</a>
-    <a href="/watches" class="{{ 'on' if path.startswith('/watches') }}">{{ t.nav_watches }}</a>
-    <a href="/levels" class="{{ 'on' if path.startswith('/levels') }}">{{ t.nav_levels }}</a>
     <a href="/deepsearch" class="{{ 'on' if path.startswith('/deepsearch') }}">{{ t.nav_deepsearch }}</a>
     <a href="/settings" class="{{ 'on' if path.startswith('/settings') }}">{{ t.nav_settings }}</a>
     <a href="/donate" class="{{ 'on' if path.startswith('/donate') }}">{{ t.nav_donate }}</a>
-    <a href="/about" class="{{ 'on' if path.startswith('/about') }}">{{ t.nav_about }}</a>
-    <span class="langsw">
+    <span class="langsw">{{ t.nav_langswitch }}:
       <a href="?lang=ja" class="{{ 'on' if lang == 'ja' }}">日本語</a> /
       <a href="?lang=en" class="{{ 'on' if lang == 'en' }}">EN</a>
     </span>
