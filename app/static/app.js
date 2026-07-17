@@ -152,6 +152,40 @@ async function exploreRun(q) {
         ${LANG === "ja" ? "として照会" : "used to query"}</p>`;
     }
 
+    // 原語基底: original-language-first. The base sits ABOVE the (English) SEP
+    // card — for a German/Greek concept the original is the ground, the English
+    // entry is itself a translation. Curated seed, sourced, honest about scope.
+    const oc = d.orig_cluster;
+    if (oc) {
+      const jp = LANG === "ja";
+      const liveTerms = Object.entries(oc.live_orig_labels || {})
+        .map(([lg, v]) => `${esc(v)} <span class="srcline">(${esc(lg)})</span>`).join(" / ");
+      html += `<div class="card orig-card">
+        <h2>🔤 ${jp ? "原語の基底（翻訳で潰れる区別）" : "Original-language base (distinctions the translation loses)"}</h2>
+        <p class="muted">${jp
+          ? "日本語の一語の背後に、原語では別語がある。ここが全ての基底です。訳語で検索・思考する前に、原語の区別を先に見てください。"
+          : "Behind one Japanese word stand several original-language terms. This is the base — see the original distinctions before searching or reasoning in translation."}</p>
+        <p class="srcline">${jp ? "同一の日本語に潰れる語" : "collapse into"}:
+          ${oc.collapsed_japanese.map(w => `「${esc(w)}」`).join(" ")}
+          · <span class="badge">${esc(oc.tradition)}</span></p>
+        <table class="plain orig-lemmas">
+          <tr><th>${jp ? "原語" : "Original"}</th><th>${jp ? "語義" : "Gloss"}</th><th>${jp ? "潰れ先" : "→ JP"}</th><th></th></tr>
+          ${oc.lemmas.map(l => `<tr>
+            <td><b lang="${esc(l.lang)}">${esc(l.lemma)}</b><br><span class="srcline">${esc(l.polarity || "")}</span></td>
+            <td>${esc(l.gloss)}</td>
+            <td class="srcline">${(l.collapses_to || []).map(w => esc(w)).join("・")}</td>
+            <td class="srcline">${esc(l.source || "")}</td></tr>`).join("")}
+        </table>
+        <p class="srcline">${jp ? "一次源" : "Primary source"}: ${esc(oc.primary_source)}</p>
+        ${liveTerms ? `<p class="srcline">${jp ? "Wikidataの原語ラベル（ライブ）" : "Wikidata original labels (live)"}: ${liveTerms}</p>` : ""}
+        <p class="orig-note">${esc(oc.note)}</p>
+        <p class="srcline">${jp ? "確度" : "Confidence"} — ${jp ? "原語の実在" : "terms"}: <b>${esc(oc.confidence_terms)}</b> ／ ${jp ? "日本語への潰れ" : "collapse"}: <b>${esc(oc.confidence_collapse)}</b>.
+          <span class="muted">${jp
+            ? "編者による検証済みシード（網羅ではない・原語の実在と語義は独語Wikipedia等で確認済／潰れの整理は要一次確認）。"
+            : "Curated verified seed (not exhaustive; term existence checked against German Wikipedia; the collapse mapping needs primary-source confirmation)."}</span></p>
+      </div>`;
+    }
+
     // SEP orientation — the real entry point: debate map + monograph bibliography.
     const se = d.sep_entry;
     if (se && !se.error && se.data) {

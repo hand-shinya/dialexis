@@ -1,0 +1,67 @@
+{
+  "_meta": {
+    "purpose": "original-language-first: sibling ORIGINAL-language lemmas that collapse into one Japanese translation. This is the portal's own operational answer to 原語基底 — surfacing the distinctions the Japanese translation discards, not as an external-LLM prompt but as a resolved card on /explore.",
+    "honesty": "CURATED SEED, NOT exhaustive and NOT auto-generated. Every lemma's EXISTENCE and gloss were verified against de.wikipedia.org on 2026-07-17. The Japanese-collapse mapping is the editor's structuring (confidence 高蓋然, needs primary-source confirmation). Primary-source locators are POINTERS (work + section), not verified page/edition. Do not present as 確定/自動/網羅.",
+    "verified_at": "2026-07-17",
+    "verified_against": ["de.wikipedia.org", "en.wikipedia.org (Species-being)"]
+  },
+  "clusters": [
+    {
+      "id": "alienation",
+      "tradition": "german",
+      "match": ["疎外", "自己疎外", "外化", "対象化", "alienation", "estrangement", "self-alienation", "objectification"],
+      "collapsed_japanese": ["疎外", "自己疎外", "外化", "対象化"],
+      "note": "マルクスの疎外論の中核語族。日本語では「疎外／外化／対象化」に散らばり、しばしば相互に混同される。原語では別語で、否定的/非否定的の区別を含む。",
+      "confidence_terms": "確定",
+      "confidence_collapse": "高蓋然",
+      "primary_source": "マルクス『経済学・哲学草稿（1844年）』第一草稿「疎外された労働（Die entfremdete Arbeit）」",
+      "lemmas": [
+        {"lemma": "Entfremdung", "lang": "de", "roman": "Entfremdung",
+         "gloss": "疎外。労働・産物・他者・自己から引き離された個人的または社会的状態。", "collapses_to": ["疎外"],
+         "polarity": "否定的", "source": "de.wikipedia.org/wiki/Entfremdung"},
+        {"lemma": "Entäußerung", "lang": "de", "roman": "Entäußerung",
+         "gloss": "外化。内的なものを外部へ出す過程。元はキリスト教神学（キリストの自己空無化）由来の語。", "collapses_to": ["外化", "疎外"],
+         "polarity": "中立（文脈依存）", "source": "de.wikipedia.org/wiki/Entäußerung"},
+        {"lemma": "Selbstentfremdung", "lang": "de", "roman": "Selbstentfremdung",
+         "gloss": "自己疎外。生命活動そのものが自分に敵対する層。単なる心理的疎外ではない。", "collapses_to": ["自己疎外"],
+         "polarity": "否定的", "source": "de.wikipedia.org（Entfremdung の複合語 selbst+Entfremdung）"},
+        {"lemma": "Vergegenständlichung", "lang": "de", "roman": "Vergegenständlichung",
+         "gloss": "対象化。能力を対象へ実現する過程。本来は否定的でなく、人間の自己確認。疎外と混同されやすい。", "collapses_to": ["対象化"],
+         "polarity": "非否定的（本来）", "source": "de.wikipedia.org/wiki/Vergegenständlichung"}
+      ]
+    },
+    {
+      "id": "body",
+      "tradition": "german",
+      "match": ["身体", "肉体", "非有機的身体", "非有機的肉体", "body", "leib", "körper", "korper"],
+      "collapsed_japanese": ["身体", "肉体"],
+      "note": "日本語「身体／肉体」一語の背後に、独語では Leib（生きられた身体）と Körper（物体的身体）の区別がある。マルクスの「非有機的身体（unorganischer Leib/Körper）」も現象学（Husserl・Merleau-Ponty）もこの区別に立つ。",
+      "confidence_terms": "確定",
+      "confidence_collapse": "高蓋然",
+      "primary_source": "マルクス『経済学・哲学草稿（1844年）』「Die Natur ist der unorganische Leib des Menschen（自然は人間の非有機的身体である）」（該当節・原文は要一次確認）",
+      "lemmas": [
+        {"lemma": "Leib", "lang": "de", "roman": "Leib",
+         "gloss": "生きられた身体。生命的・一人称的に生きられる身。哲学・神学で「生きた身体」を指す。", "collapses_to": ["身体", "肉体"],
+         "polarity": "生命的", "source": "de.wikipedia.org/wiki/Leib"},
+        {"lemma": "Körper", "lang": "de", "roman": "Körper",
+         "gloss": "物体的・外部的な身体。空間的広がりをもつ物体一般としての身。三人称的。", "collapses_to": ["身体", "肉体"],
+         "polarity": "物体的", "source": "de.wikipedia.org/wiki/Körper"}
+      ]
+    },
+    {
+      "id": "species-being",
+      "tradition": "german",
+      "match": ["類的存在", "類的本質", "species-being", "species being", "gattungswesen"],
+      "collapsed_japanese": ["類的存在", "類的本質"],
+      "note": "日本語「類的存在」は「人類全体」という集合体の誤読を招きやすい。原語 Gattungswesen は個人の外の集合ではなく、個人がもつ普遍的能力を指す。フォイエルバッハに淵源しマルクスが転用。",
+      "confidence_terms": "確定",
+      "confidence_collapse": "高蓋然",
+      "primary_source": "マルクス『経済学・哲学草稿（1844年）』／淵源はフォイエルバッハ『キリスト教の本質』",
+      "lemmas": [
+        {"lemma": "Gattungswesen", "lang": "de", "roman": "Gattungswesen",
+         "gloss": "類的存在／類的本質。個人の外の集合体ではなく、個人がもつ普遍的（類としての）能力。「人類全体」と誤読されやすい。", "collapses_to": ["類的存在", "類的本質"],
+         "polarity": "非集合的", "source": "en.wikipedia.org/wiki/Species-being（Marx's theory of human nature）"}
+      ]
+    }
+  ]
+}

@@ -73,6 +73,14 @@ table.plain th, table.plain td { text-align: left; padding: .35rem .5rem; border
   padding: .6rem .9rem; font-size: .85rem; font-family: system-ui, sans-serif; margin: .5rem 0; }
 pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
   border: 1px solid var(--line); border-radius: 4px; padding: .8rem; }
+/* 原語基底 card — the foundation, so it wears the scholarly accent (brown) and
+   sits visually heaviest; distinct from the blue SEP orientation card below. */
+.orig-card { border-left: 4px solid var(--accent); background: #fbf9f4; }
+.orig-card h2 { border-left: 0; padding-left: 0; }
+.orig-lemmas td, .orig-lemmas th { vertical-align: top; }
+.orig-lemmas b { font-size: 1.02rem; color: var(--accent); }
+.orig-note { font-size: .9rem; margin: .6rem 0 .4rem; }
+@media (prefers-color-scheme: dark) { .orig-card { background: #23201b; } }
 .sep-card { border-left: 4px solid var(--accent2); }
 .sep-card h3 { font-size: .95rem; margin: .8rem 0 .3rem; }
 .debatemap li { margin: .2rem 0; font-weight: 600; }

@@ -42,6 +42,12 @@ with open(os.path.join(APP_DIR, "data", "counter_checklists.json"), encoding="ut
     CHECKLISTS = json.load(f)
 with open(os.path.join(APP_DIR, "data", "glossary_seed.json"), encoding="utf-8") as f:
     GLOSSARY = json.load(f)
+with open(os.path.join(APP_DIR, "data", "orig_clusters.json"), encoding="utf-8") as f:
+    ORIG_CLUSTERS = json.load(f)
+# Flat index: every match trigger (lowercased) → its cluster. Built once.
+ORIG_CLUSTER_INDEX = {
+    m.lower(): c for c in ORIG_CLUSTERS["clusters"] for m in c["match"]
+}
 
 
 # Idempotent; runs at import so tests, uvicorn and the harvester all share it.
@@ -225,6 +231,28 @@ NONCONCEPT_P31 = frozenset({
     "Q215380",     # musical group (truth/en → Indonesian band 'Truth')
     "Q4167410",    # Wikimedia disambiguation page
 })
+
+
+def _orig_cluster(q: str, entity: dict | None) -> dict | None:
+    """原語基底: the portal's OWN answer (not an external prompt) to 'which
+    original-language siblings collapse into this one Japanese word'. Matches the
+    raw query and the resolved English anchor against a curated, source-verified
+    seed (ORIG_CLUSTERS). Augments the static cluster with the resolved entity's
+    LIVE Wikidata orig_labels so the card is not purely static. Returns None when
+    no cluster matches — honest silence beats a fabricated distinction (A3)."""
+    keys = {(q or "").strip().lower()}
+    if entity and not entity.get("error"):
+        ed = entity["data"]
+        for k in (ed.get("label_en"), ed.get("wikipedia", {}).get("en")):
+            if k:
+                keys.add(k.strip().lower())
+    cluster = next((ORIG_CLUSTER_INDEX[k] for k in keys if k in ORIG_CLUSTER_INDEX), None)
+    if not cluster:
+        return None
+    live = entity["data"].get("orig_labels", {}) if (entity and not entity.get("error")) else {}
+    # shallow copy so the module-level seed is never mutated
+    return {**cluster, "provenance": ORIG_CLUSTERS["_meta"],
+            "live_orig_labels": {k: v for k, v in live.items() if k != "en"}}
 
 
 def _nonconcept(ent: dict) -> bool:
@@ -455,6 +483,7 @@ async def api_explore(q: str, lang: str = "en"):
 
     return {"query": q, "resolved_term": scholar_q, "lang": lang, "queried_at": now(),
             "orientation": plan,
+            "orig_cluster": _orig_cluster(q, entity),
             "sep_search": sep_result, "sep_entry": sep_entry,
             "wikidata_search": wd, "entity": entity, "wikipedia": wiki,
             "primary_texts": gutenberg, "japanese_translations": ja_translations,
