@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ t.origin_title }}{% endblock %}
+{% block content %}
+<h1>{{ t.origin_title }}</h1>
+<p class="muted">{{ t.origin_lede }}</p>
+<form action="/origin" method="get" class="searchbox">
+  <input type="text" name="q" value="{{ q }}" placeholder="{{ t.origin_placeholder }}">
+  <input type="hidden" name="lang" value="{{ lang }}">
+  <button type="submit">{{ t.origin_button }}</button>
+</form>
+<div id="origin-status"></div>
+<div id="origin-results"></div>
+{% endblock %}
+{% block scripts %}
+<script>originInit({{ q | tojson }});</script>
+{% endblock %}

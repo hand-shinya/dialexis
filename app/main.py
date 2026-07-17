@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import db
 from .db import get_conn, init_db, now, rows
-from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii
+from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary
 from . import citations as cites
 from . import deepsearch
 from . import bibliography
@@ -115,6 +115,12 @@ def page_home(request: Request):
 @app.get("/explore", response_class=HTMLResponse)
 def page_explore(request: Request, q: str = ""):
     return render(request, "explore.html", q=q)
+
+
+@app.get("/origin", response_class=HTMLResponse)
+def page_origin(request: Request, q: str = ""):
+    # 原語による探求 (MVP, German lineage). The portal's single deepened purpose.
+    return render(request, "origin.html", q=q)
 
 
 @app.get("/desk", response_class=HTMLResponse)
@@ -489,6 +495,77 @@ async def api_explore(q: str, lang: str = "en"):
             "primary_texts": gutenberg, "japanese_translations": ja_translations,
             "japanese_scholarship": ndl_orient, "cinii": cinii_res,
             "recent_scholarship": oa_works}
+
+
+@app.get("/api/origin")
+async def api_origin(q: str, lang: str = "ja"):
+    """原語による探求 (MVP, German lineage). Take an ordinary word the user did
+    NOT know was loaded, resolve it to its ORIGINAL German term, and open the
+    original-language space around it — sense, etymology, and the collocations
+    it lives with in German — grounded live and stamped, then returned to the
+    user's word. Honest silence when there is no German original to stand on."""
+    if not q.strip():
+        raise HTTPException(400, "empty query")
+
+    wd = await wikidata.search(q, lang, limit=20)
+    entity = None
+    if not wd["error"] and wd["data"]:
+        entity = await _resolve_entity(wd["data"], lang)
+
+    context = {"resolved": False, "query": q}
+    german = None
+    if entity and not entity["error"]:
+        ed = entity["data"]
+        german = ed.get("orig_labels", {}).get("de")
+        context = {
+            "resolved": True,
+            "label": ed.get("label"), "label_en": ed.get("label_en"),
+            "description": ed.get("description"),
+            "wikidata_url": ed.get("url"),
+            # context HINT only — which thinkers this concept is tied to. The
+            # author/work-specific view (S1 proper) is the next slice, stated so.
+            "thinkers_qids": ed.get("claims", {}).get("influenced_by", [])[:6],
+        }
+
+    # curated collapse siblings (continuity with the seed) — a bonus dimension
+    cluster = _orig_cluster(q, entity)
+
+    if not german:
+        return {"query": q, "lang": lang, "queried_at": now(),
+                "context": context,
+                "original": {"available": False,
+                             "note": "この語からドイツ語の原語に接地できませんでした"
+                                     "（MVPは独語系統のみ対応。原語がギリシャ語・ラテン語等の"
+                                     "場合は今後の対応です）。"},
+                "collapsed_siblings": (cluster or {}).get("lemmas"),
+                "expansion": None, "sources": []}
+
+    wp, freq, wk = await asyncio.gather(
+        dwds.wortprofil(german), dwds.frequency(german), wiktionary.entry(german, "de"))
+
+    wkd = wk["data"] if not wk["error"] else {}
+    sources = []
+    for r in (wp, freq, wk):
+        sources.append({"source": r["source"], "retrieved_at": r["retrieved_at"],
+                        "error": r["error"]})
+
+    return {
+        "query": q, "lang": lang, "queried_at": now(),
+        "context": context,
+        "original": {"available": True, "term": german, "lang": "de",
+                     "wiktionary_url": (wkd or {}).get("url")},
+        "expansion": {
+            "senses": (wkd or {}).get("senses", ""),
+            "etymology": (wkd or {}).get("etymology", ""),
+            "synonyms": (wkd or {}).get("synonyms", ""),
+            "frequency": (freq["data"] or {}).get("hits") if not freq["error"] else None,
+            "collocations": wp["data"]["relations"] if not wp["error"] else {},
+            "collocations_scraped": True,
+        },
+        "collapsed_siblings": (cluster or {}).get("lemmas"),
+        "confidence": {"original_term": "確定", "collocations": "高蓋然（コーパス全体・著者固有ではない）"},
+        "sources": sources,
+    }
 
 
 def _relevant(works: list, term: str) -> list:

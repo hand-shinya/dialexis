@@ -81,6 +81,14 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .orig-lemmas b { font-size: 1.02rem; color: var(--accent); }
 .orig-note { font-size: .9rem; margin: .6rem 0 .4rem; }
 @media (prefers-color-scheme: dark) { .orig-card { background: #23201b; } }
+.orig-sense { margin: .3rem 0 .6rem; }
+.orig-collo td { vertical-align: top; padding: .3rem .5rem; }
+.orig-collo td:first-child { white-space: nowrap; color: var(--muted); font-size: .82rem; font-family: system-ui, sans-serif; }
+.orig-collo a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+.orig-collo a:hover { border-bottom-style: solid; }
+.return-card { border-left: 4px solid var(--accent2); background: #eef3f7; }
+.return-card h3 { margin-top: 0; }
+@media (prefers-color-scheme: dark) { .return-card { background: #1c2530; } }
 .sep-card { border-left: 4px solid var(--accent2); }
 .sep-card h3 { font-size: .95rem; margin: .8rem 0 .3rem; }
 .debatemap li { margin: .2rem 0; font-weight: 600; }
