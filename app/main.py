@@ -33,6 +33,25 @@ app = FastAPI(title="Dialexis", version="0.1.0")
 app.mount("/static", StaticFiles(directory=os.path.join(APP_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(APP_DIR, "templates"))
 
+
+def _asset_version() -> str:
+    """Content hash of the static assets, computed once at startup (the process
+    restarts on every deploy). Appended to /static URLs as ?v=… so a new deploy
+    changes the URL and a stale browser cache can never serve old JS against a
+    new API — the false '接地できませんでした' bug (old app.js vs new /api/origin)."""
+    import hashlib
+    h = hashlib.sha1()
+    for fn in ("static/app.js", "static/style.css"):
+        try:
+            with open(os.path.join(APP_DIR, fn), "rb") as f:
+                h.update(f.read())
+        except OSError:
+            pass
+    return h.hexdigest()[:10]
+
+
+ASSET_V = _asset_version()
+
 I18N = {}
 for _lang in ("ja", "en"):
     with open(os.path.join(APP_DIR, "i18n", f"{_lang}.json"), encoding="utf-8") as f:
@@ -75,7 +94,8 @@ def render(request: Request, name: str, **ctx):
     t = I18N[lang]
     resp = templates.TemplateResponse(
         request=request, name=name,
-        context={"t": t, "lang": lang, "path": request.url.path, **ctx})
+        context={"t": t, "lang": lang, "path": request.url.path,
+                 "asset_v": ASSET_V, **ctx})
     if request.query_params.get("lang"):
         resp.set_cookie("lang", lang, max_age=86400 * 365)
     return resp
