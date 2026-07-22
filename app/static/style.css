@@ -86,6 +86,15 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .lineage { margin: .5rem 0; padding-left: 1.4rem; }
 .lineage li { margin: .7rem 0; }
 .lineage li i { color: var(--accent); }
+/* new-tab preference — the global input{width:100%} rule stretched the checkbox
+   and threw it to the centre; pin it back to an inline, left-aligned control. */
+.origin-pref { font-family: system-ui, sans-serif; font-size: .85rem; color: var(--muted);
+  margin: .2rem 0 .8rem; }
+.origin-pref label { display: inline-flex; align-items: center; gap: .4rem; cursor: pointer; }
+.origin-pref input[type=checkbox] { width: auto; margin: 0; }
+.gm-senses { margin: .3rem 0 .5rem; padding-left: 1.3rem; }
+.gm-senses li { margin: .3rem 0; }
+.gm-enc summary { font-family: system-ui, sans-serif; font-size: .82rem; color: var(--muted); cursor: pointer; }
 /* 二相の並置 — both facets share identical styling so neither reads as superior. */
 .facets { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; margin-top: .8rem; }
 @media (max-width: 720px) { .facets { grid-template-columns: 1fr; } }

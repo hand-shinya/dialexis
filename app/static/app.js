@@ -949,34 +949,44 @@ async function originRun(q) {
     ${w.resolved ? `<p class="muted">${esc(w.label || "")} — ${esc(w.description || "")}</p>
       <p class="srcline"><a href="${esc(w.wikidata_url)}" target="_blank">Wikidata</a></p>` : ""}</div>`;
 
-  // ── 二相の並置（上下でない）: 広く共有された意味 と 原語がひらく相。哲学を
-  //    独善的上位に置かず、一般的理解もそれ自体に問いの種を含む入口として並べる ──
-  const cs = d.commonsense;
+  // internal link to open another word's inquiry (respects the new-tab choice)
+  const olink = (term) =>
+    `<a href="/origin?q=${encodeURIComponent(term)}&lang=${LANG}"${linkAttr} lang="de">${esc(term)}</a>`;
+
+  // ── ① 広く共有されている意味 — 別カードで分離表示（原語の相とは別概念）。
+  //    ja.wiktionary の日常語義（疎外→「仲間外れにすること」）を主に、百科説明を従に。──
+  const gm = d.general_meaning;
+  if (gm) {
+    html += `<div class="card"><h3>${jp ? "広く共有されている意味" : "The broadly shared meaning"}</h3>`;
+    if (gm.senses && gm.senses.length) {
+      html += `<ol class="gm-senses">${gm.senses.map(s => `<li>${esc(s)}</li>`).join("")}</ol>
+        <p class="srcline"><a href="${esc(gm.senses_url)}" target="_blank">Wiktionary (ja)</a> · ${esc(gm.senses_retrieved_at || "")}</p>`;
+    }
+    if (gm.encyclopedic) {
+      html += `<details class="gm-enc"><summary>${jp ? "百科的な説明もみる" : "encyclopedic description"}</summary>
+        <p>${esc(gm.encyclopedic.extract)}</p>
+        <p class="srcline"><a href="${esc(gm.encyclopedic.url)}" target="_blank">Wikipedia (${esc(gm.encyclopedic.lang)})</a> · ${esc(gm.encyclopedic.retrieved_at)}</p></details>`;
+    }
+    if (!(gm.senses && gm.senses.length))
+      html += `<p class="muted">${jp ? "この語には辞書的な一般語義が見当たりません（専門語の可能性）。" : "No everyday dictionary sense found (likely a technical term)."}</p>`;
+    html += `</div>`;
+  }
+
+  // ── ② 原語がひらく相 — 別カードで分離表示。原語・複数の原語はすべてリンク化し、
+  //    そこから別の探求へたどれるようにする ──
   const uc = d.upper_concept;
   const sibs = (uc && uc.collapsed_siblings) || (d.collapsed_siblings);
-  if (cs || uc || sibs) {
-    html += `<div class="card"><h3>${jp ? "この言葉がもつ、いくつもの相" : "The several facets this word carries"}</h3>
-      <p class="muted">${jp ? "どれかが上位ではありません。広く共有された意味と、原語がひらく意味を、並べて置きます。" : "None ranks above the others. The broadly shared meaning and what the original opens are set side by side."}</p>
-      <div class="facets">`;
-    if (cs) {
-      html += `<div class="facet-col"><h4>${jp ? "広く共有されている意味" : "The broadly shared meaning"}</h4>
-        <p>${esc(cs.extract)}</p>
-        <p class="muted">${jp ? "この一般的な意味そのものにも、掘り下げるべき問いの種があります。" : "This everyday meaning itself holds threads worth pulling."}</p>
-        <p class="srcline"><a href="${esc(cs.url)}" target="_blank">Wikipedia (${esc(cs.lang)})</a> · ${esc(cs.retrieved_at)}</p></div>`;
+  if (uc || sibs) {
+    html += `<div class="card orig-card"><h3>${jp ? "原語がひらく相" : "What the original opens"}</h3>`;
+    if (sibs) {
+      html += `<p class="muted">${jp ? "この日本語の一語は、原語では複数の語に分かれています（各語をたどれます）：" : "This one Japanese word splits into several originals (each is followable):"}</p>
+        <table class="plain">${sibs.map(l =>
+          `<tr><td><b>${olink(l.lemma)}</b></td><td>${esc(l.gloss)}</td></tr>`).join("")}</table>`;
     }
-    if (uc || sibs) {
-      html += `<div class="facet-col"><h4>${jp ? "原語がひらく相" : "What the original opens"}</h4>`;
-      if (sibs) {
-        html += `<p class="muted">${jp ? "この日本語の一語は、原語では複数の語に分かれています：" : "This one Japanese word splits into several originals:"}</p>
-          <table class="plain">${sibs.map(l =>
-            `<tr><td><b lang="${esc(l.lang)}">${esc(l.lemma)}</b></td><td>${esc(l.gloss)}</td></tr>`).join("")}</table>`;
-      }
-      if (uc && uc.original_term) html += `<p class="srcline">${jp ? "接地した原語" : "grounded original"}: <b lang="de">${esc(uc.original_term)}</b></p>`;
-      if (uc && uc.senses) html += `<p><b>${jp ? "原語での意味" : "meaning in the original"}:</b> ${esc(cleanWikt(uc.senses))}</p>`;
-      if (uc && uc.etymology) html += `<p><b>${jp ? "語源" : "etymology"}:</b> ${esc(cleanWikt(uc.etymology))}${uc.wiktionary_url ? ` <a href="${esc(uc.wiktionary_url)}" target="_blank">Wiktionary</a>` : ""}</p>`;
-      html += `</div>`;
-    }
-    html += `</div></div>`;
+    if (uc && uc.original_term) html += `<p class="srcline">${jp ? "接地した原語" : "grounded original"}: <b>${olink(uc.original_term)}</b></p>`;
+    if (uc && uc.senses) html += `<p><b>${jp ? "原語での意味" : "meaning in the original"}:</b> ${esc(cleanWikt(uc.senses))}</p>`;
+    if (uc && uc.etymology) html += `<p><b>${jp ? "語源" : "etymology"}:</b> ${esc(cleanWikt(uc.etymology))}${uc.wiktionary_url ? ` <a href="${esc(uc.wiktionary_url)}" target="_blank">Wiktionary</a>` : ""}</p>`;
+    html += `</div>`;
   }
 
   // ── LAYER 3: importance/precedence-ordered author × work map ──

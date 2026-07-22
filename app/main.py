@@ -567,8 +567,12 @@ async def api_origin(q: str, lang: str = "ja"):
     # LAYER 1 — 上位概念: the word's lineage & relations (frame above any author).
     #   #3 原語の複数性 goes here, at the entry: which originals collapse into it.
     cluster = _orig_cluster(q, entity)
-    # LAYER 2 — commonsense understanding the user already holds (never dropped).
-    commonsense = await wikipedia.summary(wp_title, lang if entity and lang in entity["data"]["wikipedia"] else "en") if wp_title else None
+    # 広く共有されている意味 — the EVERYDAY Japanese senses (ja.wiktionary,
+    #   疎外→『疎んじること。仲間外れにすること』), which is truly general — not
+    #   philosophy-only — plus the encyclopedic summary as fuller context.
+    gen = await wiktionary.ja_senses(q)
+    general_meaning = _general_block(gen,
+        await wikipedia.summary(wp_title, lang if entity and lang in entity["data"]["wikipedia"] else "en") if wp_title else None)
     # LAYER 3 — importance/precedence-ordered author×work map (authors sit UNDER
     #   the lineage; the user chooses one consciously — never auto-fixed).
     lineage = _author_lineage(q, entity)
@@ -576,7 +580,7 @@ async def api_origin(q: str, lang: str = "ja"):
     if not german:
         return {"query": q, "lang": lang, "queried_at": now(),
                 "word": word,
-                "commonsense": _wiki_block(commonsense),
+                "general_meaning": general_meaning,
                 "collapsed_siblings": (cluster or {}).get("lemmas"),
                 "author_lineage": lineage,
                 "original": {"available": False,
@@ -595,8 +599,9 @@ async def api_origin(q: str, lang: str = "ja"):
         "query": q, "lang": lang, "queried_at": now(),
         # ordered top→bottom = the hierarchy the user fixed:
         "word": word,                                    # 言葉（主役）
-        "commonsense": _wiki_block(commonsense),         # 常識的理解（必ず表示）
-        "upper_concept": {                               # 上位概念：由来と関係
+        # 別概念として分離表示する2相（上下でない）:
+        "general_meaning": general_meaning,              # ① 広く共有されている意味
+        "upper_concept": {                               # ② 原語がひらく相
             "original_term": german,
             "collapsed_siblings": (cluster or {}).get("lemmas"),   # #3 原語の複数性
             "etymology": (wkd or {}).get("senses", "") and (wkd or {}).get("etymology", ""),
@@ -619,14 +624,20 @@ async def api_origin(q: str, lang: str = "ja"):
     }
 
 
-def _wiki_block(res) -> dict | None:
-    """Compact the Wikipedia summary connector result for the commonsense layer."""
-    if not res or res.get("error") or not res.get("data"):
+def _general_block(gen, wiki) -> dict | None:
+    """広く共有されている意味: the everyday ja.wiktionary senses (primary), plus the
+    encyclopedic summary as fuller context. None only when BOTH are absent."""
+    senses = (gen["data"]["senses"] if gen and not gen.get("error") and gen.get("data") else [])
+    wd = wiki["data"] if (wiki and not wiki.get("error") and wiki.get("data")) else None
+    if not senses and not wd:
         return None
-    d = res["data"]
-    return {"title": d.get("title"), "extract": d.get("extract"),
-            "url": d.get("url"), "lang": d.get("lang"),
-            "retrieved_at": res.get("retrieved_at")}
+    return {
+        "senses": senses,
+        "senses_url": (gen["data"]["url"] if gen and not gen.get("error") and gen.get("data") else None),
+        "senses_retrieved_at": (gen.get("retrieved_at") if gen else None),
+        "encyclopedic": ({"extract": wd.get("extract"), "url": wd.get("url"),
+                          "lang": wd.get("lang"), "retrieved_at": wiki.get("retrieved_at")} if wd else None),
+    }
 
 
 def _relevant(works: list, term: str) -> list:
