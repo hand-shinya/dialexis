@@ -893,7 +893,25 @@ function settingsClear() {
 }
 
 /* ---------- 原語による探求 (origin) — 言葉が先にありきの階層 ---------- */
-function originInit(q) { if (q) originRun(q); }
+function originInit(q) {
+  const cb = $("origin-newtab");
+  if (cb) {
+    cb.checked = localStorage.getItem("origin_newtab") === "1";
+    cb.addEventListener("change", () => {
+      localStorage.setItem("origin_newtab", cb.checked ? "1" : "0");
+      const box = $("origin-results");   // re-render so existing links pick up the choice
+      if (box && box.dataset.q) originRun(box.dataset.q);
+    });
+  }
+  if (q) originRun(q);
+}
+
+// Attribute string for an internal word link — a new tab (keeping the current
+// result) or in-place, per the user's choice (#6: don't silently overwrite).
+function originLinkAttr() {
+  return (localStorage.getItem("origin_newtab") === "1")
+    ? ' target="_blank" rel="noopener"' : "";
+}
 
 const REL_JP = {
   "hat Adjektivattribut": "形容詞で修飾される",
@@ -915,6 +933,8 @@ async function originRun(q) {
   const jp = LANG === "ja";
   $("origin-status").innerHTML = `<p class="muted">${jp ? "原語へ接地中…" : "Grounding in the original…"}</p>`;
   $("origin-results").innerHTML = "";
+  $("origin-results").dataset.q = q;   // remembered so the new-tab toggle can re-render
+  const linkAttr = originLinkAttr();
   let d;
   try { d = await api(`/api/origin?q=${encodeURIComponent(q)}&lang=${LANG}`); }
   catch (e) { $("origin-status").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
@@ -978,7 +998,7 @@ async function originRun(q) {
         <p class="muted">${esc(os.note || "")}</p><table class="plain orig-collo">`;
       for (const rel of relKeys) {
         const words = rels[rel].map(x =>
-          `<a href="/origin?q=${encodeURIComponent(x.word)}&lang=${LANG}" lang="de">${esc(x.word)}</a> <span class="srcline">${x.freq}</span>`).join("　");
+          `<a href="/origin?q=${encodeURIComponent(x.word)}&lang=${LANG}"${linkAttr} lang="de">${esc(x.word)}</a> <span class="srcline">${x.freq}</span>`).join("　");
         html += `<tr><td class="srcline">${esc(jp ? (REL_JP[rel] || rel) : rel)}</td><td>${words}</td></tr>`;
       }
       html += `</table>`;
