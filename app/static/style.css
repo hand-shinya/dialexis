@@ -86,6 +86,11 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .lineage { margin: .5rem 0; padding-left: 1.4rem; }
 .lineage li { margin: .7rem 0; }
 .lineage li i { color: var(--accent); }
+/* 二相の並置 — both facets share identical styling so neither reads as superior. */
+.facets { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; margin-top: .8rem; }
+@media (max-width: 720px) { .facets { grid-template-columns: 1fr; } }
+.facet-col { border-top: 3px solid var(--line); padding-top: .6rem; }
+.facet-col h4 { font-family: system-ui, sans-serif; font-size: .92rem; margin: 0 0 .5rem; }
 .orig-sense { margin: .3rem 0 .6rem; }
 .orig-collo td { vertical-align: top; padding: .3rem .5rem; }
 .orig-collo td:first-child { white-space: nowrap; color: var(--muted); font-size: .82rem; font-family: system-ui, sans-serif; }
