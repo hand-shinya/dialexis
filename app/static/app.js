@@ -892,10 +892,8 @@ function settingsClear() {
   $("settings-msg").textContent = T.cleared;
 }
 
-/* ---------- 原語による探求 (origin) ---------- */
-function originInit(q) {
-  if (q) originRun(q);
-}
+/* ---------- 原語による探求 (origin) — 言葉が先にありきの階層 ---------- */
+function originInit(q) { if (q) originRun(q); }
 
 const REL_JP = {
   "hat Adjektivattribut": "形容詞で修飾される",
@@ -908,108 +906,100 @@ const REL_JP = {
   "hat Genitivattribut": "〜を伴う（属格）",
 };
 
+function cleanWikt(s) {
+  return String(s || "").replace(/:?\[(\d+)\]/g, "$1.").replace(/\{\{[^}]*\}\}/g, "")
+    .replace(/\s+/g, " ").trim();
+}
+
 async function originRun(q) {
-  $("origin-status").innerHTML = `<p class="muted">${LANG === "ja" ? "原語へ接地中…" : "Grounding in the original…"}</p>`;
-  $("origin-results").innerHTML = "";
   const jp = LANG === "ja";
+  $("origin-status").innerHTML = `<p class="muted">${jp ? "原語へ接地中…" : "Grounding in the original…"}</p>`;
+  $("origin-results").innerHTML = "";
   let d;
-  try {
-    d = await api(`/api/origin?q=${encodeURIComponent(q)}&lang=${LANG}`);
-  } catch (e) {
-    $("origin-status").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`;
-    return;
-  }
+  try { d = await api(`/api/origin?q=${encodeURIComponent(q)}&lang=${LANG}`); }
+  catch (e) { $("origin-status").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
   $("origin-status").innerHTML = "";
   let html = "";
 
-  // S1 — context: which concept / whose usage the word resolves to
-  const c = d.context || {};
-  if (c.resolved) {
-    html += `<div class="card">
-      <p class="srcline">${jp ? "あなたの言葉" : "your word"}: <b>「${esc(d.query)}」</b></p>
-      <h2>${esc(c.label || d.query)} <span class="muted">${esc(c.description || "")}</span></h2>
-      <p class="srcline"><a href="${esc(c.wikidata_url)}" target="_blank">Wikidata</a></p>
-    </div>`;
-  }
+  // ── LAYER 0: the word itself (headline — 言葉が先にありき) ──
+  const w = d.word || {};
+  html += `<div class="card word-card">
+    <p class="srcline">${jp ? "この探求は、まず言葉そのものから始まります" : "This inquiry begins with the word itself"}</p>
+    <h2 class="theword">「${esc(w.query || q)}」</h2>
+    ${w.resolved ? `<p class="muted">${esc(w.label || "")} — ${esc(w.description || "")}</p>
+      <p class="srcline"><a href="${esc(w.wikidata_url)}" target="_blank">Wikidata</a></p>` : ""}</div>`;
 
-  // No German original → honest stop
-  if (!d.original || !d.original.available) {
-    html += `<div class="card"><p>${esc((d.original || {}).note || (jp ? "原語に接地できませんでした。" : "Could not ground an original term."))}</p></div>`;
-    if (d.collapsed_siblings) html += renderSiblings(d.collapsed_siblings, jp);
-    $("origin-results").innerHTML = html;
-    return;
-  }
+  // ── LAYER 2: commonsense understanding you already hold (never dropped) ──
+  const cs = d.commonsense;
+  if (cs) html += `<div class="card"><h3>${jp ? "あなたが既に抱いている像（常識的な理解）" : "The commonsense understanding you already hold"}</h3>
+    <p>${esc(cs.extract)}</p>
+    <p class="srcline"><a href="${esc(cs.url)}" target="_blank">Wikipedia (${esc(cs.lang)})</a> · ${esc(cs.retrieved_at)}</p></div>`;
 
-  // S2/S3 — the original German term and its own-language space
-  const o = d.original, ex = d.expansion || {};
-  html += `<div class="card orig-card">
-    <h2>🔤 ${jp ? "原語" : "Original"}: <b lang="de">${esc(o.term)}</b> <span class="muted">(${esc(o.lang)})</span></h2>
-    <p class="muted">${jp
-      ? "あなたが使った日本語の言葉は、原語ではこの語です。ここが基底。以下は原語そのものの意味と、原語空間で共に使われる語です。"
-      : "The word you used is this term in its original language. This is the base — its own-language meaning and the terms it lives with follow."}</p>`;
-
-  if (ex.senses) html += `<h3>${jp ? "原語での意味" : "Meaning in the original"}</h3><p class="orig-sense">${esc(cleanWikt(ex.senses))}</p>`;
-  if (ex.etymology) html += `<h3>${jp ? "語源" : "Etymology"}</h3><p class="orig-sense">${esc(cleanWikt(ex.etymology))}</p>`;
-
-  // S3 core — collocations (the living neighborhood)
-  const rels = ex.collocations || {};
-  const relKeys = Object.keys(rels);
-  if (relKeys.length) {
-    html += `<h3>${jp ? "原語空間で共に使われる語（DWDS Wortprofil・独語コーパス）" : "Words it lives with (DWDS Wortprofil, German corpus)"}</h3>
-      <table class="plain orig-collo">`;
-    for (const rel of relKeys) {
-      const words = rels[rel].map(w =>
-        `<a href="/origin?q=${encodeURIComponent(w.word)}&lang=${LANG}" lang="de">${esc(w.word)}</a> <span class="srcline">${w.freq}</span>`).join("　");
-      html += `<tr><td class="srcline">${esc(jp ? (REL_JP[rel] || rel) : rel)}</td><td>${words}</td></tr>`;
+  // ── LAYER 1: 上位概念 — the word's lineage & relations (frame above authors) ──
+  const uc = d.upper_concept;
+  const sibs = (uc && uc.collapsed_siblings) || (d.collapsed_siblings);
+  if (uc || sibs) {
+    html += `<div class="card orig-card"><h3>${jp ? "上位概念：この言葉の由来と関係" : "Upper concept: the word's origin & relations"}</h3>`;
+    // #3 原語の複数性 — shown FIRST, at the entry
+    if (sibs) {
+      html += `<p class="muted">${jp ? "この日本語の一語は、原語では複数の語に分かれています（まずここを見てください）：" : "This one Japanese word splits into several originals (see this first):"}</p>
+        <table class="plain">${sibs.map(l =>
+          `<tr><td><b lang="${esc(l.lang)}">${esc(l.lemma)}</b></td><td>${esc(l.gloss)}</td></tr>`).join("")}</table>`;
     }
-    html += `</table>`;
+    if (uc && uc.original_term) html += `<p class="srcline">${jp ? "接地した原語" : "grounded original"}: <b lang="de">${esc(uc.original_term)}</b></p>`;
+    if (uc && uc.senses) html += `<p><b>${jp ? "原語での意味" : "meaning in the original"}:</b> ${esc(cleanWikt(uc.senses))}</p>`;
+    if (uc && uc.etymology) html += `<p><b>${jp ? "語源" : "etymology"}:</b> ${esc(cleanWikt(uc.etymology))}${uc.wiktionary_url ? ` <a href="${esc(uc.wiktionary_url)}" target="_blank">Wiktionary</a>` : ""}</p>`;
+    html += `</div>`;
   }
 
-  if (ex.frequency != null) html += `<p class="srcline">${jp ? "独語コーパス頻度" : "German corpus frequency"}: ${esc(String(ex.frequency))} ${jp ? "件" : "hits"}</p>`;
-  if (o.wiktionary_url) html += `<p class="srcline"><a href="${esc(o.wiktionary_url)}" target="_blank">Wiktionary (de)</a></p>`;
+  // ── LAYER 3: importance/precedence-ordered author × work map ──
+  const lin = d.author_lineage;
+  if (lin) {
+    html += `<div class="card lineage-card"><h3>${jp ? "この言葉を重要な形で使った 著者 × 著作（史的・影響の順）" : "Authors × works that used this word (by historical/influence order)"}</h3>
+      <p class="muted">${esc(lin.concept_note || "")}</p>
+      <ol class="lineage">${lin.authors.map(a => `<li>
+        <b>${esc(a.author)}</b> — <i>${esc(a.work)}</i>${a.year ? ` (${a.year})` : ""}
+        <span class="srcline"> ／ ${jp ? "原語" : "orig"}: <b lang="de">${esc(a.term_de)}</b></span>
+        <div>${esc(a.role)}</div>
+        <div class="srcline">${jp ? "この著者の用法で見る（著者固有の共起は次スライス）" : "view in this author's usage (author-specific collocation is the next slice)"} · ${esc(a.source)}</div>
+      </li>`).join("")}</ol>
+      <p class="srcline">${jp ? "順序の根拠" : "order basis"}: ${esc(lin.order_basis)}（${jp ? "解釈" : "interpretive"}）</p></div>`;
+  } else if (w.resolved) {
+    html += `<div class="card"><p class="muted">${jp ? "この言葉の著者地図はまだ未整備です（捏造せず空欄にしています）。" : "The author map for this word is not yet curated (left empty rather than fabricated)."}</p></div>`;
+  }
 
-  // provenance + confidence + honesty
+  // ── DEMOTED: corpus-wide (not author-specific) collocations at the bottom ──
+  const os = d.original_space;
+  if (os) {
+    const rels = os.collocations || {};
+    const relKeys = Object.keys(rels);
+    if (relKeys.length) {
+      html += `<div class="card"><h3>${jp ? "原語空間の共起（コーパス全体・著者固有ではない）" : "Original-space collocations (corpus-wide, not author-specific)"}</h3>
+        <p class="muted">${esc(os.note || "")}</p><table class="plain orig-collo">`;
+      for (const rel of relKeys) {
+        const words = rels[rel].map(x =>
+          `<a href="/origin?q=${encodeURIComponent(x.word)}&lang=${LANG}" lang="de">${esc(x.word)}</a> <span class="srcline">${x.freq}</span>`).join("　");
+        html += `<tr><td class="srcline">${esc(jp ? (REL_JP[rel] || rel) : rel)}</td><td>${words}</td></tr>`;
+      }
+      html += `</table>`;
+      if (os.frequency != null) html += `<p class="srcline">${jp ? "独語コーパス頻度" : "German corpus frequency"}: ${esc(String(os.frequency))}</p>`;
+      html += `</div>`;
+    }
+  }
+
+  // provenance + confidence
   const conf = d.confidence || {};
-  const badges = (d.sources || []).map(s =>
-    s.error ? `<span class="badge err" title="${esc(s.error)}">${esc(s.source)}</span>`
-            : `<span class="badge">${esc(s.source)} · ${esc(s.retrieved_at)}</span>`).join(" ");
-  html += `<p class="srcline">${badges}</p>
-    <p class="srcline">${jp ? "確度" : "Confidence"} — ${jp ? "原語の特定" : "original term"}: <b>${esc(conf.original_term || "")}</b> ／ ${jp ? "共起" : "collocations"}: <b>${esc(conf.collocations || "")}</b></p>
-    </div>`;
+  if (d.sources && d.sources.length) {
+    const badges = d.sources.map(s => s.error
+      ? `<span class="badge err" title="${esc(s.error)}">${esc(s.source)}</span>`
+      : `<span class="badge">${esc(s.source)} · ${esc(s.retrieved_at)}</span>`).join(" ");
+    html += `<p class="srcline">${badges}<br>${jp ? "確度" : "confidence"} — ${jp ? "原語" : "original"}: <b>${esc(conf.original_term || "")}</b> ／ ${jp ? "著者順" : "author order"}: <b>${esc(conf.author_order || "")}</b> ／ ${jp ? "共起" : "collocations"}: <b>${esc(conf.collocations || "")}</b></p>`;
+  }
 
-  // S4 — return to the user's question
-  html += renderReturn(d, ex, o, jp);
+  // no original grounded → honest note
+  if (!os && d.original && !d.original.available) {
+    html += `<div class="card"><p>${esc(d.original.note || "")}</p></div>`;
+  }
 
-  if (d.collapsed_siblings) html += renderSiblings(d.collapsed_siblings, jp);
   $("origin-results").innerHTML = html;
-}
-
-function cleanWikt(s) {
-  return String(s || "").replace(/:?\[(\d+)\]/g, "$1.").replace(/\{\{[^}]*\}\}/g, "").replace(/\s+/g, " ").trim();
-}
-
-function renderReturn(d, ex, o, jp) {
-  // MVP framing (no LLM): grounded, templated — returns the original space to
-  // the user's own word. LLM-authored framing is a later, opt-in layer.
-  const coord = (ex.collocations && ex.collocations["ist in Koordination mit"]) || [];
-  const gen = (ex.collocations && (ex.collocations["ist Genitivattribut von"] || [])) || [];
-  const neigh = coord.slice(0, 3).map(w => w.word);
-  const withw = gen.slice(0, 2).map(w => w.word);
-  if (!neigh.length && !withw.length) return "";
-  const line = jp
-    ? `あなたが「${esc(d.query)}」と言ったとき、原語 <b lang="de">${esc(o.term)}</b> は独語では`
-      + (neigh.length ? ` <b>${neigh.map(esc).join("・")}</b> と並んで語られ、` : "")
-      + (withw.length ? ` <b>${withw.map(esc).join("・")}</b> と対で問われる語です。` : "")
-      + `日本語「${esc(d.query)}」だけを見ていると、この原語空間の連なりは見えません。上の語をたどると、あなたの問いがどの筋に立っていたかが見えてきます。`
-    : `When you said “${esc(d.query)}”, the original <b lang="de">${esc(o.term)}</b> travels in German with`
-      + (neigh.length ? ` <b>${neigh.map(esc).join(", ")}</b>` : "")
-      + (withw.length ? ` and is questioned together with <b>${withw.map(esc).join(", ")}</b>` : "")
-      + `. The Japanese word alone hides this. Follow the terms above to see which line your question was standing on.`;
-  return `<div class="card return-card"><h3>${jp ? "あなたの問いへ戻す" : "Back to your question"}</h3><p>${line}</p></div>`;
-}
-
-function renderSiblings(lemmas, jp) {
-  return `<div class="card"><h3>${jp ? "同じ日本語に潰れる原語（検証済シード）" : "Originals that collapse into the same Japanese (curated seed)"}</h3>
-    <table class="plain">${lemmas.map(l =>
-      `<tr><td><b lang="${esc(l.lang)}">${esc(l.lemma)}</b></td><td>${esc(l.gloss)}</td></tr>`).join("")}</table></div>`;
 }

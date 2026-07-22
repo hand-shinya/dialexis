@@ -81,6 +81,12 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .orig-lemmas b { font-size: 1.02rem; color: var(--accent); }
 .orig-note { font-size: .9rem; margin: .6rem 0 .4rem; }
 @media (prefers-color-scheme: dark) { .orig-card { background: #23201b; } }
+.word-card { border-left: 4px solid var(--ink); text-align: center; }
+.theword { font-size: 2.2rem; margin: .3rem 0; letter-spacing: .05em; }
+.lineage-card { border-left: 4px solid var(--accent); }
+.lineage { margin: .5rem 0; padding-left: 1.4rem; }
+.lineage li { margin: .7rem 0; }
+.lineage li i { color: var(--accent); }
 .orig-sense { margin: .3rem 0 .6rem; }
 .orig-collo td { vertical-align: top; padding: .3rem .5rem; }
 .orig-collo td:first-child { white-space: nowrap; color: var(--muted); font-size: .82rem; font-family: system-ui, sans-serif; }

@@ -49,3 +49,35 @@ def test_wiktionary_section_extract():
 
 def test_wiktionary_missing_section_is_empty():
     assert _extract(WIKT, "Gegenwörter") == ""
+
+
+# ---- Phase 1: the word-first hierarchy (author sits UNDER the lineage) --------
+from app.main import _author_lineage, AUTHOR_LINEAGE  # noqa: E402
+
+
+def _ent(label_en=None):
+    return {"error": None, "data": {"label_en": label_en, "wikipedia": {}, "orig_labels": {}}}
+
+
+def test_author_lineage_matches_and_is_ordered_by_precedence():
+    lg = _author_lineage("疎外", None)
+    assert lg and lg["id"] == "alienation"
+    years = [a["year"] for a in lg["authors"]]
+    assert years == sorted(years)  # Hegel 1807 → Feuerbach 1841 → Marx 1844
+    assert [a["author_de"] for a in lg["authors"]][0] == "Georg Wilhelm Friedrich Hegel"
+
+
+def test_author_lineage_matches_via_english_anchor():
+    assert _author_lineage("xyz", _ent(label_en="Alienation"))["id"] == "alienation"
+
+
+def test_author_lineage_absent_is_none_not_fabricated():
+    assert _author_lineage("量子力学", None) is None  # honest 未整備, not invented
+
+
+def test_A3_every_author_entry_is_sourced_and_names_original_work():
+    for lg in AUTHOR_LINEAGE["lineages"]:
+        for a in lg["authors"]:
+            assert a.get("source") and a.get("work_de") and a.get("term_de")
+    meta = AUTHOR_LINEAGE["_meta"]
+    assert "CURATED SEED" in meta["honesty"] and meta["order_basis"] and meta["verified_at"]

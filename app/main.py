@@ -48,6 +48,11 @@ with open(os.path.join(APP_DIR, "data", "orig_clusters.json"), encoding="utf-8")
 ORIG_CLUSTER_INDEX = {
     m.lower(): c for c in ORIG_CLUSTERS["clusters"] for m in c["match"]
 }
+with open(os.path.join(APP_DIR, "data", "author_lineage.json"), encoding="utf-8") as f:
+    AUTHOR_LINEAGE = json.load(f)
+AUTHOR_LINEAGE_INDEX = {
+    m.lower(): lg for lg in AUTHOR_LINEAGE["lineages"] for m in lg["match"]
+}
 
 
 # Idempotent; runs at import so tests, uvicorn and the harvester all share it.
@@ -259,6 +264,21 @@ def _orig_cluster(q: str, entity: dict | None) -> dict | None:
     # shallow copy so the module-level seed is never mutated
     return {**cluster, "provenance": ORIG_CLUSTERS["_meta"],
             "live_orig_labels": {k: v for k, v in live.items() if k != "en"}}
+
+
+def _author_lineage(q: str, entity: dict | None) -> dict | None:
+    """The importance/precedence-ordered author×work map for a concept. Authors
+    sit UNDER the word's lineage — never a silently-fixed default (the user's
+    structural correction: 言葉が先, 著者はその下). Matched like _orig_cluster;
+    returns the sourced seed lineage or None (honest 未整備)."""
+    keys = {(q or "").strip().lower()}
+    if entity and not entity.get("error"):
+        ed = entity["data"]
+        for k in (ed.get("label_en"), ed.get("wikipedia", {}).get("en")):
+            if k:
+                keys.add(k.strip().lower())
+    lg = next((AUTHOR_LINEAGE_INDEX[k] for k in keys if k in AUTHOR_LINEAGE_INDEX), None)
+    return {**lg, "order_basis": AUTHOR_LINEAGE["_meta"]["order_basis"]} if lg else None
 
 
 def _nonconcept(ent: dict) -> bool:
@@ -512,60 +532,81 @@ async def api_origin(q: str, lang: str = "ja"):
     if not wd["error"] and wd["data"]:
         entity = await _resolve_entity(wd["data"], lang)
 
-    context = {"resolved": False, "query": q}
+    # LAYER 0 — the word itself is the headline (言葉が先にありき).
+    word = {"query": q, "resolved": False}
     german = None
+    wp_title = None
     if entity and not entity["error"]:
         ed = entity["data"]
         german = ed.get("orig_labels", {}).get("de")
-        context = {
-            "resolved": True,
-            "label": ed.get("label"), "label_en": ed.get("label_en"),
-            "description": ed.get("description"),
-            "wikidata_url": ed.get("url"),
-            # context HINT only — which thinkers this concept is tied to. The
-            # author/work-specific view (S1 proper) is the next slice, stated so.
-            "thinkers_qids": ed.get("claims", {}).get("influenced_by", [])[:6],
-        }
+        wp_title = ed["wikipedia"].get(lang) or ed["wikipedia"].get("en")
+        word = {"query": q, "resolved": True,
+                "label": ed.get("label"), "label_en": ed.get("label_en"),
+                "description": ed.get("description"), "wikidata_url": ed.get("url")}
 
-    # curated collapse siblings (continuity with the seed) — a bonus dimension
+    # LAYER 1 — 上位概念: the word's lineage & relations (frame above any author).
+    #   #3 原語の複数性 goes here, at the entry: which originals collapse into it.
     cluster = _orig_cluster(q, entity)
+    # LAYER 2 — commonsense understanding the user already holds (never dropped).
+    commonsense = await wikipedia.summary(wp_title, lang if entity and lang in entity["data"]["wikipedia"] else "en") if wp_title else None
+    # LAYER 3 — importance/precedence-ordered author×work map (authors sit UNDER
+    #   the lineage; the user chooses one consciously — never auto-fixed).
+    lineage = _author_lineage(q, entity)
 
     if not german:
         return {"query": q, "lang": lang, "queried_at": now(),
-                "context": context,
+                "word": word,
+                "commonsense": _wiki_block(commonsense),
+                "collapsed_siblings": (cluster or {}).get("lemmas"),
+                "author_lineage": lineage,
                 "original": {"available": False,
                              "note": "この語からドイツ語の原語に接地できませんでした"
-                                     "（MVPは独語系統のみ対応。原語がギリシャ語・ラテン語等の"
-                                     "場合は今後の対応です）。"},
-                "collapsed_siblings": (cluster or {}).get("lemmas"),
-                "expansion": None, "sources": []}
+                                     "（Phase 1は独語系統のみ。原語がギリシャ語・ラテン語等の"
+                                     "場合は今後の系統追加で対応します）。"},
+                "original_space": None, "sources": []}
 
     wp, freq, wk = await asyncio.gather(
         dwds.wortprofil(german), dwds.frequency(german), wiktionary.entry(german, "de"))
-
     wkd = wk["data"] if not wk["error"] else {}
-    sources = []
-    for r in (wp, freq, wk):
-        sources.append({"source": r["source"], "retrieved_at": r["retrieved_at"],
-                        "error": r["error"]})
+    sources = [{"source": r["source"], "retrieved_at": r["retrieved_at"], "error": r["error"]}
+               for r in (wp, freq, wk)]
 
     return {
         "query": q, "lang": lang, "queried_at": now(),
-        "context": context,
-        "original": {"available": True, "term": german, "lang": "de",
-                     "wiktionary_url": (wkd or {}).get("url")},
-        "expansion": {
+        # ordered top→bottom = the hierarchy the user fixed:
+        "word": word,                                    # 言葉（主役）
+        "commonsense": _wiki_block(commonsense),         # 常識的理解（必ず表示）
+        "upper_concept": {                               # 上位概念：由来と関係
+            "original_term": german,
+            "collapsed_siblings": (cluster or {}).get("lemmas"),   # #3 原語の複数性
+            "etymology": (wkd or {}).get("senses", "") and (wkd or {}).get("etymology", ""),
             "senses": (wkd or {}).get("senses", ""),
-            "etymology": (wkd or {}).get("etymology", ""),
-            "synonyms": (wkd or {}).get("synonyms", ""),
+            "wiktionary_url": (wkd or {}).get("url"),
+        },
+        "author_lineage": lineage,                       # 重要度順の著者×著作
+        # DEMOTED — corpus-wide (not author-specific) collocations sit at the bottom.
+        "original_space": {
+            "term": german,
             "frequency": (freq["data"] or {}).get("hits") if not freq["error"] else None,
             "collocations": wp["data"]["relations"] if not wp["error"] else {},
-            "collocations_scraped": True,
+            "scraped": True,
+            "note": "コーパス全体の一般的な連なり（特定著者に固有ではない）",
         },
-        "collapsed_siblings": (cluster or {}).get("lemmas"),
-        "confidence": {"original_term": "確定", "collocations": "高蓋然（コーパス全体・著者固有ではない）"},
+        "confidence": {"original_term": "確定",
+                       "author_order": "史的・影響の前後（解釈）",
+                       "collocations": "高蓋然（コーパス全体・著者固有ではない）"},
         "sources": sources,
     }
+
+
+def _wiki_block(res) -> dict | None:
+    """Compact the Wikipedia summary connector result for the commonsense layer."""
+    if not res or res.get("error") or not res.get("data"):
+        return None
+    d = res["data"]
+    return {"title": d.get("title"), "extract": d.get("extract"),
+            "url": d.get("url"), "lang": d.get("lang"),
+            "retrieved_at": res.get("retrieved_at")}
 
 
 def _relevant(works: list, term: str) -> list:

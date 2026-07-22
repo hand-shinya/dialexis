@@ -1,0 +1,32 @@
+{
+  "_meta": {
+    "purpose": "著者は主軸ではない。言葉→上位概念（由来・関係）の下に、その言葉を重要な形で使った著者×著作を位置づける層。ユーザーが一人を意識的に選んだときに初めて著者固有の視点(#1)へ入る——システムが黙って著者を固定しない。",
+    "honesty": "CURATED SEED, sourced & precedence-ordered. Each work's EXISTENCE verified against de.wikipedia.org 2026-07-22. Ordering is 史的・影響の前後（Hegel 1807 → Feuerbach 1841 → Marx 1844）＝a defensible chronological/influence signal, NOT a fabricated 'importance' ranking. Not exhaustive. The per-author original term and its primary text are the hooks for the later author-specific collocation slice (#1).",
+    "order_basis": "historical/influence precedence (chronological)",
+    "verified_at": "2026-07-22"
+  },
+  "lineages": [
+    {
+      "id": "alienation",
+      "match": ["疎外", "自己疎外", "外化", "対象化", "alienation", "estrangement", "entfremdung"],
+      "concept_note": "疎外／外化の概念系。ヘーゲルの精神の外化に始まり、フォイエルバッハの宗教的疎外を経て、マルクスが労働の疎外として経済的現実に据えた。",
+      "authors": [
+        {"author": "G.W.F. ヘーゲル", "author_de": "Georg Wilhelm Friedrich Hegel",
+         "work": "精神現象学", "work_de": "Phänomenologie des Geistes", "year": 1807,
+         "term_de": "Entäußerung / Entfremdung",
+         "role": "精神が自己を外化(Entäußerung)し、疎遠なものとして現れ、やがて自己へ回復する論理。疎外概念の哲学的原型。",
+         "source": "de.wikipedia.org/wiki/Phänomenologie_des_Geistes"},
+        {"author": "L. フォイエルバッハ", "author_de": "Ludwig Feuerbach",
+         "work": "キリスト教の本質", "work_de": "Das Wesen des Christentums", "year": 1841,
+         "term_de": "Entfremdung (religiöse)",
+         "role": "人間が自らの類的本質(Gattungswesen)を神へ投影し疎外する、という宗教批判。マルクスへの直接の橋。",
+         "source": "de.wikipedia.org/wiki/Das_Wesen_des_Christentums"},
+        {"author": "K. マルクス", "author_de": "Karl Marx",
+         "work": "経済学・哲学草稿（1844年）", "work_de": "Ökonomisch-philosophische Manuskripte aus dem Jahre 1844", "year": 1844,
+         "term_de": "entfremdete Arbeit",
+         "role": "疎外を労働・産物・類的存在・他者の四層で捉え、私有財産・賃労働という経済的現実に据えた。「疎外された労働」の節。",
+         "source": "de.wikipedia.org/wiki/Ökonomisch-philosophische_Manuskripte"}
+      ]
+    }
+  ]
+}
