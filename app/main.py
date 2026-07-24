@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import db
 from .db import get_conn, init_db, now, rows
-from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary
+from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept
 from . import citations as cites
 from . import deepsearch
 from . import bibliography
@@ -550,42 +550,62 @@ async def api_origin(q: str, lang: str = "ja"):
                "ko": "Korean", "fr": "French", "la": "Latin"}
     section_lang = SECTION.get(lang, "Japanese")
 
-    tr = await wiktionary.trace(q, section_lang)
+    # TWO complementary paths, run together (they cover each other's gaps):
+    #  ・概念経路 concept.node — follows the word's OWN article→Wikidata item (no
+    #    biased search), giving the concept-TRANSLATION-origin (疎外→独 Entfremdung,
+    #    縁起→梵) and the multilingual WORD fan (the concept in N languages).
+    #  ・語経路 wiktionary.trace — the word's linguistic etymology (空→梵 śūnyatā).
+    tr, cn = await asyncio.gather(
+        wiktionary.trace(q, section_lang), concept.node(q, lang))
     td = tr["data"] if not tr["error"] else {}
+    cd = cn["data"] if not cn["error"] else {}
     gen = await wiktionary.ja_senses(q) if lang == "ja" else None
     gen_senses = (gen["data"]["senses"] if gen and not gen["error"] and gen.get("data") else [])
 
-    # breadth engine — the DATA's union of languages that carry this word, NOT a
-    # model-generated list (which would narrow to the few languages I happen to
-    # know — the very affliction we fight). Unmapped codes are shown raw, dropped
-    # never. Fuller breadth (Wikidata's 172-language concept labels) awaits reliable
-    # word→concept linking — stated in `note`, not silently omitted.
+    # breadth = the DATA's union of the languages/words carrying this concept,
+    # NOT a model-generated list (which would narrow to the few I know — the very
+    # affliction we fight). Primary source = the concept node's Wikidata labels
+    # (the actual WORD in each language); Wiktionary sections fill any gap.
+    # Unmapped codes are shown raw, never dropped.
     breadth = {}
+    for code, label in (cd.get("breadth_labels") or {}).items():
+        nm = wiktionary.langname(code)
+        breadth[nm] = {"name": nm, "term": label, "via": "wikidata"}
     for s in td.get("sections", []):
-        if s == "Translingual":
-            continue
-        breadth[s] = {"name": s, "via": "wiktionary節"}
-    for c in td.get("descendants", []):
-        nm = wiktionary.langname(c)
-        breadth.setdefault(nm, {"name": nm, "via": "派生"})
+        if s != "Translingual":
+            breadth.setdefault(s, {"name": s, "term": "", "via": "wiktionary"})
+
+    # polysemy: the two paths may resolve different SENSES of a word (空 →『sky』
+    # via the article vs 『śūnyatā/梵』via the Buddhist etymology). We show both
+    # rather than silently pick one.
+    word_origin = td.get("origin_estimate")
+    concept_origin = cd.get("original_terms") or []
+    polysemy = bool(word_origin and concept_origin
+                    and word_origin.get("name") not in {o["name"] for o in concept_origin}
+                    and not word_origin.get("native"))
 
     return {
         "query": q, "lang": lang, "queried_at": now(),
         "word": {"query": q},
-        "found": td.get("found", False),
+        "found": td.get("found", False) or cd.get("found", False),
         "general_meaning": gen_senses,           # 広く共有されている意味（入力言語）
-        "origin": td.get("origin_estimate"),     # {code,name,native,multi} or None（推定）
+        "concept_origin": concept_origin,        # 概念-翻訳-原点（疎外→独 Entfremdung）
+        "word_origin": word_origin,              # 語源原点（空→梵・推定）
         "chain": td.get("origin_chain", []),     # 変容の連鎖（言語＋語形・全表示）
-        "senses": td.get("senses", []),          # 原語での語義
+        "senses": td.get("senses", []),
+        "polysemy": polysemy,
         "breadth": sorted(breadth.values(), key=lambda x: x["name"]),
-        "breadth_count": len([b for b in breadth]),
+        "breadth_count": len(breadth),
+        "qid": cd.get("qid"),
+        "article_url": cd.get("article_url"),
+        "wikidata_url": cd.get("wikidata_url"),
         "wiktionary_url": td.get("url"),
-        "confidence": {"origin": "推定（語源チェーンの最古層・断定でない）",
-                       "breadth": "データの和集合（言語選定はモデルでなくデータ）"},
-        "sources": [{"source": tr["source"], "retrieved_at": tr["retrieved_at"],
-                     "error": tr["error"]}],
-        "note": "breadthは現状Wiktionaryの言語節・派生のみ。概念ノード接続"
-                "（Wikidata全ラベル172言語）による多言語の語の拡張は統合作業として継続中。",
+        "confidence": {
+            "concept_origin": "百科の記述（密度の高い言説からの手がかり・要権威裏取り）",
+            "word_origin": "推定（語源チェーンの最古層・断定でない）",
+            "breadth": "データの和集合（言語選定はモデルでなくデータ）"},
+        "sources": [{"source": r["source"], "retrieved_at": r["retrieved_at"],
+                     "error": r["error"]} for r in (tr, cn)],
     }
 
 

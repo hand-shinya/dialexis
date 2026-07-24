@@ -957,19 +957,27 @@ async function originRun(q) {
       <ol class="gm-senses">${d.general_meaning.map(s => `<li>${esc(s)}</li>`).join("")}</ol></div>`;
   }
 
-  // ── 原点（推定）＋ 変容の連鎖（宿痾の可視化） ──
-  const o = d.origin;
-  html += `<div class="card orig-card"><h3>${jp ? "この言葉の原点（推定）と、辿ってきた道" : "This word's origin (estimated) and the road it travelled"}</h3>`;
+  // ── 原点：概念-翻訳-原点（密度）＋ 語源原点（語史）を分けて示す ──
+  const co = d.concept_origin || [], o = d.word_origin;
+  html += `<div class="card orig-card"><h3>${jp ? "この言葉の原点" : "This word's origin"}</h3>`;
+  // 概念-翻訳-原点：訳語がどの言語の何から来たか（疎外→独 Entfremdung）
+  if (co.length) {
+    html += `<p>${jp ? "概念の原点（この訳語が写した原語）" : "Concept origin (the original this translation renders)"}:
+      ${co.map(o2 => `<b class="origin-lang">${esc(o2.name)}</b> <span lang="${esc(o2.code||'')}">${esc(o2.term)}</span>`).join("　／　")}</p>
+      <p class="srcline">${jp ? "密度の高い言説（記事・著者・論議）から辿った手がかり。権威源での裏取りは今後。" : "A lead traced from dense discourse; authoritative confirmation to follow."}</p>`;
+  }
+  // 語源原点：語そのものの言語史
   if (o) {
-    const kind = o.native
-      ? (jp ? "この言葉は他言語からの借用でなく、この言語で生まれた語です。" : "Not a loan — this word originated in this very language.")
-      : (jp ? "翻訳・借用をさかのぼると、最も古い層はこの言語に辿り着きます。" : "Tracing back through translation/borrowing, the deepest layer reaches this language.");
-    html += `<p>${jp ? "推定原点" : "Estimated origin"}: <b class="origin-lang">${esc(o.name)}</b>
+    html += `<p>${jp ? "語源の原点（語そのものの言語史・推定）" : "Etymological origin (the word's own history, estimated)"}:
+      <b class="origin-lang">${esc(o.name)}</b>
       ${o.native ? `<span class="badge">${jp ? "この言語生まれ" : "native"}</span>` : ""}
-      ${o.multi ? `<span class="badge warn2">${jp ? "複数の語源あり" : "multiple etymologies"}</span>` : ""}</p>
-      <p class="muted">${kind}${o.multi ? (jp ? " ただしこの語は語源が複数あり、単一の原点に還元できません（下の連鎖に両方が現れます）。" : " But this word has several etymologies and cannot be reduced to one origin (both appear in the chain).") : ""}</p>`;
-  } else {
-    html += `<p class="muted">${jp ? "語源の連鎖から原点を特定できませんでした（連鎖情報が乏しい語です）。" : "Could not estimate an origin from the etymology chain (sparse data)."}</p>`;
+      ${o.multi ? `<span class="badge warn2">${jp ? "複数の語源" : "multiple"}</span>` : ""}</p>`;
+  }
+  if (!co.length && !o) {
+    html += `<p class="muted">${jp ? "原点を特定できませんでした（記事・語源とも手がかりが乏しい語です）。" : "Could not identify an origin (sparse article/etymology data)."}</p>`;
+  }
+  if (d.polysemy) {
+    html += `<p class="muted">⚠ ${jp ? "この語は多義です：概念経路と語源経路が異なる意味・原点を指しています（両方を示しています）。" : "This word is polysemous: the concept path and the etymology path point to different senses/origins (both shown)."}</p>`;
   }
   // 変容の連鎖：現在語 ← … ← 原点（言語＋実語形）
   if (d.chain && d.chain.length) {
@@ -984,18 +992,19 @@ async function originRun(q) {
   if (d.wiktionary_url) html += `<p class="srcline"><a href="${esc(d.wiktionary_url)}" target="_blank">Wiktionary</a></p>`;
   html += `</div>`;
 
-  // ── breadth：この語を担う言語の広がり（データの和集合・モデルが選ばない） ──
+  // ── breadth：この概念を担う言語と、その各言語での語（データの和集合） ──
   if (d.breadth && d.breadth.length) {
-    html += `<div class="card"><h3>${jp ? "この言葉を担う言語の広がり" : "The breadth of languages that carry this word"} <span class="srcline">${d.breadth_count}</span></h3>
-      <p class="muted">${jp ? "どの言語を出すかは、私（AI）でなくデータが決めています。既知の数言語に縮めないための設計です。" : "Which languages appear is decided by the data, not by me (the AI) — by design, so it is never narrowed to the few I happen to know."}</p>
-      <div class="breadth">${d.breadth.map(b => `<span class="blang" title="${esc(b.via)}">${esc(b.name)}</span>`).join("")}</div></div>`;
+    html += `<div class="card"><h3>${jp ? "この概念を担う、世界の言語とその語" : "The world's languages that carry this concept, and their word"} <span class="srcline">${d.breadth_count}</span></h3>
+      <p class="muted">${jp ? "どの言語を出すかは、私（AI）でなくデータが決めています。既知の数言語に縮めない——見知らぬ言語こそ現れるべきだからです。" : "Which languages appear is decided by the data, not by me (the AI) — the unfamiliar ones are exactly what should surface."}</p>
+      <div class="breadth">${d.breadth.map(b => `<span class="blang" title="${esc(b.via)}">${esc(b.name)}${b.term ? `：<span lang="">${esc(b.term)}</span>` : ""}</span>`).join("")}</div></div>`;
   }
 
   // ── 出所・確度・限界 ──
   const badges = (d.sources || []).map(s => s.error
     ? `<span class="badge err" title="${esc(s.error)}">${esc(s.source)}</span>`
     : `<span class="badge">${esc(s.source)} · ${esc(s.retrieved_at)}</span>`).join(" ");
-  html += `<p class="srcline">${badges}<br>${jp ? "確度" : "confidence"} — ${jp ? "原点" : "origin"}: ${esc((d.confidence||{}).origin||"")} ／ breadth: ${esc((d.confidence||{}).breadth||"")}</p>`;
+  const cf = d.confidence || {};
+  html += `<p class="srcline">${badges}<br>${jp ? "確度" : "confidence"} — ${jp ? "概念原点" : "concept"}: ${esc(cf.concept_origin||"")} ／ ${jp ? "語源" : "etymology"}: ${esc(cf.word_origin||"")} ／ breadth: ${esc(cf.breadth||"")}</p>`;
   if (d.note) html += `<p class="srcline muted">${esc(d.note)}</p>`;
 
   $("origin-results").innerHTML = html;
