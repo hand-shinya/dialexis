@@ -539,88 +539,53 @@ async def api_explore(q: str, lang: str = "en"):
 
 @app.get("/api/origin")
 async def api_origin(q: str, lang: str = "ja"):
-    """原語による探求 (MVP, German lineage). Take an ordinary word the user did
-    NOT know was loaded, resolve it to its ORIGINAL German term, and open the
-    original-language space around it — sense, etymology, and the collocations
-    it lives with in German — grounded live and stamped, then returned to the
-    user's word. Honest silence when there is no German original to stand on."""
+    """原語による探求 — 無中心の原点エンジン。どの言語の語からでも、Wiktionaryを
+    語キーに、その概念が生まれた言語（入力言語自身のこともある）を辿り、通ってきた
+    言語と語形の連鎖（翻訳による変容＝宿痾を可視化）と、その語を担う言語の広がりを
+    示す。いかなる言語も中心に置かない。原点は「推定」で断定せず、連鎖は常に全て示し、
+    breadthはモデルでなくデータの和集合に語らせる。"""
     if not q.strip():
         raise HTTPException(400, "empty query")
+    SECTION = {"ja": "Japanese", "en": "English", "de": "German", "zh": "Chinese",
+               "ko": "Korean", "fr": "French", "la": "Latin"}
+    section_lang = SECTION.get(lang, "Japanese")
 
-    wd = await wikidata.search(q, lang, limit=20)
-    entity = None
-    if not wd["error"] and wd["data"]:
-        entity = await _resolve_entity(wd["data"], lang)
+    tr = await wiktionary.trace(q, section_lang)
+    td = tr["data"] if not tr["error"] else {}
+    gen = await wiktionary.ja_senses(q) if lang == "ja" else None
+    gen_senses = (gen["data"]["senses"] if gen and not gen["error"] and gen.get("data") else [])
 
-    # LAYER 0 — the word itself is the headline (言葉が先にありき).
-    word = {"query": q, "resolved": False}
-    german = None
-    wp_title = None
-    if entity and not entity["error"]:
-        ed = entity["data"]
-        german = ed.get("orig_labels", {}).get("de")
-        wp_title = ed["wikipedia"].get(lang) or ed["wikipedia"].get("en")
-        word = {"query": q, "resolved": True,
-                "label": ed.get("label"), "label_en": ed.get("label_en"),
-                "description": ed.get("description"), "wikidata_url": ed.get("url")}
-
-    # LAYER 1 — 上位概念: the word's lineage & relations (frame above any author).
-    #   #3 原語の複数性 goes here, at the entry: which originals collapse into it.
-    cluster = _orig_cluster(q, entity)
-    # 広く共有されている意味 — the EVERYDAY Japanese senses (ja.wiktionary,
-    #   疎外→『疎んじること。仲間外れにすること』), which is truly general — not
-    #   philosophy-only — plus the encyclopedic summary as fuller context.
-    gen = await wiktionary.ja_senses(q)
-    general_meaning = _general_block(gen,
-        await wikipedia.summary(wp_title, lang if entity and lang in entity["data"]["wikipedia"] else "en") if wp_title else None)
-    # LAYER 3 — importance/precedence-ordered author×work map (authors sit UNDER
-    #   the lineage; the user chooses one consciously — never auto-fixed).
-    lineage = _author_lineage(q, entity)
-
-    if not german:
-        return {"query": q, "lang": lang, "queried_at": now(),
-                "word": word,
-                "general_meaning": general_meaning,
-                "collapsed_siblings": (cluster or {}).get("lemmas"),
-                "author_lineage": lineage,
-                "original": {"available": False,
-                             "note": "この語からドイツ語の原語に接地できませんでした"
-                                     "（Phase 1は独語系統のみ。原語がギリシャ語・ラテン語等の"
-                                     "場合は今後の系統追加で対応します）。"},
-                "original_space": None, "sources": []}
-
-    wp, freq, wk = await asyncio.gather(
-        dwds.wortprofil(german), dwds.frequency(german), wiktionary.entry(german, "de"))
-    wkd = wk["data"] if not wk["error"] else {}
-    sources = [{"source": r["source"], "retrieved_at": r["retrieved_at"], "error": r["error"]}
-               for r in (wp, freq, wk)]
+    # breadth engine — the DATA's union of languages that carry this word, NOT a
+    # model-generated list (which would narrow to the few languages I happen to
+    # know — the very affliction we fight). Unmapped codes are shown raw, dropped
+    # never. Fuller breadth (Wikidata's 172-language concept labels) awaits reliable
+    # word→concept linking — stated in `note`, not silently omitted.
+    breadth = {}
+    for s in td.get("sections", []):
+        if s == "Translingual":
+            continue
+        breadth[s] = {"name": s, "via": "wiktionary節"}
+    for c in td.get("descendants", []):
+        nm = wiktionary.langname(c)
+        breadth.setdefault(nm, {"name": nm, "via": "派生"})
 
     return {
         "query": q, "lang": lang, "queried_at": now(),
-        # ordered top→bottom = the hierarchy the user fixed:
-        "word": word,                                    # 言葉（主役）
-        # 別概念として分離表示する2相（上下でない）:
-        "general_meaning": general_meaning,              # ① 広く共有されている意味
-        "upper_concept": {                               # ② 原語がひらく相
-            "original_term": german,
-            "collapsed_siblings": (cluster or {}).get("lemmas"),   # #3 原語の複数性
-            "etymology": (wkd or {}).get("senses", "") and (wkd or {}).get("etymology", ""),
-            "senses": (wkd or {}).get("senses", ""),
-            "wiktionary_url": (wkd or {}).get("url"),
-        },
-        "author_lineage": lineage,                       # 重要度順の著者×著作
-        # DEMOTED — corpus-wide (not author-specific) collocations sit at the bottom.
-        "original_space": {
-            "term": german,
-            "frequency": (freq["data"] or {}).get("hits") if not freq["error"] else None,
-            "collocations": wp["data"]["relations"] if not wp["error"] else {},
-            "scraped": True,
-            "note": "コーパス全体の一般的な連なり（特定著者に固有ではない）",
-        },
-        "confidence": {"original_term": "確定",
-                       "author_order": "史的・影響の前後（解釈）",
-                       "collocations": "高蓋然（コーパス全体・著者固有ではない）"},
-        "sources": sources,
+        "word": {"query": q},
+        "found": td.get("found", False),
+        "general_meaning": gen_senses,           # 広く共有されている意味（入力言語）
+        "origin": td.get("origin_estimate"),     # {code,name,native,multi} or None（推定）
+        "chain": td.get("origin_chain", []),     # 変容の連鎖（言語＋語形・全表示）
+        "senses": td.get("senses", []),          # 原語での語義
+        "breadth": sorted(breadth.values(), key=lambda x: x["name"]),
+        "breadth_count": len([b for b in breadth]),
+        "wiktionary_url": td.get("url"),
+        "confidence": {"origin": "推定（語源チェーンの最古層・断定でない）",
+                       "breadth": "データの和集合（言語選定はモデルでなくデータ）"},
+        "sources": [{"source": tr["source"], "retrieved_at": tr["retrieved_at"],
+                     "error": tr["error"]}],
+        "note": "breadthは現状Wiktionaryの言語節・派生のみ。概念ノード接続"
+                "（Wikidata全ラベル172言語）による多言語の語の拡張は統合作業として継続中。",
     }
 
 

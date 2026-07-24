@@ -928,115 +928,75 @@ function cleanWikt(s) {
   return String(s || "").replace(/:?\[(\d+)\]/g, "$1.").replace(/\{\{[^}]*\}\}/g, "")
     .replace(/\s+/g, " ").trim();
 }
-
 async function originRun(q) {
   const jp = LANG === "ja";
-  $("origin-status").innerHTML = `<p class="muted">${jp ? "原語へ接地中…" : "Grounding in the original…"}</p>`;
+  $("origin-status").innerHTML = `<p class="muted">${jp ? "原点へ辿っています…" : "Tracing to the origin…"}</p>`;
   $("origin-results").innerHTML = "";
-  $("origin-results").dataset.q = q;   // remembered so the new-tab toggle can re-render
+  $("origin-results").dataset.q = q;
   const linkAttr = originLinkAttr();
   let d;
   try { d = await api(`/api/origin?q=${encodeURIComponent(q)}&lang=${LANG}`); }
   catch (e) { $("origin-status").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
   $("origin-status").innerHTML = "";
+  const olink = (t) => `<a href="/origin?q=${encodeURIComponent(t)}&lang=${LANG}"${linkAttr}>${esc(t)}</a>`;
   let html = "";
 
-  // ── LAYER 0: the word itself (headline — 言葉が先にありき) ──
-  const w = d.word || {};
+  // ── 言葉（主役） ──
   html += `<div class="card word-card">
     <p class="srcline">${jp ? "この探求は、まず言葉そのものから始まります" : "This inquiry begins with the word itself"}</p>
-    <h2 class="theword">「${esc(w.query || q)}」</h2>
-    ${w.resolved ? `<p class="muted">${esc(w.label || "")} — ${esc(w.description || "")}</p>
-      <p class="srcline"><a href="${esc(w.wikidata_url)}" target="_blank">Wikidata</a></p>` : ""}</div>`;
+    <h2 class="theword">「${esc((d.word || {}).query || q)}」</h2></div>`;
 
-  // internal link to open another word's inquiry (respects the new-tab choice)
-  const olink = (term) =>
-    `<a href="/origin?q=${encodeURIComponent(term)}&lang=${LANG}"${linkAttr} lang="de">${esc(term)}</a>`;
-
-  // ── ① 広く共有されている意味 — 別カードで分離表示（原語の相とは別概念）。
-  //    ja.wiktionary の日常語義（疎外→「仲間外れにすること」）を主に、百科説明を従に。──
-  const gm = d.general_meaning;
-  if (gm) {
-    html += `<div class="card"><h3>${jp ? "広く共有されている意味" : "The broadly shared meaning"}</h3>`;
-    if (gm.senses && gm.senses.length) {
-      html += `<ol class="gm-senses">${gm.senses.map(s => `<li>${esc(s)}</li>`).join("")}</ol>
-        <p class="srcline"><a href="${esc(gm.senses_url)}" target="_blank">Wiktionary (ja)</a> · ${esc(gm.senses_retrieved_at || "")}</p>`;
-    }
-    if (gm.encyclopedic) {
-      html += `<details class="gm-enc"><summary>${jp ? "百科的な説明もみる" : "encyclopedic description"}</summary>
-        <p>${esc(gm.encyclopedic.extract)}</p>
-        <p class="srcline"><a href="${esc(gm.encyclopedic.url)}" target="_blank">Wikipedia (${esc(gm.encyclopedic.lang)})</a> · ${esc(gm.encyclopedic.retrieved_at)}</p></details>`;
-    }
-    if (!(gm.senses && gm.senses.length))
-      html += `<p class="muted">${jp ? "この語には辞書的な一般語義が見当たりません（専門語の可能性）。" : "No everyday dictionary sense found (likely a technical term)."}</p>`;
-    html += `</div>`;
+  if (!d.found) {
+    html += `<div class="card"><p>${jp ? "この語のWiktionaryエントリが見つかりませんでした（語幹・別表記・ローマ字で再試行してみてください）。" : "No Wiktionary entry for this form (try a lemma / alternative spelling / romanization)."}</p></div>`;
+    $("origin-results").innerHTML = html; return;
   }
 
-  // ── ② 原語がひらく相 — 別カードで分離表示。原語・複数の原語はすべてリンク化し、
-  //    そこから別の探求へたどれるようにする ──
-  const uc = d.upper_concept;
-  const sibs = (uc && uc.collapsed_siblings) || (d.collapsed_siblings);
-  if (uc || sibs) {
-    html += `<div class="card orig-card"><h3>${jp ? "原語がひらく相" : "What the original opens"}</h3>`;
-    if (sibs) {
-      html += `<p class="muted">${jp ? "この日本語の一語は、原語では複数の語に分かれています（各語をたどれます）：" : "This one Japanese word splits into several originals (each is followable):"}</p>
-        <table class="plain">${sibs.map(l =>
-          `<tr><td><b>${olink(l.lemma)}</b></td><td>${esc(l.gloss)}</td></tr>`).join("")}</table>`;
-    }
-    if (uc && uc.original_term) html += `<p class="srcline">${jp ? "接地した原語" : "grounded original"}: <b>${olink(uc.original_term)}</b></p>`;
-    if (uc && uc.senses) html += `<p><b>${jp ? "原語での意味" : "meaning in the original"}:</b> ${esc(cleanWikt(uc.senses))}</p>`;
-    if (uc && uc.etymology) html += `<p><b>${jp ? "語源" : "etymology"}:</b> ${esc(cleanWikt(uc.etymology))}${uc.wiktionary_url ? ` <a href="${esc(uc.wiktionary_url)}" target="_blank">Wiktionary</a>` : ""}</p>`;
-    html += `</div>`;
+  // ── 広く共有されている意味（入力言語） ──
+  if (d.general_meaning && d.general_meaning.length) {
+    html += `<div class="card"><h3>${jp ? "広く共有されている意味" : "The broadly shared meaning"}</h3>
+      <ol class="gm-senses">${d.general_meaning.map(s => `<li>${esc(s)}</li>`).join("")}</ol></div>`;
   }
 
-  // ── LAYER 3: importance/precedence-ordered author × work map ──
-  const lin = d.author_lineage;
-  if (lin) {
-    html += `<div class="card lineage-card"><h3>${jp ? "この言葉を重要な形で使った 著者 × 著作（史的・影響の順）" : "Authors × works that used this word (by historical/influence order)"}</h3>
-      <p class="muted">${esc(lin.concept_note || "")}</p>
-      <ol class="lineage">${lin.authors.map(a => `<li>
-        <b>${esc(a.author)}</b> — <i>${esc(a.work)}</i>${a.year ? ` (${a.year})` : ""}
-        <span class="srcline"> ／ ${jp ? "原語" : "orig"}: <b lang="de">${esc(a.term_de)}</b></span>
-        <div>${esc(a.role)}</div>
-        <div class="srcline">${jp ? "この著者の用法で見る（著者固有の共起は次スライス）" : "view in this author's usage (author-specific collocation is the next slice)"} · ${esc(a.source)}</div>
-      </li>`).join("")}</ol>
-      <p class="srcline">${jp ? "順序の根拠" : "order basis"}: ${esc(lin.order_basis)}（${jp ? "解釈" : "interpretive"}）</p></div>`;
-  } else if (w.resolved) {
-    html += `<div class="card"><p class="muted">${jp ? "この言葉の著者地図はまだ未整備です（捏造せず空欄にしています）。" : "The author map for this word is not yet curated (left empty rather than fabricated)."}</p></div>`;
+  // ── 原点（推定）＋ 変容の連鎖（宿痾の可視化） ──
+  const o = d.origin;
+  html += `<div class="card orig-card"><h3>${jp ? "この言葉の原点（推定）と、辿ってきた道" : "This word's origin (estimated) and the road it travelled"}</h3>`;
+  if (o) {
+    const kind = o.native
+      ? (jp ? "この言葉は他言語からの借用でなく、この言語で生まれた語です。" : "Not a loan — this word originated in this very language.")
+      : (jp ? "翻訳・借用をさかのぼると、最も古い層はこの言語に辿り着きます。" : "Tracing back through translation/borrowing, the deepest layer reaches this language.");
+    html += `<p>${jp ? "推定原点" : "Estimated origin"}: <b class="origin-lang">${esc(o.name)}</b>
+      ${o.native ? `<span class="badge">${jp ? "この言語生まれ" : "native"}</span>` : ""}
+      ${o.multi ? `<span class="badge warn2">${jp ? "複数の語源あり" : "multiple etymologies"}</span>` : ""}</p>
+      <p class="muted">${kind}${o.multi ? (jp ? " ただしこの語は語源が複数あり、単一の原点に還元できません（下の連鎖に両方が現れます）。" : " But this word has several etymologies and cannot be reduced to one origin (both appear in the chain).") : ""}</p>`;
+  } else {
+    html += `<p class="muted">${jp ? "語源の連鎖から原点を特定できませんでした（連鎖情報が乏しい語です）。" : "Could not estimate an origin from the etymology chain (sparse data)."}</p>`;
+  }
+  // 変容の連鎖：現在語 ← … ← 原点（言語＋実語形）
+  if (d.chain && d.chain.length) {
+    const steps = [`<span class="chain-now">「${esc(q)}」</span>`].concat(
+      d.chain.map(c => `<span class="chain-step"><span class="chain-lang">${esc(c.name)}</span>${c.form ? `<span class="chain-form">${esc(c.form)}</span>` : ""}</span>`));
+    html += `<p class="chain-label">${jp ? "変容の連鎖（訳語をさかのぼる）" : "The chain of transformation (back through translation)"}</p>
+      <div class="chain">${steps.join(`<span class="chain-arrow">←</span>`)}</div>`;
+  }
+  if (d.senses && d.senses.length) {
+    html += `<p class="muted">${jp ? "原語での語義" : "senses in the original"}: ${esc(cleanWikt(d.senses.slice(0,3).join(" / ")))}</p>`;
+  }
+  if (d.wiktionary_url) html += `<p class="srcline"><a href="${esc(d.wiktionary_url)}" target="_blank">Wiktionary</a></p>`;
+  html += `</div>`;
+
+  // ── breadth：この語を担う言語の広がり（データの和集合・モデルが選ばない） ──
+  if (d.breadth && d.breadth.length) {
+    html += `<div class="card"><h3>${jp ? "この言葉を担う言語の広がり" : "The breadth of languages that carry this word"} <span class="srcline">${d.breadth_count}</span></h3>
+      <p class="muted">${jp ? "どの言語を出すかは、私（AI）でなくデータが決めています。既知の数言語に縮めないための設計です。" : "Which languages appear is decided by the data, not by me (the AI) — by design, so it is never narrowed to the few I happen to know."}</p>
+      <div class="breadth">${d.breadth.map(b => `<span class="blang" title="${esc(b.via)}">${esc(b.name)}</span>`).join("")}</div></div>`;
   }
 
-  // ── DEMOTED: corpus-wide (not author-specific) collocations at the bottom ──
-  const os = d.original_space;
-  if (os) {
-    const rels = os.collocations || {};
-    const relKeys = Object.keys(rels);
-    if (relKeys.length) {
-      html += `<div class="card"><h3>${jp ? "原語空間の共起（コーパス全体・著者固有ではない）" : "Original-space collocations (corpus-wide, not author-specific)"}</h3>
-        <p class="muted">${esc(os.note || "")}</p><table class="plain orig-collo">`;
-      for (const rel of relKeys) {
-        const words = rels[rel].map(x =>
-          `<a href="/origin?q=${encodeURIComponent(x.word)}&lang=${LANG}"${linkAttr} lang="de">${esc(x.word)}</a> <span class="srcline">${x.freq}</span>`).join("　");
-        html += `<tr><td class="srcline">${esc(jp ? (REL_JP[rel] || rel) : rel)}</td><td>${words}</td></tr>`;
-      }
-      html += `</table>`;
-      if (os.frequency != null) html += `<p class="srcline">${jp ? "独語コーパス頻度" : "German corpus frequency"}: ${esc(String(os.frequency))}</p>`;
-      html += `</div>`;
-    }
-  }
-
-  // provenance + confidence
-  const conf = d.confidence || {};
-  if (d.sources && d.sources.length) {
-    const badges = d.sources.map(s => s.error
-      ? `<span class="badge err" title="${esc(s.error)}">${esc(s.source)}</span>`
-      : `<span class="badge">${esc(s.source)} · ${esc(s.retrieved_at)}</span>`).join(" ");
-    html += `<p class="srcline">${badges}<br>${jp ? "確度" : "confidence"} — ${jp ? "原語" : "original"}: <b>${esc(conf.original_term || "")}</b> ／ ${jp ? "著者順" : "author order"}: <b>${esc(conf.author_order || "")}</b> ／ ${jp ? "共起" : "collocations"}: <b>${esc(conf.collocations || "")}</b></p>`;
-  }
-
-  // no original grounded → honest note
-  if (!os && d.original && !d.original.available) {
-    html += `<div class="card"><p>${esc(d.original.note || "")}</p></div>`;
-  }
+  // ── 出所・確度・限界 ──
+  const badges = (d.sources || []).map(s => s.error
+    ? `<span class="badge err" title="${esc(s.error)}">${esc(s.source)}</span>`
+    : `<span class="badge">${esc(s.source)} · ${esc(s.retrieved_at)}</span>`).join(" ");
+  html += `<p class="srcline">${badges}<br>${jp ? "確度" : "confidence"} — ${jp ? "原点" : "origin"}: ${esc((d.confidence||{}).origin||"")} ／ breadth: ${esc((d.confidence||{}).breadth||"")}</p>`;
+  if (d.note) html += `<p class="srcline muted">${esc(d.note)}</p>`;
 
   $("origin-results").innerHTML = html;
 }

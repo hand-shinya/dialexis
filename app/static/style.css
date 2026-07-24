@@ -100,6 +100,21 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 @media (max-width: 720px) { .facets { grid-template-columns: 1fr; } }
 .facet-col { border-top: 3px solid var(--line); padding-top: .6rem; }
 .facet-col h4 { font-family: system-ui, sans-serif; font-size: .92rem; margin: 0 0 .5rem; }
+/* 変容の連鎖（宿痾の可視化）— 現在語 ← … ← 原点、実語形つき */
+.origin-lang { color: var(--accent); font-size: 1.05rem; }
+.chain-label { font-family: system-ui, sans-serif; font-size: .82rem; color: var(--muted); margin: .8rem 0 .3rem; }
+.chain { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
+.chain-now, .chain-step { display: inline-flex; flex-direction: column; align-items: center;
+  border: 1px solid var(--line); border-radius: 6px; padding: .3rem .6rem; background: var(--card); }
+.chain-now { border-color: var(--ink); }
+.chain-lang { font-family: system-ui, sans-serif; font-size: .72rem; color: var(--muted); }
+.chain-form { font-size: 1.05rem; }
+.chain-arrow { color: var(--accent); font-size: 1.1rem; }
+.badge.warn2 { background: #fdf1d7; }
+/* breadth — この語を担う言語の広がり（データの和集合） */
+.breadth { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
+.blang { font-family: system-ui, sans-serif; font-size: .8rem; padding: .2rem .55rem;
+  border: 1px solid var(--accent2); border-radius: 999px; color: var(--accent2); }
 .orig-sense { margin: .3rem 0 .6rem; }
 .orig-collo td { vertical-align: top; padding: .3rem .5rem; }
 .orig-collo td:first-child { white-space: nowrap; color: var(--muted); font-size: .82rem; font-family: system-ui, sans-serif; }

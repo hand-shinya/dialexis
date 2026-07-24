@@ -81,3 +81,24 @@ def test_A3_every_author_entry_is_sourced_and_names_original_work():
             assert a.get("source") and a.get("work_de") and a.get("term_de")
     meta = AUTHOR_LINEAGE["_meta"]
     assert "CURATED SEED" in meta["honesty"] and meta["order_basis"] and meta["verified_at"]
+
+
+# ---- 無中心の原点エンジン: 原点推定ランクと言語名（純粋ロジックを固定） --------
+from app.connectors.wiktionary import _ancientness, langname  # noqa: E402
+
+
+def test_ancientness_ranks_proto_and_classical_above_recent():
+    assert _ancientness("gem-pro") == 4          # proto = deepest
+    assert _ancientness("sa") == 3               # classical/ancient
+    assert _ancientness("ltc") == 2              # medieval
+    assert _ancientness("en") == 1               # modern
+    # origin = most ancient in a chain, not the last-in-text
+    chain = ["sa", "ltc"]                          # 空: Sanskrit vs Middle Chinese
+    assert max(chain, key=_ancientness) == "sa"   # → Sanskrit (non-Western origin)
+    chain2 = ["enm", "ang", "gmw-pro", "gem-pro", "fr", "la"]  # soul
+    assert _ancientness(max(chain2, key=_ancientness)) == 4    # a proto layer, not fr/la
+
+
+def test_langname_keeps_unmapped_code_never_drops():
+    assert langname("sa") == "サンスクリット語"
+    assert langname("zzz") == "zzz"   # unmapped → raw code, breadth never silently narrowed
