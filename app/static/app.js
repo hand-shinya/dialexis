@@ -1289,8 +1289,10 @@ function gBind() {
     cv.setPointerCapture(e.pointerId);
     const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
     const n = gNodeAt(mx, my);
+    // Do NOT start dragging on pointerdown. A human click has a few px of jitter;
+    // dragging immediately turned that jitter into a drag, so the menu never
+    // opened (→ "sometimes works"). Dragging begins only past a real threshold.
     G.press = { mx, my, n, ei: n ? -1 : gEdgeAt(mx, my), moved: false, panx: G.view.x, pany: G.view.y };
-    if (n) G.drag = n;
   };
   cv.onpointermove = (e) => {
     const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
@@ -1306,7 +1308,11 @@ function gBind() {
       return;
     }
     const ddx = mx - G.press.mx, ddy = my - G.press.my;
-    if (Math.abs(ddx) + Math.abs(ddy) > 4) G.press.moved = true;
+    if (!G.press.moved && Math.hypot(ddx, ddy) > 10) {  // 10px euclidean = real drag, tolerant of click jitter
+      G.press.moved = true;
+      if (G.press.n) G.drag = G.press.n;   // begin dragging the node only now
+    }
+    if (!G.press.moved) return;            // below threshold → it is a click, do nothing
     if (G.drag) { const p = gScreenToGraph(mx, my); G.drag.x = p.x; G.drag.y = p.y; gLoopKick(); }
     else { G.view.x = G.press.panx + ddx; G.view.y = G.press.pany + ddy; gDraw(); }
   };
