@@ -100,6 +100,12 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 @media (max-width: 720px) { .facets { grid-template-columns: 1fr; } }
 .facet-col { border-top: 3px solid var(--line); padding-top: .6rem; }
 .facet-col h4 { font-family: system-ui, sans-serif; font-size: .92rem; margin: 0 0 .5rem; }
+/* ⚠ 潰れの明示警告 — このポータルの核心価値。目立たせる（が下品にしない） */
+.warn-card { border-left: 5px solid var(--warn); background: #fffaf2; }
+.warn-card h3 { color: var(--warn); margin-top: 0; }
+.collapse-tbl td { vertical-align: top; padding: .45rem .5rem; }
+.collapse-tbl b a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); font-size: 1.05rem; }
+.collapse-tbl b a:hover { border-bottom-style: solid; }
 /* 変容の連鎖（宿痾の可視化）— 現在語 ← … ← 原点、実語形つき */
 .origin-lang { color: var(--accent); font-size: 1.05rem; }
 .chain-label { font-family: system-ui, sans-serif; font-size: .82rem; color: var(--muted); margin: .8rem 0 .3rem; }

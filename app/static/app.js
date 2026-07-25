@@ -957,6 +957,26 @@ async function originRun(q) {
       <ol class="gm-senses">${d.general_meaning.map(s => `<li>${esc(s)}</li>`).join("")}</ol></div>`;
   }
 
+  // ── ⚠ 潰れの明示警告（最重要）：日本語A ← 原語B・C・D ──
+  const cw = d.collapse_warning;
+  if (cw && cw.lemmas && cw.lemmas.length) {
+    const olink2 = (t) => `<a href="/origin?q=${encodeURIComponent(t)}&lang=${LANG}"${linkAttr} lang="de">${esc(t)}</a>`;
+    html += `<div class="card warn-card">
+      <h3>⚠ ${jp ? "この言葉は、扱いに注意が要ります" : "This word needs careful handling"}</h3>
+      <p>${jp
+        ? `日本語の${(cw.collapsed_japanese||[]).map(w=>`「${esc(w)}」`).join("・")}という一語の背後には、原語では<b>別々の複数の語</b>が潰れて一つになっています。日本語だけを見ていると、この区別は消えています——どれを指すかで、あなたの問いの意味は変わります。`
+        : `Behind this single Japanese word stand <b>several distinct original terms</b>, collapsed into one. The distinction vanishes in Japanese — and which one you mean changes what your question means.`}</p>
+      <table class="plain collapse-tbl">
+        ${cw.lemmas.map(l => `<tr>
+          <td><b>${olink2(l.lemma)}</b>${(l.collapses_to&&l.collapses_to.length)?`<br><span class="srcline">→「${l.collapses_to.map(esc).join("・")}」</span>`:""}</td>
+          <td>${esc(l.gloss||"")}</td></tr>`).join("")}
+      </table>
+      ${cw.note?`<p class="muted">${esc(cw.note)}</p>`:""}
+      ${cw.primary_source?`<p class="srcline">${jp?"一次源":"primary source"}: ${esc(cw.primary_source)}</p>`:""}
+      <p class="srcline">${jp?"各語をクリックすると、その原語の空間に入れます":"Click a term to enter its original-language space"} · ${jp?"確度":"confidence"}: ${esc(cw.confidence||"")}</p>
+    </div>`;
+  }
+
   // ── 原点：概念-翻訳-原点（密度）＋ 語源原点（語史）を分けて示す ──
   const co = d.concept_origin || [], o = d.word_origin;
   html += `<div class="card orig-card"><h3>${jp ? "この言葉の原点" : "This word's origin"}</h3>`;

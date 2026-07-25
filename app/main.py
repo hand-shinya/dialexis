@@ -562,6 +562,22 @@ async def api_origin(q: str, lang: str = "ja"):
     gen = await wiktionary.ja_senses(q) if lang == "ja" else None
     gen_senses = (gen["data"]["senses"] if gen and not gen["error"] and gen.get("data") else [])
 
+    # 潰れの明示警告（最重要）: この日本語の一語に、原語では複数の別語が潰れて
+    # 一つになっている——それを具体的に指摘し「注意して扱え」と警告することが、この
+    # ポータルの核心価値。verified seed（orig_clusters）から、qに一致する語族を出す。
+    cl = _orig_cluster(q, None)
+    collapse_warning = None
+    if cl:
+        collapse_warning = {
+            "collapsed_japanese": cl.get("collapsed_japanese"),
+            "note": cl.get("note"),
+            "primary_source": cl.get("primary_source"),
+            "confidence": cl.get("confidence_collapse"),
+            "lemmas": [{"lemma": l["lemma"], "lang": l.get("lang"),
+                        "gloss": l.get("gloss"), "collapses_to": l.get("collapses_to")}
+                       for l in cl.get("lemmas", [])],
+        }
+
     # breadth = the DATA's union of the languages/words carrying this concept,
     # NOT a model-generated list (which would narrow to the few I know — the very
     # affliction we fight). Primary source = the concept node's Wikidata labels
@@ -589,6 +605,7 @@ async def api_origin(q: str, lang: str = "ja"):
         "word": {"query": q},
         "found": td.get("found", False) or cd.get("found", False),
         "general_meaning": gen_senses,           # 広く共有されている意味（入力言語）
+        "collapse_warning": collapse_warning,    # ⚠ 潰れの明示警告（A←B・C・D）
         "concept_origin": concept_origin,        # 概念-翻訳-原点（疎外→独 Entfremdung）
         "word_origin": word_origin,              # 語源原点（空→梵・推定）
         "chain": td.get("origin_chain", []),     # 変容の連鎖（言語＋語形・全表示）
