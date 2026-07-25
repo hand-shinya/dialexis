@@ -1103,9 +1103,9 @@ function gActions(n) {
     { t: "⚠ 埋没した原語を見る", fn: () => gScrollCard("card-collapse", q || L) },
     { t: "🌍 多言語での言い方を見る", fn: () => gScrollCard("card-breadth", q || L) },
     { t: "✍ 深掘り探索プロンプトを作る", fn: ds },
+    { t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(L, /[A-Za-zÀ-ɏ]/.test(L) ? "de" : "de") },
     { t: "🔗 新しいタブでこの語を開く", fn: nt },
     { t: "📚 原語の権威辞書で深掘り", soon: 1 },
-    { t: "🕮 原語空間の共起（共に使われる語）", soon: 1 },
   ];
 }
 
@@ -1134,17 +1134,59 @@ function gShowMenu(cx, cy, title, items) {
   m.innerHTML = `<div class="gm-title">${esc(title)}</div>` + items.map((it, i) =>
     `<div class="gm-item${it.soon ? " gm-soon" : ""}" data-i="${i}">${esc(it.t)}${it.soon ? "（次段）" : ""}</div>`).join("");
   document.body.appendChild(m);
-  const w = 300, x = Math.min(cx, window.innerWidth - w - 10), y = Math.min(cy, window.innerHeight - m.offsetHeight - 10);
-  m.style.left = x + "px"; m.style.top = (y + window.scrollY) + "px";
+  const w = m.offsetWidth || 300, x = Math.min(cx, window.innerWidth - w - 10),
+        y = Math.min(cy + window.scrollY, window.scrollY + window.innerHeight - m.offsetHeight - 10);
+  m.style.left = Math.max(6, x) + "px"; m.style.top = Math.max(6, y) + "px";
+  // BUGFIX: keep the item's pointerdown from reaching the document-level closer,
+  // which previously removed the menu on the SAME pointerdown so the click that
+  // runs the action never landed (→ every item looked dead).
+  m.addEventListener("pointerdown", (ev) => ev.stopPropagation());
   m.addEventListener("click", (ev) => {
     const el = ev.target.closest(".gm-item"); if (!el) return;
     const it = items[Number(el.dataset.i)];
     gMenuClose();
     if (it && it.fn) it.fn();
   });
-  setTimeout(() => document.addEventListener("pointerdown", gMenuClose, { once: true }), 0);
+  G.menuCloser = (ev) => { if (!ev.target.closest("#graph-menu")) gMenuClose(); };
+  setTimeout(() => document.addEventListener("pointerdown", G.menuCloser), 0);
 }
-function gMenuClose() { const m = $("graph-menu"); if (m) m.remove(); }
+function gMenuClose() {
+  const m = $("graph-menu"); if (m) m.remove();
+  if (G && G.menuCloser) { document.removeEventListener("pointerdown", G.menuCloser); G.menuCloser = null; }
+}
+// dismissible overlay panel (for menu actions that show their own content)
+function gPanel(title, bodyHtml) {
+  const old = $("graph-panel"); if (old) old.remove();
+  const p = document.createElement("div");
+  p.id = "graph-panel";
+  p.innerHTML = `<div class="gp-head"><b>${esc(title)}</b><button type="button" class="gp-x">×</button></div>
+    <div class="gp-body">${bodyHtml}</div>`;
+  document.body.appendChild(p);
+  p.querySelector(".gp-x").addEventListener("click", () => p.remove());
+  return p;
+}
+// 原語空間の共起（DWDS）— the benchmark's『関連概念群』dimension, made real.
+async function gColloc(term, lang) {
+  const jp = LANG === "ja";
+  const p = gPanel((jp ? "原語空間の共起：" : "Collocations: ") + term,
+    `<p class="muted">${jp ? "読み込み中…" : "loading…"}</p>`);
+  let d;
+  try { d = await api(`/api/collocations?term=${encodeURIComponent(term)}&lang=${lang || "de"}`); }
+  catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+  const rels = d.relations || {}, keys = Object.keys(rels);
+  let html = "";
+  if (!keys.length) {
+    html = `<p class="muted">${esc(d.note || (jp ? "共起データがありません。" : "No collocation data."))}</p>`;
+  } else {
+    html = `<p class="muted">${jp ? "この原語が、原語コーパスで共に使われる語（文法関係別・頻度つき）。クリックでその語へ。" : "Words this term lives with in its own corpus."}</p>
+      <table class="plain orig-collo">` + keys.map(rel =>
+      `<tr><td class="srcline">${esc(jp ? (REL_JP[rel] || rel) : rel)}</td><td>${rels[rel].map(w =>
+        `<a href="/origin?q=${encodeURIComponent(w.word)}&lang=${LANG}"${originLinkAttr()} lang="de">${esc(w.word)}</a> <span class="srcline">${w.freq}</span>`).join("　")}</td></tr>`).join("") + `</table>`;
+  }
+  if (d.note && keys.length) html += `<p class="srcline muted">${esc(d.note)}</p>`;
+  p.querySelector(".gp-body").innerHTML = html;
+}
+
 // scroll to a result card; if it isn't present for the current word, recenter
 // on the clicked word (which renders that word's cards) and then scroll.
 function gScrollCard(id, q) {

@@ -705,6 +705,27 @@ async def api_origin_graph(q: str, lang: str = "ja"):
                          "error": cn["error"]}]}
 
 
+@app.get("/api/collocations")
+async def api_collocations(term: str, lang: str = "de"):
+    """原語空間の共起（この語が原語コーパスで共に使われる語）。独語は DWDS Wortprofil。
+    ベンチマークの『関連概念群』次元＝Entfremdung なら Verdinglichung/Aufhebung/
+    überwinden 等が文法関係別に出る。他言語は現状データ源未整備（正直に空）。"""
+    if not term.strip():
+        raise HTTPException(400, "empty term")
+    if lang != "de":
+        return {"term": term, "lang": lang, "relations": {},
+                "note": "共起データは現状ドイツ語（DWDS）のみ。他言語の権威コーパスは整備中。",
+                "queried_at": now(), "sources": []}
+    wp = await dwds.wortprofil(term)
+    return {"term": term, "lang": lang,
+            "relations": wp["data"]["relations"] if not wp["error"] else {},
+            "scraped": True,
+            "note": "DWDS Wortprofil（独語コーパス全体・特定著者に固有ではない）。",
+            "queried_at": now(),
+            "sources": [{"source": wp["source"], "retrieved_at": wp["retrieved_at"],
+                         "error": wp["error"]}]}
+
+
 def _general_block(gen, wiki) -> dict | None:
     """広く共有されている意味: the everyday ja.wiktionary senses (primary), plus the
     encyclopedic summary as fuller context. None only when BOTH are absent."""

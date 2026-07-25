@@ -118,6 +118,14 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .gm-item:hover { background: #f2eee4; }
 .gm-soon { color: var(--muted); cursor: default; }
 .gm-soon:hover { background: transparent; }
+#graph-panel { position: fixed; z-index: 60; left: 50%; top: 8vh; transform: translateX(-50%);
+  width: min(680px, 92vw); max-height: 80vh; overflow: auto; background: var(--card);
+  border: 1px solid var(--ink); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+.gp-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: .6rem .9rem; border-bottom: 1px solid var(--line); font-family: system-ui, sans-serif;
+  position: sticky; top: 0; background: var(--card); }
+.gp-x { background: none; color: var(--muted); font-size: 1.3rem; padding: 0 .3rem; }
+.gp-body { padding: .8rem .9rem 1.1rem; }
 /* ⚠ 埋没の明示警告 — このポータルの核心価値。目立たせる（が下品にしない） */
 .warn-card { border-left: 5px solid var(--warn); background: #fffaf2; }
 .warn-card h3 { color: var(--warn); margin-top: 0; }
