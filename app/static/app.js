@@ -960,8 +960,16 @@ function gBuild(d) {
   });
   const edges = d.edges.map(e => ({ a: idx[e.from], b: idx[e.to], s: e.strength || 1 }))
     .filter(e => e.a != null && e.b != null);
-  G = { nodes, edges, ctx, cv, W, H, cx, cy, view: { x: 0, y: 0, k: 1 },
-        drag: null, hover: null, alpha: 1, raf: 0 };
+  // parent/children by layer, so hovering a line lights the whole path root→leaves
+  const children = {}, parent = {};
+  edges.forEach(e => {
+    const lo = nodes[e.a].layer <= nodes[e.b].layer ? e.a : e.b;
+    const hi = lo === e.a ? e.b : e.a;
+    (children[lo] = children[lo] || []).push(hi);
+    parent[hi] = lo;
+  });
+  G = { nodes, edges, children, parent, ctx, cv, W, H, cx, cy, rootQ: d.query, note: d.note,
+        view: { x: 0, y: 0, k: 1 }, drag: null, hover: null, hl: null, alpha: 1, raf: 0 };
   gFitInstant();
   gBind();
   gLoop(200);
@@ -995,16 +1003,19 @@ function gStep() {
 }
 
 function gDraw() {
-  const { ctx, W, H, view, nodes, edges } = G;
+  const { ctx, W, H, view, nodes, edges, hl } = G;
   ctx.clearRect(0, 0, W, H);
   ctx.save(); ctx.translate(view.x, view.y); ctx.scale(view.k, view.k);
-  edges.forEach(e => {
+  edges.forEach((e, ei) => {
     const a = nodes[e.a], b = nodes[e.b];
-    ctx.strokeStyle = "rgba(122,92,46," + (0.14 + 0.28 * e.s) + ")";
-    ctx.lineWidth = (0.6 + e.s * 0.9) / view.k;
+    const on = !hl || hl.eset.has(ei);
+    ctx.strokeStyle = on ? "rgba(122,92,46," + (0.28 + 0.4 * e.s) + ")" : "rgba(122,92,46,0.06)";
+    ctx.lineWidth = (on ? (0.8 + e.s * 1.2) : 0.5) / view.k;
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   });
-  nodes.forEach(n => {
+  nodes.forEach((n, i) => {
+    const on = !hl || hl.nset.has(i);
+    ctx.globalAlpha = on ? 1 : 0.14;
     ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 7); ctx.fillStyle = GKIND[n.kind] || "#888"; ctx.fill();
     if (n === G.hover) { ctx.lineWidth = 2 / view.k; ctx.strokeStyle = "#111"; ctx.stroke(); }
     ctx.fillStyle = "#1d2430";
@@ -1013,8 +1024,124 @@ function gDraw() {
     const lab = n.label.length > 22 ? n.label.slice(0, 21) + "…" : n.label;
     ctx.fillText(lab, n.x, n.y - n.r - 2);
   });
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
+
+// path highlight: descendants (down to leaves) ∪ ancestors (up to root) of a node
+function gHl(nodeIdx) {
+  const nset = new Set(), eset = new Set(), stack = [nodeIdx];
+  while (stack.length) { const i = stack.pop(); nset.add(i); (G.children[i] || []).forEach(c => { if (!nset.has(c)) stack.push(c); }); }
+  let p = G.parent[nodeIdx];
+  while (p != null) { nset.add(p); p = G.parent[p]; }
+  G.edges.forEach((e, ei) => { if (nset.has(e.a) && nset.has(e.b)) eset.add(ei); });
+  return { nset, eset };
+}
+function gSegDist(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1, L = dx * dx + dy * dy || 1;
+  let t = ((px - x1) * dx + (py - y1) * dy) / L; t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+function gEdgeAt(mx, my) {
+  const p = gScreenToGraph(mx, my);
+  for (let ei = 0; ei < G.edges.length; ei++) {
+    const e = G.edges[ei], a = G.nodes[e.a], b = G.nodes[e.b];
+    if (gSegDist(p.x, p.y, a.x, a.y, b.x, b.y) < 6 / G.view.k) return ei;
+  }
+  return -1;
+}
+
+// center a node & expand its branch to the limit, without leaving the graph:
+// re-lay-out only that node's subtree with the node as the new layer-1 centre.
+function gFocusSubtree(nodeIdx) {
+  const keep = new Set([nodeIdx]), st = [nodeIdx];
+  while (st.length) { const i = st.pop(); (G.children[i] || []).forEach(c => { if (!keep.has(c)) { keep.add(c); st.push(c); } }); }
+  const base = G.nodes[nodeIdx].layer;
+  const nodes = [...keep].map(i => { const n = G.nodes[i]; return { ...n, layer: n.layer - base + 1 }; });
+  const edges = G.edges.filter(e => keep.has(e.a) && keep.has(e.b))
+    .map(e => ({ from: G.nodes[e.a].id, to: G.nodes[e.b].id, strength: e.s }));
+  gBuild({ query: G.rootQ, nodes, edges, note: G.note });
+}
+
+// contextual action menu — the dimension of a WORD (origin/meaning/translations)
+// differs from that of an AUTHOR/WORK (usage/texts/era), so the menu ADAPTS to
+// what was clicked. ≥7 actions; the ones not yet built are shown as 次段 (honest).
+function gActions(n) {
+  const jp = LANG === "ja", q = n.q, L = n.label;
+  const nt = () => window.open(`/origin?q=${encodeURIComponent(q || L)}&lang=${LANG}`, "_blank");
+  const ds = () => { location.href = `/deepsearch?lang=${LANG}`; };
+  if (n.kind === "author" || n.kind === "work") {
+    const who = n.kind === "author" ? "この著者" : "この著作";
+    return [
+      { t: `🎯 ${who}を中心に展開`, fn: () => originGraph(L) },
+      { t: `🔍 ${who}を調べる`, fn: () => originRecenter(L) },
+      { t: `📖 ${who}でのこの語の使われ方`, soon: 1 },
+      { t: n.kind === "author" ? "📚 この著者の著作をたどる" : "📜 一次テキストにあたる", soon: 1 },
+      { t: "✍ 深掘り探索プロンプトを作る", fn: ds },
+      { t: "🕰 時代性・年表上の位置", soon: 1 },
+      { t: "🔗 新しいタブで開く", fn: nt },
+    ];
+  }
+  if (n.kind === "domain") {
+    return [
+      { t: "🎯 この分岐を中心に（下層を最大表示）", fn: () => gFocusSubtree(G.nodes.indexOf(n)) },
+      { t: "↩ 全体の重力分布に戻す", fn: () => originGraph(G.rootQ) },
+      { t: "🔦 この分岐の経路を強調（ホバーでも可）", fn: () => { G.hl = gHl(G.nodes.indexOf(n)); gDraw(); } },
+      { t: "📖 この意味領域の説明", soon: 1 },
+      { t: "🔎 この領域の主要な語をたどる", soon: 1 },
+      { t: "🌍 この領域を多言語で見る", soon: 1 },
+      { t: "✍ 深掘り探索プロンプトを作る", fn: ds },
+    ];
+  }
+  // word / original / language
+  return [
+    { t: "🎯 この語を中心に展開（新たな第1階層に）", fn: () => originGraph(q || L) },
+    { t: "🔍 この語を深く調べる（意味・原点・変容）", fn: () => originRecenter(q || L) },
+    { t: "⚠ 潰れている原語を見る", fn: () => { originRecenter(q || L); } },
+    { t: "🌍 多言語での言い方を見る", fn: () => { originRecenter(q || L); } },
+    { t: "✍ 深掘り探索プロンプトを作る", fn: ds },
+    { t: "🔗 新しいタブでこの語を開く", fn: nt },
+    { t: "📚 原語の権威辞書で深掘り", soon: 1 },
+    { t: "🕮 原語空間の共起（共に使われる語）", soon: 1 },
+  ];
+}
+
+function gMenu(cx, cy, n) {
+  const items = gActions(n);
+  gShowMenu(cx, cy, (LANG === "ja" ? "選択：" : "Selected: ") + n.label, items);
+}
+function gMenuEdge(cx, cy, ei) {
+  const e = G.edges[ei];
+  const child = G.nodes[e.a].layer >= G.nodes[e.b].layer ? e.a : e.b;
+  const a = G.nodes[e.a].label, b = G.nodes[e.b].label;
+  gShowMenu(cx, cy, `${a} — ${b}`, [
+    { t: "🔦 この関係の経路を根まで強調", fn: () => { G.hl = gHl(child); gDraw(); } },
+    { t: "🎯 子側を中心に展開", fn: () => gFocusSubtree(child) },
+    { t: "⚖ 両端の語を比較する", soon: 1 },
+    { t: "📖 この関係（なぜ結ばれるか）の説明", soon: 1 },
+    { t: "🔍 子側の語を深く調べる", fn: () => { const q = G.nodes[child].q || G.nodes[child].label; originRecenter(q); } },
+    { t: "🌿 この枝だけを残して整理", fn: () => gFocusSubtree(child) },
+    { t: "↩ 全体に戻す", fn: () => originGraph(G.rootQ) },
+  ]);
+}
+function gShowMenu(cx, cy, title, items) {
+  gMenuClose();
+  const m = document.createElement("div");
+  m.id = "graph-menu";
+  m.innerHTML = `<div class="gm-title">${esc(title)}</div>` + items.map((it, i) =>
+    `<div class="gm-item${it.soon ? " gm-soon" : ""}" data-i="${i}">${esc(it.t)}${it.soon ? "（次段）" : ""}</div>`).join("");
+  document.body.appendChild(m);
+  const w = 300, x = Math.min(cx, window.innerWidth - w - 10), y = Math.min(cy, window.innerHeight - m.offsetHeight - 10);
+  m.style.left = x + "px"; m.style.top = (y + window.scrollY) + "px";
+  m.addEventListener("click", (ev) => {
+    const el = ev.target.closest(".gm-item"); if (!el) return;
+    const it = items[Number(el.dataset.i)];
+    gMenuClose();
+    if (it && it.fn) it.fn();
+  });
+  setTimeout(() => document.addEventListener("pointerdown", gMenuClose, { once: true }), 0);
+}
+function gMenuClose() { const m = $("graph-menu"); if (m) m.remove(); }
 
 function gLoop(iters) {
   cancelAnimationFrame(G.raf);
@@ -1042,15 +1169,26 @@ function gNodeAt(mx, my) {
 function gBind() {
   const cv = G.cv;
   cv.onpointerdown = (e) => {
+    gMenuClose();
     cv.setPointerCapture(e.pointerId);
     const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
     const n = gNodeAt(mx, my);
-    G.press = { mx, my, n, moved: false, panx: G.view.x, pany: G.view.y };
+    G.press = { mx, my, n, ei: n ? -1 : gEdgeAt(mx, my), moved: false, panx: G.view.x, pany: G.view.y };
     if (n) G.drag = n;
   };
   cv.onpointermove = (e) => {
     const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
-    if (!G.press) { G.hover = gNodeAt(mx, my); cv.style.cursor = G.hover ? "pointer" : "grab"; if (!G.raf) gDraw(); return; }
+    if (!G.press) {
+      const n = gNodeAt(mx, my);
+      if (n) { G.hover = n; G.hl = gHl(G.nodes.indexOf(n)); cv.style.cursor = "pointer"; }
+      else {
+        const ei = gEdgeAt(mx, my);
+        if (ei >= 0) { G.hover = null; const e2 = G.edges[ei]; const child = G.nodes[e2.a].layer >= G.nodes[e2.b].layer ? e2.a : e2.b; G.hl = gHl(child); cv.style.cursor = "pointer"; }
+        else { G.hover = null; G.hl = null; cv.style.cursor = "grab"; }
+      }
+      if (!G.raf) gDraw();
+      return;
+    }
     const ddx = mx - G.press.mx, ddy = my - G.press.my;
     if (Math.abs(ddx) + Math.abs(ddy) > 4) G.press.moved = true;
     if (G.drag) { const p = gScreenToGraph(mx, my); G.drag.x = p.x; G.drag.y = p.y; gLoopKick(); }
@@ -1058,8 +1196,10 @@ function gBind() {
   };
   cv.onpointerup = (e) => {
     const p = G.press; G.drag = null; G.press = null;
-    if (p && !p.moved && p.n && p.n.q) originRecenter(p.n.q);
-    else gLoopKick();
+    if (p && !p.moved) {
+      if (p.n) gMenu(e.clientX, e.clientY, p.n);
+      else if (p.ei >= 0) gMenuEdge(e.clientX, e.clientY, p.ei);
+    } else gLoopKick();
   };
   cv.onwheel = (e) => {
     e.preventDefault();
