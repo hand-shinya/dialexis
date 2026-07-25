@@ -562,7 +562,7 @@ async def api_origin(q: str, lang: str = "ja"):
     gen = await wiktionary.ja_senses(q) if lang == "ja" else None
     gen_senses = (gen["data"]["senses"] if gen and not gen["error"] and gen.get("data") else [])
 
-    # 潰れの明示警告（最重要）: この日本語の一語に、原語では複数の別語が潰れて
+    # 埋没の明示警告（最重要）: この日本語の一語に、原語では複数の別語が一語へ抽象化され
     # 一つになっている——それを具体的に指摘し「注意して扱え」と警告することが、この
     # ポータルの核心価値。verified seed（orig_clusters）から、qに一致する語族を出す。
     cl = _orig_cluster(q, None)
@@ -605,7 +605,7 @@ async def api_origin(q: str, lang: str = "ja"):
         "word": {"query": q},
         "found": td.get("found", False) or cd.get("found", False),
         "general_meaning": gen_senses,           # 広く共有されている意味（入力言語）
-        "collapse_warning": collapse_warning,    # ⚠ 潰れの明示警告（A←B・C・D）
+        "collapse_warning": collapse_warning,    # ⚠ 埋没の明示警告（A←B・C・D）
         "concept_origin": concept_origin,        # 概念-翻訳-原点（疎外→独 Entfremdung）
         "word_origin": word_origin,              # 語源原点（空→梵・推定）
         "chain": td.get("origin_chain", []),     # 変容の連鎖（言語＋語形・全表示）
@@ -629,7 +629,7 @@ async def api_origin(q: str, lang: str = "ja"):
 @app.get("/api/origin/graph")
 async def api_origin_graph(q: str, lang: str = "ja"):
     """言語空間の重力分布グラフ（第1〜4階層）。第1=入力語／第2=重力分布の分岐（意味の
-    領域・世界の言語）／第3=分岐を構成するもの（潰れた複数原語・各言語での語）／第4=強く
+    領域・世界の言語）／第3=分岐を構成するもの（埋没した複数原語・各言語での語）／第4=強く
     関与する著者・著作（重要度順）。node の大きさ＝重力（密度の代理指標＝推定）、edge＝
     関係。データのある枝は濃く、無い枝は薄い（捏造しない・A3）。各 node は q を持てば
     クリックで新たな第1階層として展開できる。"""
@@ -666,7 +666,7 @@ async def api_origin_graph(q: str, lang: str = "ja"):
         add(phil, "専門・思想の意味", "domain", 2, 2.4)
         link("root", phil, 1.5)
 
-    # 第3階層: 分岐を構成するもの（潰れた複数原語・概念の原語）
+    # 第3階層: 分岐を構成するもの（埋没した複数原語・概念の原語）
     for l in (cluster.get("lemmas", []) if cluster else []):
         nid = f"orig:{l['lemma']}"
         add(nid, l["lemma"], "original", 3, 1.8, l["lemma"], {"gloss": l.get("gloss")})

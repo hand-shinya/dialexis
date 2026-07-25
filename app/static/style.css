@@ -118,7 +118,7 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .gm-item:hover { background: #f2eee4; }
 .gm-soon { color: var(--muted); cursor: default; }
 .gm-soon:hover { background: transparent; }
-/* ⚠ 潰れの明示警告 — このポータルの核心価値。目立たせる（が下品にしない） */
+/* ⚠ 埋没の明示警告 — このポータルの核心価値。目立たせる（が下品にしない） */
 .warn-card { border-left: 5px solid var(--warn); background: #fffaf2; }
 .warn-card h3 { color: var(--warn); margin-top: 0; }
 .collapse-tbl td { vertical-align: top; padding: .45rem .5rem; }

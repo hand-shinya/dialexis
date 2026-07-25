@@ -116,7 +116,7 @@ def _ja(topic: str, goal: str, service: str, ctx: dict) -> str:
         grounded.append(f"- この語の位置づけ（Wikidata要約）: {desc}")
     if orig:
         grounded.append(f"- 確認された原語候補: **{orig}** ／ これらが同一の日本語「{topic}」に"
-                        f"潰れていないか、原語間の意味差を必ず検査してください。")
+                        f"埋没していないか、原語間の意味差を必ず検査してください。")
     if sep_title:
         grounded.append(f"- 専門事典の該当項目: SEP『{sep_title}』（一次の定位に使用）")
     if debate:
@@ -144,9 +144,9 @@ def _ja(topic: str, goal: str, service: str, ctx: dict) -> str:
                 f"とともに示してください。")
     else:
         lost = ("- 「{t}」が翻訳語であれば原語を特定し、**原語では別語だったものが日本語で"
-                "一語に潰れていないか**を検査してください。").format(t=topic)
+                "一語に埋没していないか**を検査してください。").format(t=topic)
     lost_illus = ("（この種の「失われた区別」の一例：マルクスの「非有機的肉体」は独語で "
-                  "unorganischer Leib と Körper の2語がありうるが日本語では「非有機的」一語に潰れる。）")
+                  "unorganischer Leib と Körper の2語がありうるが日本語では「非有機的」一語に埋没する。）")
 
     return f"""{tune}
 

@@ -161,15 +161,15 @@ async function exploreRun(q) {
       const liveTerms = Object.entries(oc.live_orig_labels || {})
         .map(([lg, v]) => `${esc(v)} <span class="srcline">(${esc(lg)})</span>`).join(" / ");
       html += `<div class="card orig-card">
-        <h2>🔤 ${jp ? "原語の基底（翻訳で潰れる区別）" : "Original-language base (distinctions the translation loses)"}</h2>
+        <h2>🔤 ${jp ? "原語の基底（翻訳で埋没する区別）" : "Original-language base (distinctions the translation loses)"}</h2>
         <p class="muted">${jp
           ? "日本語の一語の背後に、原語では別語がある。ここが全ての基底です。訳語で検索・思考する前に、原語の区別を先に見てください。"
           : "Behind one Japanese word stand several original-language terms. This is the base — see the original distinctions before searching or reasoning in translation."}</p>
-        <p class="srcline">${jp ? "同一の日本語に潰れる語" : "collapse into"}:
+        <p class="srcline">${jp ? "同一の日本語に埋没する語" : "collapse into"}:
           ${oc.collapsed_japanese.map(w => `「${esc(w)}」`).join(" ")}
           · <span class="badge">${esc(oc.tradition)}</span></p>
         <table class="plain orig-lemmas">
-          <tr><th>${jp ? "原語" : "Original"}</th><th>${jp ? "語義" : "Gloss"}</th><th>${jp ? "潰れ先" : "→ JP"}</th><th></th></tr>
+          <tr><th>${jp ? "原語" : "Original"}</th><th>${jp ? "語義" : "Gloss"}</th><th>${jp ? "埋没先" : "→ JP"}</th><th></th></tr>
           ${oc.lemmas.map(l => `<tr>
             <td><b lang="${esc(l.lang)}">${esc(l.lemma)}</b><br><span class="srcline">${esc(l.polarity || "")}</span></td>
             <td>${esc(l.gloss)}</td>
@@ -179,9 +179,9 @@ async function exploreRun(q) {
         <p class="srcline">${jp ? "一次源" : "Primary source"}: ${esc(oc.primary_source)}</p>
         ${liveTerms ? `<p class="srcline">${jp ? "Wikidataの原語ラベル（ライブ）" : "Wikidata original labels (live)"}: ${liveTerms}</p>` : ""}
         <p class="orig-note">${esc(oc.note)}</p>
-        <p class="srcline">${jp ? "確度" : "Confidence"} — ${jp ? "原語の実在" : "terms"}: <b>${esc(oc.confidence_terms)}</b> ／ ${jp ? "日本語への潰れ" : "collapse"}: <b>${esc(oc.confidence_collapse)}</b>.
+        <p class="srcline">${jp ? "確度" : "Confidence"} — ${jp ? "原語の実在" : "terms"}: <b>${esc(oc.confidence_terms)}</b> ／ ${jp ? "日本語への埋没" : "collapse"}: <b>${esc(oc.confidence_collapse)}</b>.
           <span class="muted">${jp
-            ? "編者による検証済みシード（網羅ではない・原語の実在と語義は独語Wikipedia等で確認済／潰れの整理は要一次確認）。"
+            ? "編者による検証済みシード（網羅ではない・原語の実在と語義は独語Wikipedia等で確認済／埋没の整理は要一次確認）。"
             : "Curated verified seed (not exhaustive; term existence checked against German Wikipedia; the collapse mapping needs primary-source confirmation)."}</span></p>
       </div>`;
     }
@@ -1043,12 +1043,15 @@ function gSegDist(px, py, x1, y1, x2, y2) {
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
 }
 function gEdgeAt(mx, my) {
-  const p = gScreenToGraph(mx, my);
+  // screen-space: convert both endpoints to px, then a fixed 7px tolerance —
+  // consistent regardless of zoom (fixes the unstable line selection).
+  let best = -1, bestd = 8;
   for (let ei = 0; ei < G.edges.length; ei++) {
-    const e = G.edges[ei], a = G.nodes[e.a], b = G.nodes[e.b];
-    if (gSegDist(p.x, p.y, a.x, a.y, b.x, b.y) < 6 / G.view.k) return ei;
+    const e = G.edges[ei], a = gToScreen(G.nodes[e.a]), b = gToScreen(G.nodes[e.b]);
+    const d = gSegDist(mx, my, a.x, a.y, b.x, b.y);
+    if (d < bestd) { bestd = d; best = ei; }
   }
-  return -1;
+  return best;
 }
 
 // center a node & expand its branch to the limit, without leaving the graph:
@@ -1097,8 +1100,8 @@ function gActions(n) {
   return [
     { t: "🎯 この語を中心に展開（新たな第1階層に）", fn: () => originGraph(q || L) },
     { t: "🔍 この語を深く調べる（意味・原点・変容）", fn: () => originRecenter(q || L) },
-    { t: "⚠ 潰れている原語を見る", fn: () => { originRecenter(q || L); } },
-    { t: "🌍 多言語での言い方を見る", fn: () => { originRecenter(q || L); } },
+    { t: "⚠ 埋没した原語を見る", fn: () => gScrollCard("card-collapse", q || L) },
+    { t: "🌍 多言語での言い方を見る", fn: () => gScrollCard("card-breadth", q || L) },
     { t: "✍ 深掘り探索プロンプトを作る", fn: ds },
     { t: "🔗 新しいタブでこの語を開く", fn: nt },
     { t: "📚 原語の権威辞書で深掘り", soon: 1 },
@@ -1142,14 +1145,27 @@ function gShowMenu(cx, cy, title, items) {
   setTimeout(() => document.addEventListener("pointerdown", gMenuClose, { once: true }), 0);
 }
 function gMenuClose() { const m = $("graph-menu"); if (m) m.remove(); }
+// scroll to a result card; if it isn't present for the current word, recenter
+// on the clicked word (which renders that word's cards) and then scroll.
+function gScrollCard(id, q) {
+  const el = $(id);
+  if (el && (!G || q === G.rootQ)) { el.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+  originRecenter(q);
+  setTimeout(() => { const e2 = $(id); if (e2) e2.scrollIntoView({ behavior: "smooth", block: "center" }); }, 900);
+}
 
+// The physics loop runs only while ACTIVE (settling, or a node being dragged);
+// when it stops it clears G.raf and flips G.running=false, so hover/zoom/pan can
+// redraw on demand. The previous version left a stale G.raf, so `if(!G.raf)`
+// never fired and hover-highlight flickered / appeared only sometimes.
 function gLoop(iters) {
-  cancelAnimationFrame(G.raf);
-  let i = 0;
+  cancelAnimationFrame(G.raf); G.running = true; let i = 0;
   const tick = () => {
-    if (i++ < iters || G.drag) { gStep(); }
+    const active = (i++ < iters) || G.drag;
+    if (active) gStep();
     gDraw();
-    if (i < iters + 400 || G.drag) G.raf = requestAnimationFrame(tick);
+    if (active) { G.raf = requestAnimationFrame(tick); }
+    else { G.running = false; G.raf = 0; gDraw(); }
   };
   tick();
 }
@@ -1157,11 +1173,13 @@ function gLoop(iters) {
 function gScreenToGraph(mx, my) {
   return { x: (mx - G.view.x) / G.view.k, y: (my - G.view.y) / G.view.k };
 }
+// Hit-testing in SCREEN space (px), so it is stable across zoom levels — the old
+// graph-space thresholds shrank/grew with zoom and made selection unpredictable.
+function gToScreen(n) { return { x: n.x * G.view.k + G.view.x, y: n.y * G.view.k + G.view.y }; }
 function gNodeAt(mx, my) {
-  const p = gScreenToGraph(mx, my);
   for (let i = G.nodes.length - 1; i >= 0; i--) {
-    const n = G.nodes[i], dx = n.x - p.x, dy = n.y - p.y;
-    if (dx * dx + dy * dy <= (n.r + 6) * (n.r + 6)) return n;
+    const n = G.nodes[i], s = gToScreen(n), rr = n.r * G.view.k + 8;
+    if ((s.x - mx) ** 2 + (s.y - my) ** 2 <= rr * rr) return n;
   }
   return null;
 }
@@ -1186,7 +1204,7 @@ function gBind() {
         if (ei >= 0) { G.hover = null; const e2 = G.edges[ei]; const child = G.nodes[e2.a].layer >= G.nodes[e2.b].layer ? e2.a : e2.b; G.hl = gHl(child); cv.style.cursor = "pointer"; }
         else { G.hover = null; G.hl = null; cv.style.cursor = "grab"; }
       }
-      if (!G.raf) gDraw();
+      if (!G.running) gDraw();   // when settled, reflect the hover immediately
       return;
     }
     const ddx = mx - G.press.mx, ddy = my - G.press.my;
@@ -1210,7 +1228,7 @@ function gBind() {
     G.view.k = nk; gDraw();
   };
 }
-function gLoopKick() { if (!G.raf) gLoop(1); else gDraw(); }
+function gLoopKick() { if (!G.running) gLoop(40); else gDraw(); }
 
 function gFitInstant() { G.view = { x: 0, y: 0, k: 1 }; }
 function graphFit() {
@@ -1269,14 +1287,14 @@ async function originRun(q) {
       <ol class="gm-senses">${d.general_meaning.map(s => `<li>${esc(s)}</li>`).join("")}</ol></div>`;
   }
 
-  // ── ⚠ 潰れの明示警告（最重要）：日本語A ← 原語B・C・D ──
+  // ── ⚠ 埋没の明示警告（最重要）：日本語A ← 原語B・C・D ──
   const cw = d.collapse_warning;
   if (cw && cw.lemmas && cw.lemmas.length) {
     const olink2 = (t) => `<a href="/origin?q=${encodeURIComponent(t)}&lang=${LANG}"${linkAttr} lang="de">${esc(t)}</a>`;
-    html += `<div class="card warn-card">
+    html += `<div class="card warn-card" id="card-collapse">
       <h3>⚠ ${jp ? "この言葉は、扱いに注意が要ります" : "This word needs careful handling"}</h3>
       <p>${jp
-        ? `日本語の${(cw.collapsed_japanese||[]).map(w=>`「${esc(w)}」`).join("・")}という一語の背後には、原語では<b>別々の複数の語</b>が潰れて一つになっています。日本語だけを見ていると、この区別は消えています——どれを指すかで、あなたの問いの意味は変わります。`
+        ? `日本語の${(cw.collapsed_japanese||[]).map(w=>`「${esc(w)}」`).join("・")}という一語には、原語では<b>別々の複数の語</b>があり、翻訳の際に一語へ抽象化され、その区別が<b>埋没</b>しています。日本語だけを見ていると、この区別は見えません——どれを指すかで、あなたの問いの意味は変わります。`
         : `Behind this single Japanese word stand <b>several distinct original terms</b>, collapsed into one. The distinction vanishes in Japanese — and which one you mean changes what your question means.`}</p>
       <table class="plain collapse-tbl">
         ${cw.lemmas.map(l => `<tr>
@@ -1326,7 +1344,7 @@ async function originRun(q) {
 
   // ── breadth：この概念を担う言語と、その各言語での語（データの和集合） ──
   if (d.breadth && d.breadth.length) {
-    html += `<div class="card"><h3>${jp ? "この概念を担う、世界の言語とその語" : "The world's languages that carry this concept, and their word"} <span class="srcline">${d.breadth_count}</span></h3>
+    html += `<div class="card" id="card-breadth"><h3>${jp ? "この概念を担う、世界の言語とその語" : "The world's languages that carry this concept, and their word"} <span class="srcline">${d.breadth_count}</span></h3>
       <p class="muted">${jp ? "どの言語を出すかは、私（AI）でなくデータが決めています。既知の数言語に縮めない——見知らぬ言語こそ現れるべきだからです。" : "Which languages appear is decided by the data, not by me (the AI) — the unfamiliar ones are exactly what should surface."}</p>
       <div class="breadth">${d.breadth.map(b => `<span class="blang" title="${esc(b.via)}">${esc(b.name)}${b.term ? `：<span lang="">${esc(b.term)}</span>` : ""}</span>`).join("")}</div></div>`;
   }
