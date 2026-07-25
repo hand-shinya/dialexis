@@ -126,6 +126,21 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
   position: sticky; top: 0; background: var(--card); }
 .gp-x { background: none; color: var(--muted); font-size: 1.3rem; padding: 0 .3rem; }
 .gp-body { padding: .8rem .9rem 1.1rem; }
+.gp-h { font-family: system-ui, sans-serif; font-size: .9rem; margin: .8rem 0 .3rem; border-left: 3px solid var(--accent2); padding-left: .5rem; }
+.gp-ul { margin: .2rem 0 .6rem; padding-left: 1.3rem; font-size: .9rem; }
+.gp-ul li { margin: .25rem 0; }
+/* 探究の次元ナビゲータ */
+.dim-card { border-left: 4px solid var(--accent2); }
+.dims { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .6rem; }
+.dim { font-family: system-ui, sans-serif; font-size: .86rem; cursor: pointer; text-align: left;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+  padding: .45rem .7rem; display: inline-flex; align-items: center; gap: .4rem; }
+.dim:hover { border-color: var(--accent2); }
+.dim-x { opacity: .72; }
+.dim-b { font-size: .66rem; padding: .05rem .4rem; border-radius: 999px; font-family: system-ui, sans-serif; }
+.dim-ok { background: #e2f4e8; color: var(--ok); }
+.dim-part { background: #fdf1d7; color: var(--warn); }
+.dim-soon { background: #eee; color: var(--muted); }
 /* ⚠ 埋没の明示警告 — このポータルの核心価値。目立たせる（が下品にしない） */
 .warn-card { border-left: 5px solid var(--warn); background: #fffaf2; }
 .warn-card h3 { color: var(--warn); margin-top: 0; }

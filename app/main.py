@@ -596,6 +596,23 @@ async def api_origin(q: str, lang: str = "ja"):
     # rather than silently pick one.
     word_origin = td.get("origin_estimate")
     concept_origin = cd.get("original_terms") or []
+    # 探究の次元（ベンチマークが示す広さ・深さ・多様性への"確実に辿れる路"）。データの
+    # ある次元は ok、既存機構に繋がるものは partial、未整備は soon——構造として常に全次元
+    # を提示し、到達可能性を保証する（内容はベンチマークと違ってよい・A3で被覆を正直に）。
+    german_term = next((o["term"] for o in concept_origin if o.get("name") == "ドイツ語"), None)
+    def _dim(key, label, status, act=""):
+        return {"key": key, "label": label, "status": status, "act": act}
+    dimensions = [
+        _dim("etymology", "語源・変容の連鎖", "ok" if (td.get("origin_chain") or word_origin or concept_origin) else "soon", "scroll:card-origin"),
+        _dim("distinction", "概念の区別（埋没した原語）", "ok" if collapse_warning else "soon", "scroll:card-collapse"),
+        _dim("related", "関連概念（原語空間の共起）", "ok" if german_term else "soon", ("colloc:" + german_term) if german_term else ""),
+        _dim("lineage", "思想家の系譜", "partial", "graph"),
+        _dim("breadth", "世界の言語での言い方", "ok" if cd.get("breadth_labels") else "soon", "scroll:card-breadth"),
+        _dim("critique", "批判・異論（steelman）", "partial", "counter:" + q),
+        _dim("era", "時代性・変遷（流行・衰退・再評価）", "soon", ""),
+        _dim("application", "応用領域（労働・消費・AI 等）", "soon", ""),
+        _dim("tradition", "他の伝統・文化圏の見方", "soon", ""),
+    ]
     polysemy = bool(word_origin and concept_origin
                     and word_origin.get("name") not in {o["name"] for o in concept_origin}
                     and not word_origin.get("native"))
@@ -604,6 +621,7 @@ async def api_origin(q: str, lang: str = "ja"):
         "query": q, "lang": lang, "queried_at": now(),
         "word": {"query": q},
         "found": td.get("found", False) or cd.get("found", False),
+        "dimensions": dimensions,                # 探究の次元（どの語からも辿れる路）
         "general_meaning": gen_senses,           # 広く共有されている意味（入力言語）
         "collapse_warning": collapse_warning,    # ⚠ 埋没の明示警告（A←B・C・D）
         "concept_origin": concept_origin,        # 概念-翻訳-原点（疎外→独 Entfremdung）

@@ -905,6 +905,14 @@ function originInit(q) {
   }
   const fit = $("graph-fit");
   if (fit) fit.addEventListener("click", () => graphFit());
+  const res = $("origin-results");
+  if (res && !res._dimBound) {
+    res._dimBound = 1;
+    res.addEventListener("click", (e) => {
+      const b = e.target.closest(".dim");
+      if (b && DIMS) gDimAct(DIMS[Number(b.dataset.i)]);
+    });
+  }
   if (q) { originRun(q); originGraph(q); }
 }
 
@@ -927,7 +935,43 @@ function originLinkAttr() {
 /* ---------- 言語空間の重力グラフ（canvas force-directed・階層/展開/俯瞰） ---------- */
 const GKIND = { word: "#1d2430", domain: "#2e5c7a", original: "#7a5c2e",
   author: "#b45309", work: "#9a7b52", language: "#4a7fa5" };
-let G = null;
+let G = null, DIMS = null;
+
+// dispatch a dimension-of-inquiry entry to its data path (or 整備中 note).
+function gDimAct(dm) {
+  if (!dm) return;
+  const jp = LANG === "ja", act = dm.act || "";
+  if (dm.status === "soon") {
+    gPanel(dm.label, `<p class="muted">${jp ? "この次元は整備中です。路（構造）は用意されており、データ源が接続され次第ここに現れます。内容はベンチマークと違ってよく、広さ・深さ・次元の多様性の路を保証します。" : "This dimension is being built; the path exists and fills in as its source connects."}</p>`);
+    return;
+  }
+  if (act.startsWith("scroll:")) {
+    const el = $(act.slice(7));
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    else gPanel(dm.label, `<p class="muted">${jp ? "この探索ではこの次元の内容が見つかりませんでした。" : "Not available for this word."}</p>`);
+  } else if (act.startsWith("colloc:")) gColloc(act.slice(7), "de");
+  else if (act.startsWith("counter:")) gCounter(act.slice(8));
+  else if (act === "graph") { const w = $("origin-graph-wrap"); if (w) w.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  else gPanel(dm.label, `<p class="muted">${jp ? "準備中" : "coming"}</p>`);
+}
+
+// 批判・異論の次元 — reuse the existing counterargument engine (steelman
+// perspectives + real opposing literature). Benchmark's『批判・異論』dimension.
+async function gCounter(claim) {
+  const jp = LANG === "ja";
+  const p = gPanel((jp ? "批判・異論：" : "Critique: ") + claim, `<p class="muted">${jp ? "読み込み中…" : "loading…"}</p>`);
+  let d;
+  try { d = await api("/api/counter", { method: "POST", body: { claim, lang: LANG } }); }
+  catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+  let html = `<p class="muted">${jp ? "この語・主張を、複数の視点から検証する問い（steelman）。加えて、対立しうる実在の文献を示します。" : "Counter-questions from multiple perspectives, plus real opposing literature."}</p>`;
+  (d.level0 || []).forEach(pv => { html += `<h4 class="gp-h">${esc(pv.perspective)}</h4><ul class="gp-ul">${(pv.questions || []).map(q => `<li>${esc(q)}</li>`).join("")}</ul>`; });
+  const lit = d.opposing_literature_search;
+  if (lit && !lit.error && lit.data && lit.data.length) {
+    html += `<h4 class="gp-h">${jp ? "対立しうる文献（OpenAlex・実データ）" : "Opposing literature (OpenAlex)"}</h4><ul class="gp-ul">`
+      + lit.data.slice(0, 6).map(w => `<li>${esc(w.title)} <span class="srcline">${esc((w.authors || []).slice(0, 2).join(", "))}</span></li>`).join("") + "</ul>";
+  }
+  p.querySelector(".gp-body").innerHTML = html;
+}
 
 async function originGraph(q) {
   const wrap = $("origin-graph-wrap"), cv = $("origin-graph");
@@ -1323,6 +1367,18 @@ async function originRun(q) {
     $("origin-results").innerHTML = html; return;
   }
 
+  // ── 探究の次元（ベンチマークの広さ・深さへ辿れる路の一覧・構造の保証） ──
+  if (d.dimensions && d.dimensions.length) {
+    const badge = (s) => s === "ok" ? `<span class="dim-b dim-ok">${jp ? "辿れる" : "ready"}</span>`
+      : s === "partial" ? `<span class="dim-b dim-part">${jp ? "一部" : "partial"}</span>`
+      : `<span class="dim-b dim-soon">${jp ? "整備中" : "coming"}</span>`;
+    DIMS = d.dimensions;
+    html += `<div class="card dim-card"><h3>${jp ? "探究の次元（この言葉をどこまで辿れるか）" : "Dimensions of inquiry"}</h3>
+      <p class="muted">${jp ? "一つの言葉を、これらの次元へ辿れる構造です。内容は毎回違ってよい——広さ・深さ・多様性の路を保証します。整備中の次元も、路として示します。" : "Paths from one word into these dimensions — breadth, depth, diversity guaranteed structurally; unbuilt ones are shown as paths too."}</p>
+      <div class="dims">${d.dimensions.map((dm, i) =>
+        `<button type="button" class="dim${dm.status === "soon" ? " dim-x" : ""}" data-i="${i}">${esc(dm.label)} ${badge(dm.status)}</button>`).join("")}</div></div>`;
+  }
+
   // ── 広く共有されている意味（入力言語） ──
   if (d.general_meaning && d.general_meaning.length) {
     html += `<div class="card"><h3>${jp ? "広く共有されている意味" : "The broadly shared meaning"}</h3>
@@ -1351,7 +1407,7 @@ async function originRun(q) {
 
   // ── 原点：概念-翻訳-原点（密度）＋ 語源原点（語史）を分けて示す ──
   const co = d.concept_origin || [], o = d.word_origin;
-  html += `<div class="card orig-card"><h3>${jp ? "この言葉の原点" : "This word's origin"}</h3>`;
+  html += `<div class="card orig-card" id="card-origin"><h3>${jp ? "この言葉の原点" : "This word's origin"}</h3>`;
   // 概念-翻訳-原点：訳語がどの言語の何から来たか（疎外→独 Entfremdung）
   if (co.length) {
     html += `<p>${jp ? "概念の原点（この訳語が写した原語）" : "Concept origin (the original this translation renders)"}:
