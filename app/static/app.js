@@ -963,11 +963,11 @@ async function gCounter(claim) {
   let d;
   try { d = await api("/api/counter", { method: "POST", body: { claim, lang: LANG } }); }
   catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
-  let html = `<p class="muted">${jp ? "この語・主張を、複数の視点から検証する問い（steelman）。加えて、対立しうる実在の文献を示します。" : "Counter-questions from multiple perspectives, plus real opposing literature."}</p>`;
+  let html = `<p class="muted">${jp ? "この語・主張を、複数の視点から検証する問い（steelman）。加えて、この主張に関連する実在の文献を示します（賛成か反対かは判定していません）。" : "Counter-questions from multiple perspectives, plus related real literature (stance NOT judged)."}</p>`;
   (d.level0 || []).forEach(pv => { html += `<h4 class="gp-h">${esc(pv.perspective)}</h4><ul class="gp-ul">${(pv.questions || []).map(q => `<li>${esc(q)}</li>`).join("")}</ul>`; });
   const lit = d.opposing_literature_search;
   if (lit && !lit.error && lit.data && lit.data.length) {
-    html += `<h4 class="gp-h">${jp ? "対立しうる文献（OpenAlex・実データ）" : "Opposing literature (OpenAlex)"}</h4><ul class="gp-ul">`
+    html += `<h4 class="gp-h">${jp ? "関連文献（OpenAlex・実データ／賛否は未判定）" : "Related literature (OpenAlex; stance not judged)"}</h4><ul class="gp-ul">`
       + lit.data.slice(0, 6).map(w => `<li>${esc(w.title)} <span class="srcline">${esc((w.authors || []).slice(0, 2).join(", "))}</span></li>`).join("") + "</ul>";
   }
   p.querySelector(".gp-body").innerHTML = html;
@@ -1147,7 +1147,7 @@ function gActions(n) {
     { t: "⚠ 埋没した原語を見る", fn: () => gScrollCard("card-collapse", q || L) },
     { t: "🌍 多言語での言い方を見る", fn: () => gScrollCard("card-breadth", q || L) },
     { t: "✍ 深掘り探索プロンプトを作る", fn: ds },
-    { t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(L, /[A-Za-zÀ-ɏ]/.test(L) ? "de" : "de") },
+    { t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(q || L) },
     { t: "🔗 新しいタブでこの語を開く", fn: nt },
     { t: "📚 原語の権威辞書で深掘り", soon: 1 },
   ];
@@ -1210,12 +1210,24 @@ function gPanel(title, bodyHtml) {
   return p;
 }
 // 原語空間の共起（DWDS）— the benchmark's『関連概念群』dimension, made real.
-async function gColloc(term, lang) {
+// BUGFIX (Codex): a non-Latin node label (Japanese 疎外) can't be sent to DWDS
+// directly — resolve it to its German concept-origin (Entfremdung) first, else
+// say so. Only German has a collocation source for now (honest).
+async function gColloc(term) {
   const jp = LANG === "ja";
   const p = gPanel((jp ? "原語空間の共起：" : "Collocations: ") + term,
     `<p class="muted">${jp ? "読み込み中…" : "loading…"}</p>`);
+  let deTerm = term;
+  if (!/[A-Za-zÀ-ɏ]/.test(term)) {
+    try {
+      const od = await api(`/api/origin?q=${encodeURIComponent(term)}&lang=${LANG}`);
+      const g = (od.concept_origin || []).find(o => o.name === "ドイツ語");
+      if (!g) { p.querySelector(".gp-body").innerHTML = `<p class="muted">${jp ? "この語の原語（独語）が特定できず、共起（現状は独語コーパスのみ）を引けません。" : "No German origin resolved; collocations (German corpus only) unavailable."}</p>`; return; }
+      deTerm = g.term;
+    } catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+  }
   let d;
-  try { d = await api(`/api/collocations?term=${encodeURIComponent(term)}&lang=${lang || "de"}`); }
+  try { d = await api(`/api/collocations?term=${encodeURIComponent(deTerm)}&lang=de`); }
   catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
   const rels = d.relations || {}, keys = Object.keys(rels);
   let html = "";
@@ -1373,8 +1385,8 @@ async function originRun(q) {
       : s === "partial" ? `<span class="dim-b dim-part">${jp ? "一部" : "partial"}</span>`
       : `<span class="dim-b dim-soon">${jp ? "整備中" : "coming"}</span>`;
     DIMS = d.dimensions;
-    html += `<div class="card dim-card"><h3>${jp ? "探究の次元（この言葉をどこまで辿れるか）" : "Dimensions of inquiry"}</h3>
-      <p class="muted">${jp ? "一つの言葉を、これらの次元へ辿れる構造です。内容は毎回違ってよい——広さ・深さ・多様性の路を保証します。整備中の次元も、路として示します。" : "Paths from one word into these dimensions — breadth, depth, diversity guaranteed structurally; unbuilt ones are shown as paths too."}</p>
+    html += `<div class="card dim-card"><h3>${jp ? "探究の次元（この言葉をどこから見ていくか）" : "Dimensions of inquiry"}</h3>
+      <p class="muted">${jp ? "一つの言葉を、いくつかの次元から見ていく入口です。「辿れる」＝実データに到達する次元／「一部」＝既存機構につながる次元／「整備中」＝まだ路だけで内容は未接続、を正直に区別します。この一覧は例（toyodashaの疎外論）から作った暫定の共通次元で、概念固有の次元を発見する層は今後の課題です。" : "Entry points into several dimensions of a word. ready = reaches real data; partial = wired to an existing engine; coming = path only, source not yet connected. This is a provisional COMMON set; per-concept discovery is future work."}</p>
       <div class="dims">${d.dimensions.map((dm, i) =>
         `<button type="button" class="dim${dm.status === "soon" ? " dim-x" : ""}" data-i="${i}">${esc(dm.label)} ${badge(dm.status)}</button>`).join("")}</div></div>`;
   }
