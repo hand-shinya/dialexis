@@ -626,6 +626,85 @@ async def api_origin(q: str, lang: str = "ja"):
     }
 
 
+@app.get("/api/origin/graph")
+async def api_origin_graph(q: str, lang: str = "ja"):
+    """言語空間の重力分布グラフ（第1〜4階層）。第1=入力語／第2=重力分布の分岐（意味の
+    領域・世界の言語）／第3=分岐を構成するもの（潰れた複数原語・各言語での語）／第4=強く
+    関与する著者・著作（重要度順）。node の大きさ＝重力（密度の代理指標＝推定）、edge＝
+    関係。データのある枝は濃く、無い枝は薄い（捏造しない・A3）。各 node は q を持てば
+    クリックで新たな第1階層として展開できる。"""
+    if not q.strip():
+        raise HTTPException(400, "empty query")
+    cn = await concept.node(q, lang)
+    cd = cn["data"] if not cn["error"] else {}
+    gen = await wiktionary.ja_senses(q) if lang == "ja" else None
+    senses = (gen["data"]["senses"] if gen and not gen["error"] and gen.get("data") else [])
+    cluster = _orig_cluster(q, None)
+    lineage = _author_lineage(q, None)
+
+    nodes, edges, seen = [], [], set()
+
+    def add(nid, label, kind, layer, weight=1.0, qq=None, extra=None):
+        if nid in seen:
+            return
+        seen.add(nid)
+        nodes.append({"id": nid, "label": label, "kind": kind, "layer": layer,
+                      "weight": weight, "q": qq, **(extra or {})})
+
+    def link(a, b, strength=1.0):
+        edges.append({"from": a, "to": b, "strength": strength})
+
+    add("root", q, "word", 1, 3.0, q)
+
+    # 第2階層: 分岐（意味の領域）
+    if senses:
+        add("dom:general", "一般の意味", "domain", 2, 1.4)
+        link("root", "dom:general", 1.0)
+    origin_terms = cd.get("original_terms") or []
+    phil = "dom:phil" if (origin_terms or cluster) else None
+    if phil:
+        add(phil, "専門・思想の意味", "domain", 2, 2.4)
+        link("root", phil, 1.5)
+
+    # 第3階層: 分岐を構成するもの（潰れた複数原語・概念の原語）
+    for l in (cluster.get("lemmas", []) if cluster else []):
+        nid = f"orig:{l['lemma']}"
+        add(nid, l["lemma"], "original", 3, 1.8, l["lemma"], {"gloss": l.get("gloss")})
+        link(phil or "root", nid, 1.2)
+    for o in origin_terms:
+        nid = f"orig:{o['term']}"
+        add(nid, o["term"], "original", 3, 1.6, o["term"], {"lang_name": o.get("name")})
+        link(phil or "root", nid, 1.0)
+
+    # 第4階層: 強く関与する著者・著作（重要度＝史的順）
+    for i, a in enumerate(lineage.get("authors", []) if lineage else []):
+        w = max(0.9, 2.2 - i * 0.35)
+        aid = f"auth:{a['author']}"
+        add(aid, a["author"], "author", 4, w, None,
+            {"work": a.get("work"), "year": a.get("year"), "term_de": a.get("term_de")})
+        link(phil or "root", aid, 0.8)
+        if a.get("work"):
+            wid = f"work:{a['work']}"
+            add(wid, a["work"], "work", 4, max(0.7, w - 0.3))
+            link(aid, wid, 0.6)
+
+    # 第2階層: 世界の言語の広がり（breadth）＋ 第3: 各言語での語（一部）
+    labels = cd.get("breadth_labels") or {}
+    if labels:
+        add("dom:breadth", f"世界の言語 {len(labels)}", "domain", 2, 1.9)
+        link("root", "dom:breadth", 1.0)
+        for code, label in list(labels.items())[:14]:
+            nid = f"lang:{code}"
+            add(nid, f"{wiktionary.langname(code)}：{label}", "language", 3, 0.85, label)
+            link("dom:breadth", nid, 0.4)
+
+    return {"query": q, "queried_at": now(), "nodes": nodes, "edges": edges,
+            "note": "重力(nodeの大きさ)・関係(edge)は密度の代理指標＝推定。データのある枝は"
+                    "濃く、無い枝は薄い（捏造しない）。著者順は史的順。",
+            "sources": [{"source": cn["source"], "retrieved_at": cn["retrieved_at"],
+                         "error": cn["error"]}]}
+
+
 def _general_block(gen, wiki) -> dict | None:
     """広く共有されている意味: the everyday ja.wiktionary senses (primary), plus the
     encyclopedic summary as fuller context. None only when BOTH are absent."""

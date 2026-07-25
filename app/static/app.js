@@ -903,7 +903,18 @@ function originInit(q) {
       if (box && box.dataset.q) originRun(box.dataset.q);
     });
   }
-  if (q) originRun(q);
+  const fit = $("graph-fit");
+  if (fit) fit.addEventListener("click", () => graphFit());
+  if (q) { originRun(q); originGraph(q); }
+}
+
+// Recenter the whole exploration on a word (from a graph node / in-page link),
+// updating the search box, the cards, and the graph together.
+function originRecenter(q) {
+  const inp = document.querySelector('.searchbox input[name=q]');
+  if (inp) inp.value = q;
+  originRun(q); originGraph(q);
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 // Attribute string for an internal word link — a new tab (keeping the current
@@ -911,6 +922,167 @@ function originInit(q) {
 function originLinkAttr() {
   return (localStorage.getItem("origin_newtab") === "1")
     ? ' target="_blank" rel="noopener"' : "";
+}
+
+/* ---------- 言語空間の重力グラフ（canvas force-directed・階層/展開/俯瞰） ---------- */
+const GKIND = { word: "#1d2430", domain: "#2e5c7a", original: "#7a5c2e",
+  author: "#b45309", work: "#9a7b52", language: "#4a7fa5" };
+let G = null;
+
+async function originGraph(q) {
+  const wrap = $("origin-graph-wrap"), cv = $("origin-graph");
+  if (!wrap || !cv) return;
+  let d;
+  try { d = await api(`/api/origin/graph?q=${encodeURIComponent(q)}&lang=${LANG}`); }
+  catch (e) { wrap.style.display = "none"; return; }
+  if (!d.nodes || d.nodes.length <= 1) { wrap.style.display = "none"; return; }
+  wrap.style.display = "block";
+  const note = $("graph-note"); if (note) note.textContent = d.note || "";
+  gBuild(d);
+}
+
+function gBuild(d) {
+  const cv = $("origin-graph");
+  const W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const cx = W / 2, cy = H / 2, idx = {};
+  const nodes = d.nodes.map((n, i) => { idx[n.id] = i; return { ...n }; });
+  const maxLayer = Math.max(...nodes.map(n => n.layer));
+  nodes.forEach(n => {
+    const R = (n.layer - 1) * Math.min(W, H) / (maxLayer + 1);
+    const peers = nodes.filter(m => m.layer === n.layer);
+    const k = peers.indexOf(n);
+    const ang = (k / Math.max(1, peers.length)) * Math.PI * 2 + n.layer * 0.7;
+    n.x = cx + R * Math.cos(ang) + (Math.random() - .5) * 24;
+    n.y = cy + R * Math.sin(ang) + (Math.random() - .5) * 24;
+    n.vx = 0; n.vy = 0; n.r = 5 + n.weight * 4.5;
+  });
+  const edges = d.edges.map(e => ({ a: idx[e.from], b: idx[e.to], s: e.strength || 1 }))
+    .filter(e => e.a != null && e.b != null);
+  G = { nodes, edges, ctx, cv, W, H, cx, cy, view: { x: 0, y: 0, k: 1 },
+        drag: null, hover: null, alpha: 1, raf: 0 };
+  gFitInstant();
+  gBind();
+  gLoop(200);
+}
+
+function gStep() {
+  const N = G.nodes, E = G.edges;
+  for (let i = 0; i < N.length; i++) {
+    const a = N[i];
+    for (let j = i + 1; j < N.length; j++) {
+      const b = N[j];
+      let dx = a.x - b.x, dy = a.y - b.y, ds = dx * dx + dy * dy || 1;
+      const dist = Math.sqrt(ds), f = 2600 / ds;
+      const fx = f * dx / dist, fy = f * dy / dist;
+      a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+    }
+  }
+  E.forEach(e => {
+    const a = N[e.a], b = N[e.b];
+    const dx = b.x - a.x, dy = b.y - a.y, dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const target = 64 + Math.abs(a.layer - b.layer) * 34;
+    const f = 0.025 * (dist - target);
+    const fx = f * dx / dist, fy = f * dy / dist;
+    a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+  });
+  N.forEach(n => {
+    n.vx += (G.cx - n.x) * 0.006; n.vy += (G.cy - n.y) * 0.006;
+    if (n === G.drag) { n.vx = 0; n.vy = 0; return; }
+    n.vx *= 0.86; n.vy *= 0.86; n.x += n.vx * G.alpha; n.y += n.vy * G.alpha;
+  });
+}
+
+function gDraw() {
+  const { ctx, W, H, view, nodes, edges } = G;
+  ctx.clearRect(0, 0, W, H);
+  ctx.save(); ctx.translate(view.x, view.y); ctx.scale(view.k, view.k);
+  edges.forEach(e => {
+    const a = nodes[e.a], b = nodes[e.b];
+    ctx.strokeStyle = "rgba(122,92,46," + (0.14 + 0.28 * e.s) + ")";
+    ctx.lineWidth = (0.6 + e.s * 0.9) / view.k;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  });
+  nodes.forEach(n => {
+    ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 7); ctx.fillStyle = GKIND[n.kind] || "#888"; ctx.fill();
+    if (n === G.hover) { ctx.lineWidth = 2 / view.k; ctx.strokeStyle = "#111"; ctx.stroke(); }
+    ctx.fillStyle = "#1d2430";
+    ctx.font = (n.layer === 1 ? "bold 15px" : Math.round(10 + n.weight * 1.4) + "px") + " system-ui, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    const lab = n.label.length > 22 ? n.label.slice(0, 21) + "…" : n.label;
+    ctx.fillText(lab, n.x, n.y - n.r - 2);
+  });
+  ctx.restore();
+}
+
+function gLoop(iters) {
+  cancelAnimationFrame(G.raf);
+  let i = 0;
+  const tick = () => {
+    if (i++ < iters || G.drag) { gStep(); }
+    gDraw();
+    if (i < iters + 400 || G.drag) G.raf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+function gScreenToGraph(mx, my) {
+  return { x: (mx - G.view.x) / G.view.k, y: (my - G.view.y) / G.view.k };
+}
+function gNodeAt(mx, my) {
+  const p = gScreenToGraph(mx, my);
+  for (let i = G.nodes.length - 1; i >= 0; i--) {
+    const n = G.nodes[i], dx = n.x - p.x, dy = n.y - p.y;
+    if (dx * dx + dy * dy <= (n.r + 6) * (n.r + 6)) return n;
+  }
+  return null;
+}
+
+function gBind() {
+  const cv = G.cv;
+  cv.onpointerdown = (e) => {
+    cv.setPointerCapture(e.pointerId);
+    const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    const n = gNodeAt(mx, my);
+    G.press = { mx, my, n, moved: false, panx: G.view.x, pany: G.view.y };
+    if (n) G.drag = n;
+  };
+  cv.onpointermove = (e) => {
+    const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    if (!G.press) { G.hover = gNodeAt(mx, my); cv.style.cursor = G.hover ? "pointer" : "grab"; if (!G.raf) gDraw(); return; }
+    const ddx = mx - G.press.mx, ddy = my - G.press.my;
+    if (Math.abs(ddx) + Math.abs(ddy) > 4) G.press.moved = true;
+    if (G.drag) { const p = gScreenToGraph(mx, my); G.drag.x = p.x; G.drag.y = p.y; gLoopKick(); }
+    else { G.view.x = G.press.panx + ddx; G.view.y = G.press.pany + ddy; gDraw(); }
+  };
+  cv.onpointerup = (e) => {
+    const p = G.press; G.drag = null; G.press = null;
+    if (p && !p.moved && p.n && p.n.q) originRecenter(p.n.q);
+    else gLoopKick();
+  };
+  cv.onwheel = (e) => {
+    e.preventDefault();
+    const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    const f = e.deltaY < 0 ? 1.12 : 0.89, nk = Math.max(0.2, Math.min(4, G.view.k * f));
+    G.view.x = mx - (mx - G.view.x) * (nk / G.view.k);
+    G.view.y = my - (my - G.view.y) * (nk / G.view.k);
+    G.view.k = nk; gDraw();
+  };
+}
+function gLoopKick() { if (!G.raf) gLoop(1); else gDraw(); }
+
+function gFitInstant() { G.view = { x: 0, y: 0, k: 1 }; }
+function graphFit() {
+  if (!G) return;
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  G.nodes.forEach(n => { x0 = Math.min(x0, n.x - n.r - 40); y0 = Math.min(y0, n.y - n.r - 20);
+    x1 = Math.max(x1, n.x + n.r + 40); y1 = Math.max(y1, n.y + n.r + 20); });
+  const k = Math.min(G.W / (x1 - x0), G.H / (y1 - y0), 2);
+  G.view.k = k;
+  G.view.x = (G.W - (x0 + x1) * k) / 2;
+  G.view.y = (G.H - (y0 + y1) * k) / 2;
+  gDraw();
 }
 
 const REL_JP = {
