@@ -17,6 +17,7 @@
     <span class="graph-title">{{ '言語空間の重力分布（第1〜4階層・ノードをクリックで再中心／背景ドラッグで移動／ホイールで拡大縮小）' if lang=='ja' else 'Gravity map of the language space (layers 1–4 · click a node to re-centre · drag to pan · wheel to zoom)' }}</span>
     <button type="button" id="graph-fit" class="small">{{ '俯瞰' if lang=='ja' else 'Fit' }}</button>
   </div>
+  <div id="graph-lens" class="graph-lens"></div>
   <canvas id="origin-graph"></canvas>
   <p class="srcline muted" id="graph-note"></p>
 </div>

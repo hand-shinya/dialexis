@@ -956,7 +956,62 @@ function originLinkAttr() {
 /* ---------- 言語空間の重力グラフ（canvas force-directed・階層/展開/俯瞰） ---------- */
 const GKIND = { word: "#1d2430", domain: "#2e5c7a", original: "#7a5c2e",
   author: "#b45309", work: "#9a7b52", language: "#4a7fa5" };
-let G = null, DIMS = null;
+let G = null, DIMS = null, G_raw = null, G_lens = "all";
+
+// ── レンズ（複数の地図）: 同じ言葉・同じ取得データを、いくつもの見方で見せる（半田様提案
+// 2026-07-26）。追加取得ゼロ——グラフの型付きノード(word/original/author/work/language/
+// domain)を型で絞り、その語を中心に再投影するだけ。「専門/一般の1分岐」を最初に見せる代わりに、
+// ユーザーが見方を選べる＝知的好奇心の間口を広げる（老若男女・並ぶことの喜び・セレンディピティ）。
+const LENSES = [
+  { key: "all", label: "俯瞰（すべて）", en: "Overview", kinds: null,
+    cap: "この言葉をめぐる全体像。意味の領域・原語・世界の言語・思想家までを一度に。" },
+  { key: "thinkers", label: "思想家と著作", en: "Thinkers & works", kinds: ["author", "work"],
+    cap: "この概念を立て、論じた人と著作。名前をクリックで経歴・著作・情報源へ。" },
+  { key: "original", label: "原語と語源", en: "Original terms", kinds: ["original"],
+    cap: "訳語の背後にある原語・埋没した複数の語。クリックでその原語空間へ。" },
+  { key: "languages", label: "世界の言語", en: "World languages", kinds: ["language"],
+    cap: "この概念を担う世界の言語と、その語。既知の数言語に縮めない。" },
+  { key: "domains", label: "意味の領域", en: "Fields of meaning", kinds: ["domain"],
+    cap: "一般の意味／専門・思想／世界の言語という、意味の大きな分かれ。" },
+];
+
+// 選んだレンズで生データを再投影（俯瞰=そのまま／それ以外=語を中心にその型だけの星型）
+function applyLens(d, key) {
+  const L = LENSES.find(x => x.key === key) || LENSES[0];
+  if (!L.kinds) return d;
+  const root = d.nodes.find(n => n.kind === "word");
+  const leaves = d.nodes.filter(n => L.kinds.includes(n.kind));
+  const nodes = [];
+  if (root) nodes.push({ ...root, layer: 1 });
+  leaves.forEach(n => nodes.push({ ...n, layer: 2 }));
+  const edges = root ? leaves.map(n => ({ from: root.id, to: n.id, strength: 0.9 })) : [];
+  return { query: d.query, note: L.cap, nodes, edges };
+}
+
+function lensLeafCount(d, L) {
+  return L.kinds ? d.nodes.filter(n => L.kinds.includes(n.kind)).length : d.nodes.length;
+}
+
+function renderLensChips(d) {
+  const el = $("graph-lens"); if (!el) return;
+  const jp = LANG === "ja";
+  el.innerHTML = LENSES.map(L => {
+    const n = lensLeafCount(d, L), empty = L.kinds && n === 0;
+    return `<button type="button" class="lens-chip${L.key === G_lens ? " on" : ""}${empty ? " empty" : ""}" data-k="${L.key}"${empty ? " disabled" : ""}>${esc(jp ? L.label : L.en)}${L.kinds ? ` <span class="lens-n">${n}</span>` : ""}</button>`;
+  }).join("");
+  el.querySelectorAll(".lens-chip:not(.empty)").forEach(c =>
+    c.addEventListener("click", () => applyLensBuild(c.dataset.k)));
+}
+
+function applyLensBuild(key) {
+  if (!G_raw) return;
+  G_lens = key;
+  const pd = applyLens(G_raw, key);
+  const note = $("graph-note"); if (note) note.textContent = pd.note || G_raw.note || "";
+  gBuild(pd);
+  const el = $("graph-lens");
+  if (el) el.querySelectorAll(".lens-chip").forEach(c => c.classList.toggle("on", c.dataset.k === key));
+}
 
 // ── 探索の単一真実源（root-A: 状態一貫性・要求ID・古い応答の破棄・再中心完了条件） ──
 // 半田様の「他の語のデータが流用される／動いたり動かなかったり」の機構は意味ドリフトでなく
@@ -1016,8 +1071,14 @@ async function originGraph(q, tok) {
   if (d.qid) OZ.qid = d.qid;               // 既存qidをノードから単一真実源へ伝播（後段のP11強化用）
   if (!d.nodes || d.nodes.length <= 1) { wrap.style.display = "none"; return; }
   wrap.style.display = "block";
-  const note = $("graph-note"); if (note) note.textContent = d.note || "";
-  gBuild(d);
+  G_raw = d;
+  // 選んでいたレンズをこの語でも保つ（見方の連続性）。ただし新しい語でそのレンズが空なら俯瞰へ。
+  const cur = LENSES.find(x => x.key === G_lens) || LENSES[0];
+  if (cur.kinds && lensLeafCount(d, cur) === 0) G_lens = "all";
+  renderLensChips(d);
+  const pd = applyLens(d, G_lens);
+  const note = $("graph-note"); if (note) note.textContent = pd.note || d.note || "";
+  gBuild(pd);
 }
 
 function gBuild(d) {
