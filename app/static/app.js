@@ -1704,12 +1704,24 @@ async function originRun(q, tok) {
   let html = "";
 
   // ── 言葉（主役） ──
+  // 入力語と異なる記事へ辿った場合は正直に明示（間主観 →（間主観性 として辿りました））
+  const rf = d.resolved_from, rt = d.resolved_to;
+  const resolvedNote = (rf && rt && rf !== rt)
+    ? `<p class="srcline">${jp ? `「${esc(rf)}」の記事は無いため、通常検索が見つける` : `no exact article for “${esc(rf)}”; followed `}<b>${olink(rt)}</b>${jp ? "（同じ概念）として辿りました" : " (same concept)"}</p>`
+    : "";
   html += `<div class="card word-card">
     <p class="srcline">${jp ? "この探求は、まず言葉そのものから始まります" : "This inquiry begins with the word itself"}</p>
-    <h2 class="theword">「${esc((d.word || {}).query || q)}」</h2></div>`;
+    <h2 class="theword">「${esc((d.word || {}).query || q)}」</h2>${resolvedNote}</div>`;
 
   if (!d.found) {
-    html += `<div class="card"><p>${jp ? "この語のWiktionaryエントリが見つかりませんでした（語幹・別表記・ローマ字で再試行してみてください）。" : "No Wiktionary entry for this form (try a lemma / alternative spelling / romanization)."}</p></div>`;
+    // 行き止まりにしない: 候補（通常検索が見つける記事）をクリックで辿れる形で示す（第二次戦略）
+    const sg = d.suggestions || [];
+    if (sg.length) {
+      html += `<div class="card"><p>${jp ? `「${esc(q)}」そのものの項目は見つかりませんでした。通常の検索が見つける、近い項目はこちらです（クリックで辿れます）：` : `No exact entry for “${esc(q)}”. Closest entries normal search finds:`}</p>
+        <div class="dim-disc-list">${sg.map(s => `<a class="dim-disc-l" href="/origin?q=${encodeURIComponent(s)}&lang=${LANG}"${linkAttr}>${esc(s)}</a>`).join("")}</div></div>`;
+    } else {
+      html += `<div class="card"><p>${jp ? "この語の項目が見つかりませんでした（語幹・別表記・ローマ字で再試行してみてください）。" : "No entry for this form (try a lemma / alternative spelling / romanization)."}</p></div>`;
+    }
     $("origin-results").innerHTML = html; return;
   }
 

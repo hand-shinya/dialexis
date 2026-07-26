@@ -623,6 +623,9 @@ async def api_origin(q: str, lang: str = "ja"):
         "query": q, "lang": lang, "queried_at": now(),
         "word": {"query": q},
         "found": td.get("found", False) or cd.get("found", False),
+        "resolved_from": cd.get("resolved_from"),   # 間主観→間主観性 と辿った場合の元語
+        "resolved_to": cd.get("title"),             # 実際に辿った記事名
+        "suggestions": cd.get("suggestions") or [],  # 見つからない時の候補（行き止まりにしない）
         "dimensions": dimensions,                # 探究の次元（どの語からも辿れる路）
         "general_meaning": gen_senses,           # 広く共有されている意味（入力言語）
         "collapse_warning": collapse_warning,    # ⚠ 埋没の明示警告（A←B・C・D）

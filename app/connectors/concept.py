@@ -96,16 +96,52 @@ async def _seealso_qids(word, lang):
         return []
 
 
+async def _opensearch(word, lang):
+    """通常検索が見つける変種を吸収（間主観→間主観性）。前方一致・接尾辞ゆらぎを拾う。"""
+    try:
+        d, _, _ = await cached_get_json(WP_API.format(lang=lang), {
+            "action": "opensearch", "search": word, "limit": 6, "namespace": 0,
+            "redirects": "resolve", "format": "json"}, ttl=86400)
+        return d[1] if isinstance(d, list) and len(d) > 1 else []
+    except Exception:
+        return []
+
+
+async def _fulltext(word, lang):
+    """最後の砦: 全文検索の候補（行き止まりにしない・候補提示用）。"""
+    try:
+        d, _, _ = await cached_get_json(WP_API.format(lang=lang), {
+            "action": "query", "list": "search", "srsearch": word, "srlimit": 6, "format": "json"}, ttl=86400)
+        return [r["title"] for r in d.get("query", {}).get("search", [])]
+    except Exception:
+        return []
+
+
+async def _fetch_article(title, lang):
+    body, ts, cached = await cached_get_json(WP_API.format(lang=lang), {
+        "action": "query", "prop": "pageprops|extracts|revisions",
+        "rvprop": "content", "rvslots": "main", "exintro": 1, "explaintext": 1,
+        "titles": title, "redirects": 1, "format": "json"})
+    return next(iter(body.get("query", {}).get("pages", {}).values()), {}), ts, cached
+
+
 async def node(word: str, lang: str = "ja") -> dict:
     try:
-        body, ts, cached = await cached_get_json(WP_API.format(lang=lang), {
-            "action": "query", "prop": "pageprops|extracts|revisions",
-            "rvprop": "content", "rvslots": "main", "exintro": 1, "explaintext": 1,
-            "titles": word, "redirects": 1, "format": "json"})
-        pages = body.get("query", {}).get("pages", {})
-        page = next(iter(pages.values()), {})
+        page, ts, cached = await _fetch_article(word, lang)
+        title = word
+        resolved_from = None
         if "missing" in page:
-            return ok("concept-node", ts, cached, {"word": word, "found": False})
+            # 通常検索が見つけるものは必ず辿る（一次結果0を作らない）。変種を吸収して再取得。
+            cands = await _opensearch(word, lang)
+            pick = next((c for c in cands if c and c != word), None)
+            if pick:
+                page, ts, cached = await _fetch_article(pick, lang)
+                title, resolved_from = pick, word
+        if "missing" in page:
+            # それでも無い＝行き止まりにせず、候補（opensearch＋全文）を返す（第二次戦略）
+            sugg = await _opensearch(word, lang) or await _fulltext(word, lang)
+            return ok("concept-node", ts, cached, {"word": word, "found": False,
+                      "suggestions": [s for s in sugg if s and s != word][:6]})
         qid = page.get("pageprops", {}).get("wikibase_item")
         extract = page.get("extract", "") or ""
         wikitext = (page.get("revisions", [{}])[0].get("slots", {})
@@ -147,7 +183,7 @@ async def node(word: str, lang: str = "ja") -> dict:
             na_q = _claim_qids(claims, "P138")  # named after＝語形の由来（rhizome←根茎:植物）
             near_q = [x for p in _REL_NEAR for x in _claim_qids(claims, p)]  # 近い/類する
             opp_q = [x for p in _REL_OPP for x in _claim_qids(claims, p)]    # 対立/区別
-            seealso_q = await _seealso_qids(word, lang)                      # 記事の関連項目で補完
+            seealso_q = await _seealso_qids(title, lang)                     # 記事の関連項目で補完
             res = await _resolve(orig_q + na_q + near_q + opp_q + seealso_q, lang)
             originators = [res[q] for q in dict.fromkeys(orig_q) if q in res and res[q]["is_person"]]
             named_after = [res[q] for q in dict.fromkeys(na_q) if q in res]
@@ -160,6 +196,8 @@ async def node(word: str, lang: str = "ja") -> dict:
 
         return ok("concept-node", ts, cached, {
             "word": word, "found": True, "qid": qid,
+            "title": title,                    # 実際に辿った記事名（間主観→間主観性）
+            "resolved_from": resolved_from,    # 入力語と異なる記事へ解決した場合の元語
             "original_terms": origs,          # 概念-翻訳-原点の候補（記事が明示・LEAD）
             "originators": originators,        # 概念を立てた思想家（P61/P112・決定論・人物のみ）
             "named_after": named_after,        # 語形の由来（P138・語源であって概念の原点でない）
@@ -167,7 +205,7 @@ async def node(word: str, lang: str = "ja") -> dict:
             "breadth_labels": labels,          # 多言語breadth（Wikidata全ラベル）
             "breadth_count": len(labels),
             "extract": extract[:500],
-            "article_url": f"https://{lang}.wikipedia.org/wiki/{word}",
+            "article_url": f"https://{lang}.wikipedia.org/wiki/{title}",
             "wikidata_url": (f"https://www.wikidata.org/wiki/{qid}" if qid else None),
         })
     except Exception as e:
