@@ -1114,6 +1114,34 @@ function gFocusSubtree(nodeIdx) {
   gBuild({ query: G.rootQ, nodes, edges, note: G.note });
 }
 
+// 著者を調べる — REAL in-portal retrieval (bio, dates, occupation, works, source)
+// via /api/author. This is the detection/extraction the user asked for; it never
+// touches the word-origin engine. Empty results show WHERE it failed, not a blank.
+async function gAuthorInvestigate(searchName, label) {
+  const jp = LANG === "ja";
+  const p = gPanel((jp ? "著者を調べる：" : "Author: ") + (label || searchName),
+    `<p class="muted">${jp ? "取得中…" : "loading…"}</p>`);
+  let d;
+  try { d = await api(`/api/author?name=${encodeURIComponent(searchName)}&lang=${LANG}`); }
+  catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+  if (!d.found) {
+    p.querySelector(".gp-body").innerHTML = `<p class="muted">${esc(d.note || d.error || (jp ? "取得できませんでした。" : "Not found."))}</p>
+      <p class="srcline">${jp ? "代替：" : "alt:"} <a href="https://ja.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(searchName)}" target="_blank">Wikipedia検索</a></p>`;
+    return;
+  }
+  const row = (k, v) => v && v.length ? `<tr><th>${esc(k)}</th><td>${esc(Array.isArray(v) ? v.join("、") : v)}</td></tr>` : "";
+  let html = `<p>${esc(d.extract || "")}</p>
+    <table class="plain">
+      ${row(jp ? "生" : "born", (d.born || [])[0])}
+      ${row(jp ? "没" : "died", (d.died || [])[0])}
+      ${row(jp ? "職業" : "occupation", d.occupation)}
+      ${row(jp ? "主要著作" : "works", (d.works || []).map(w => `${w}`))}
+    </table>
+    <p class="srcline"><a href="${esc(d.wikipedia_url)}" target="_blank">Wikipedia (${LANG})</a>${d.wikidata_url ? ` · <a href="${esc(d.wikidata_url)}" target="_blank">Wikidata</a>` : ""} · ${esc((d.sources && d.sources[0] && d.sources[0].retrieved_at) || "")}</p>
+    <p class="srcline muted">${jp ? "この著者のこの語での固有の用法（著者固有の共起）・一次テキストは整備中です。" : "Author-specific usage / primary text are being built."}</p>`;
+  p.querySelector(".gp-body").innerHTML = html;
+}
+
 // author info panel — from the lineage node's own data (work/year/term). Never
 // routes a person's name through the word-origin engine.
 function gAuthorPanel(n) {
@@ -1142,15 +1170,16 @@ function gActions(n) {
   // real external links; the word engine is never called on a person.
   if (n.kind === "author" || n.kind === "work") {
     const who = n.kind === "author" ? "この著者" : "この著作";
-    const wp = () => window.open(`https://ja.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(L)}`, "_blank");
+    const sq = n.search || L;
+    const wp = () => window.open(`https://ja.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(sq)}`, "_blank");
     return [
-      { t: `📖 ${who}について（著作・年・この語での原語）`, fn: () => gAuthorPanel(n) },
-      { t: "🌐 Wikipediaでこの人物/著作を開く", fn: wp },
-      { t: `✍ 深掘り探索プロンプトを作る（${jp ? "この対象で" : ""}）`, fn: () => ds(L) },
-      { t: n.kind === "author" ? `📚 主要著作：${n.work || "—"}` : "📜 一次テキストにあたる", fn: n.kind === "author" ? (() => gAuthorPanel(n)) : undefined, soon: n.kind === "work" ? 1 : 0 },
+      { t: `🔍 ${who}を調べる（経歴・著作・出典を取得）`, fn: () => gAuthorInvestigate(sq, L) },
+      { t: `🎯 ${who}を中心に（${jp ? "この語の文脈を保ち著作へ" : "keep context, focus works"}）`, fn: () => gFocusSubtree(G.nodes.indexOf(n)) },
+      { t: `📖 ${who}の系譜メモ（この語での原語）`, fn: () => gAuthorPanel(n) },
+      { t: `✍ 深掘り探索プロンプトを作る（${who}）`, fn: () => ds(sq) },
+      { t: "🌐 Wikipediaで開く（新しいタブ）", fn: wp },
       { t: "📖 この著者のこの語での用法（著者固有の共起）", soon: 1 },
       { t: "🕰 時代性・年表上の位置", soon: 1 },
-      { t: "🔗 新しいタブでWikipediaを開く", fn: wp },
     ];
   }
   if (n.kind === "domain") {

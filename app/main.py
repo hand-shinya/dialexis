@@ -22,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 from . import db
 from .db import get_conn, init_db, now, rows
 from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept
+from .connectors.base import cached_get_json
 from . import citations as cites
 from . import deepsearch
 from . import bibliography
@@ -699,7 +700,8 @@ async def api_origin_graph(q: str, lang: str = "ja"):
         w = max(0.9, 2.2 - i * 0.35)
         aid = f"auth:{a['author']}"
         add(aid, a["author"], "author", 4, w, None,
-            {"work": a.get("work"), "year": a.get("year"), "term_de": a.get("term_de")})
+            {"work": a.get("work"), "year": a.get("year"), "term_de": a.get("term_de"),
+             "search": a.get("author_de") or a.get("author")})
         link(phil or "root", aid, 0.8)
         if a.get("work"):
             wid = f"work:{a['work']}"
@@ -721,6 +723,51 @@ async def api_origin_graph(q: str, lang: str = "ja"):
                     "濃く、無い枝は薄い（捏造しない）。著者順は史的順。",
             "sources": [{"source": cn["source"], "retrieved_at": cn["retrieved_at"],
                          "error": cn["error"]}]}
+
+
+@app.get("/api/author")
+async def api_author(name: str, lang: str = "ja"):
+    """著者を調べる（実データの検出・抽出）— 人物名から記事を検索し、経歴（生没・
+    職業）・主要著作・要約を portal 内に出典つきで取得する。著者は語とは別次元なので
+    語源エンジンでなくこの人物取得を使う。空なら失敗箇所を正直に示す（捏造しない）。"""
+    if not name.strip():
+        raise HTTPException(400, "name required")
+    WP = f"https://{lang}.wikipedia.org/w/api.php"
+    try:
+        sb, _, _ = await cached_get_json(WP, {"action": "query", "list": "search",
+                                              "srsearch": name, "srlimit": 1, "format": "json"})
+    except Exception as e:
+        return {"name": name, "found": False, "error": f"{type(e).__name__}: {e}"}
+    hits = sb.get("query", {}).get("search", [])
+    if not hits:
+        return {"name": name, "found": False, "note": f"「{name}」に一致する記事が見つかりませんでした。"}
+    title = hits[0]["title"]
+    summ = await wikipedia.summary(title, lang)
+    pb, _, _ = await cached_get_json(WP, {"action": "query", "prop": "pageprops",
+                                          "titles": title, "format": "json"})
+    page = next(iter(pb.get("query", {}).get("pages", {}).values()), {})
+    qid = page.get("pageprops", {}).get("wikibase_item")
+    born, died, occ, works = [], [], [], []
+    if qid:
+        ent = await wikidata.entity(qid, lang)
+        if not ent["error"]:
+            cl = ent["data"]["claims"]
+            born, died = cl.get("born", []), cl.get("died", [])
+            oq, nq = cl.get("occupation", [])[:5], cl.get("notable_work", [])[:8]
+            labels = await wikidata.resolve_labels(oq + nq, lang)
+            occ = [labels.get(x, x) for x in oq if not str(labels.get(x, x)).startswith("Q")]
+            works = [labels.get(x, x) for x in nq if not str(labels.get(x, x)).startswith("Q")]
+    return {
+        "name": name, "found": True, "title": title,
+        "extract": (summ["data"]["extract"] if not summ["error"] else ""),
+        "born": born, "died": died, "occupation": occ, "works": works,
+        "wikipedia_url": (summ["data"]["url"] if not summ["error"]
+                          else f"https://{lang}.wikipedia.org/wiki/{title}"),
+        "wikidata_url": (f"https://www.wikidata.org/wiki/{qid}" if qid else None),
+        "queried_at": now(),
+        "sources": [{"source": f"wikipedia:{lang}", "retrieved_at": summ.get("retrieved_at"),
+                     "error": summ["error"]}],
+    }
 
 
 @app.get("/api/collocations")
