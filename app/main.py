@@ -754,6 +754,137 @@ async def api_origin_graph(q: str, lang: str = "ja"):
                          "error": cn["error"]}]}
 
 
+SPARQL = "https://query.wikidata.org/sparql"
+
+
+async def _sparql(query: str):
+    try:
+        d, _, _ = await cached_get_json(SPARQL, {"query": query, "format": "json"}, ttl=86400)
+        return d.get("results", {}).get("bindings", [])
+    except Exception:
+        return []
+
+
+def _app_domain(labels: str) -> str:
+    """作品の型・ジャンルから大分野を決める（応用・波及レンズ）。中立の粗分類・出所は型ラベル。"""
+    s = labels.lower()
+    if any(k in s for k in ["film", "映画", "cinema", "theatre", "演劇", "音楽", "music", "opera",
+                            "painting", "絵画", "art", "芸術", "sculpture", "album", "song"]):
+        return "芸術・映画"
+    if any(k in s for k in ["novel", "小説", "poem", "詩", "literary", "文学", "fiction", "戯曲", "play"]):
+        return "文学"
+    if any(k in s for k in ["war", "戦争", "revolution", "革命", "event", "事件", "battle", "movement", "運動"]):
+        return "歴史・事件"
+    if any(k in s for k in ["political", "政治", "law", "法", "policy", "manifesto", "宣言"]):
+        return "政治・社会"
+    return "著作・研究"
+
+
+@app.get("/api/applications")
+async def api_applications(q: str, lang: str = "ja"):
+    """応用・波及レンズ: この概念を主題とする作品（P921）を、文学・芸術・映画・歴史等の
+    分野に粗分類して『分野別の枝＋作品の点』のグラフで返す。データはWikidataの作品claim＝
+    捏造しない・分野は型/ジャンルラベルに接地（中立）。無ければ正直に空。"""
+    cn = await concept.node(q, lang)
+    qid = (cn["data"] if not cn["error"] else {}).get("qid")
+    if not qid:
+        return {"query": q, "nodes": [{"id": "root", "label": q, "kind": "word", "layer": 1, "weight": 3.0, "q": q}],
+                "edges": [], "note": "この語のWikidata項目が特定できず、応用・波及を取得できませんでした。"}
+    rows_ = await _sparql(f"""SELECT DISTINCT ?work ?workLabel ?typeLabel ?genreLabel ?date WHERE {{
+      ?work wdt:P921 wd:{qid}. OPTIONAL {{ ?work wdt:P31 ?type. }} OPTIONAL {{ ?work wdt:P136 ?genre. }}
+      OPTIONAL {{ ?work wdt:P577 ?date. }}
+      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "{lang},en". }} }} ORDER BY ?date LIMIT 40""")
+    nodes = [{"id": "root", "label": q, "kind": "word", "layer": 1, "weight": 3.0, "q": q}]
+    edges, seenw, domains = [], set(), {}
+    for r in rows_:
+        wl = r.get("workLabel", {}).get("value", "")
+        if not wl or wl.startswith("Q") or wl in seenw:
+            continue
+        seenw.add(wl)
+        dom = _app_domain(f"{r.get('typeLabel',{}).get('value','')} {r.get('genreLabel',{}).get('value','')}")
+        did = f"appdom:{dom}"
+        if dom not in domains:
+            domains[dom] = True
+            nodes.append({"id": did, "label": dom, "kind": "appdomain", "layer": 2, "weight": 2.0})
+            edges.append({"from": "root", "to": did, "strength": 1.2})
+        yr = (r.get("date", {}).get("value", "") or "")[:4]
+        nodes.append({"id": f"appwork:{wl}", "label": wl + (f"（{yr}）" if yr else ""),
+                      "kind": "application", "layer": 3, "weight": 1.0, "q": wl})
+        edges.append({"from": did, "to": f"appwork:{wl}", "strength": 0.7})
+    note = ("この概念を主題とする作品を、分野別に。翻訳・小説・映画・歴史等への応用と波及。"
+            if len(nodes) > 1 else "この概念を主題とする作品はWikidataに見つかりませんでした（正直に空）。")
+    return {"query": q, "queried_at": now(), "qid": qid, "nodes": nodes, "edges": edges, "note": note,
+            "sources": [{"source": "wikidata:P921", "retrieved_at": now(), "error": None}]}
+
+
+@app.get("/api/usage")
+async def api_usage(q: str, lang: str = "ja"):
+    """使用例・引用レンズ: この語が実テキスト（学術）で実際にどう使われたかを、OpenAlexの
+    著作（題・著者・年・出典）として引用カードで返す。捏造せず出所つき（賛否・評価は判定
+    しない・中立）。原語でも引ける。"""
+    cn = await concept.node(q, lang)
+    cd = cn["data"] if not cn["error"] else {}
+    terms = [q] + [o.get("term") for o in (cd.get("original_terms") or []) if o.get("term")]
+    seen, cards = set(), []
+    for term in terms[:2]:
+        try:
+            d, _, _ = await cached_get_json("https://api.openalex.org/works",
+                {"search": term, "per_page": 8, "mailto": "handa.shinya@gmail.com"}, ttl=86400)
+        except Exception:
+            continue
+        for w in d.get("results", []):
+            t = w.get("title")
+            if not t or t in seen:
+                continue
+            seen.add(t)
+            au = [a.get("author", {}).get("display_name") for a in (w.get("authorships") or [])[:3]]
+            cards.append({"title": t, "year": w.get("publication_year"), "term": term,
+                          "authors": [a for a in au if a], "url": w.get("doi") or w.get("id"),
+                          "venue": ((w.get("primary_location") or {}).get("source") or {}).get("display_name")})
+        if len(cards) >= 12:
+            break
+    return {"query": q, "queried_at": now(), "cards": cards[:12],
+            "note": "この語が学術テキストで実際に使われた著作（OpenAlex・出典つき／賛否は判定しない）。"
+                    if cards else "実テキストの用例が見つかりませんでした（正直に空）。"}
+
+
+@app.get("/api/timeline")
+async def api_timeline(q: str, lang: str = "ja"):
+    """時代・変遷レンズ: この概念（原語）がいつ流行り・衰退し・再評価されたかを、Google Books
+    Ngram の通時頻度で返す（無料・鍵不要）。カタカナ入力語は書物コーパスに乏しいため、原語
+    （独/英/仏など）の語形で引く。捏造せず、取得できた系列だけ返す。"""
+    cn = await concept.node(q, lang)
+    cd = cn["data"] if not cn["error"] else {}
+    labels = cd.get("breadth_labels") or {}
+    # 原語の語形を、対応するNgramコーパスで引く（英・独・仏・西・伊・露）
+    plan = [(labels.get("en"), "en-2019", "英語"), (labels.get("de"), "de-2019", "ドイツ語"),
+            (labels.get("fr"), "fr-2019", "フランス語"), (labels.get("es"), "es-2019", "スペイン語"),
+            (labels.get("it"), "it-2019", "イタリア語"), (labels.get("ru"), "ru-2019", "ロシア語")]
+    for o in (cd.get("original_terms") or []):
+        plan.append((o.get("term"), "de-2019" if o.get("name") == "ドイツ語" else "en-2019", o.get("name")))
+    series, seen = [], set()
+    for term, corpus, langname in plan:
+        if not term or not re.match(r"^[A-Za-zÀ-ÿ' -]+$", term) or (term, corpus) in seen:
+            continue
+        seen.add((term, corpus))
+        try:
+            d, _, _ = await cached_get_json("https://books.google.com/ngrams/json",
+                {"content": term, "year_start": 1800, "year_end": 2019, "corpus": corpus, "smoothing": 3}, ttl=86400)
+        except Exception:
+            continue
+        if d and d[0].get("timeseries"):
+            ts = d[0]["timeseries"]
+            series.append({"term": term, "lang": langname, "start": 1800, "end": 2019,
+                           "values": [round(v, 10) for v in ts],
+                           "peak_year": 1800 + max(range(len(ts)), key=lambda i: ts[i])})
+        if len(series) >= 4:
+            break
+    return {"query": q, "queried_at": now(), "series": series,
+            "note": "原語の語形の通時頻度（Google Books Ngram・書物コーパス）。いつ現れ・広まり・"
+                    "衰退し・再評価されたか。カタカナ語でなく原語で辿る。" if series
+                    else "通時頻度を取得できる原語形が見つかりませんでした（正直に空）。"}
+
+
 @app.get("/api/dimensions")
 async def api_dimensions(q: str, lang: str = "ja"):
     """概念固有の次元を発見する層（#1・固定分類の先）。その概念自身の Wikipedia 記事の

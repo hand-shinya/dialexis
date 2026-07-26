@@ -119,6 +119,19 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .lens-chip.empty { opacity: .4; cursor: default; }
 .lens-n { font-size: .72rem; opacity: .7; margin-left: .15rem; }
 .lens-chip.on .lens-n { opacity: .85; }
+/* 専用描画レンズ（使用例カード・時代変遷チャート） */
+#graph-alt { padding: .6rem .8rem 1rem; min-height: 300px; }
+.usage-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .6rem; }
+.ucard { border: 1px solid var(--line); border-radius: 8px; padding: .6rem .7rem; background: var(--paper); }
+.ucard .ut { font-weight: 600; font-size: .9rem; line-height: 1.35; }
+.ucard .um { font-size: .76rem; color: var(--muted); margin-top: .3rem; }
+.ucard a { color: var(--accent); text-decoration: none; }
+.tl-wrap { display: flex; flex-direction: column; gap: .5rem; }
+.tl-legend { display: flex; flex-wrap: wrap; gap: .8rem; font-size: .8rem; font-family: system-ui, sans-serif; }
+.tl-legend span { display: inline-flex; align-items: center; gap: .3rem; }
+.tl-sw { width: 12px; height: 3px; display: inline-block; border-radius: 2px; }
+#tl-canvas { width: 100%; height: 52vh; min-height: 340px; display: block; }
+.lens-empty { color: var(--muted); padding: 1.5rem .5rem; font-family: system-ui, sans-serif; }
 /* グラフのコンテキストメニュー（選択時の7択・kind別） */
 #graph-menu { position: absolute; z-index: 50; width: 300px; background: var(--card);
   border: 1px solid var(--ink); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.18);

@@ -956,7 +956,8 @@ function originLinkAttr() {
 /* ---------- 言語空間の重力グラフ（canvas force-directed・階層/展開/俯瞰） ---------- */
 const GKIND = { word: "#1d2430", domain: "#2e5c7a", original: "#7a5c2e",
   author: "#b45309", work: "#9a7b52", language: "#4a7fa5",
-  related: "#3a7d44", opposite: "#a03b3b" };
+  related: "#3a7d44", opposite: "#a03b3b", appdomain: "#5b4b8a", application: "#8a6d3b" };
+let G_lenscache = {};   // 遅延レンズ（応用/使用例/時代変遷）の 語+レンズ ごとの取得キャッシュ
 let G = null, DIMS = null, G_raw = null, G_lens = "all";
 
 // ── レンズ（複数の地図）: 同じ言葉・同じ取得データを、いくつもの見方で見せる（半田様提案
@@ -976,7 +977,39 @@ const LENSES = [
     cap: "近い/類する概念（緑）と、対立・区別される概念（赤）の星座。クリックでその概念へ。思考を横に広げる。" },
   { key: "domains", label: "意味の領域", en: "Fields of meaning", kinds: ["domain"],
     cap: "一般の意味／専門・思想／世界の言語という、意味の大きな分かれ。" },
+  { key: "spheres", label: "文化圏", en: "Cultural spheres", mode: "region",
+    cap: "欧／漢字圏／日本など、どの文化圏の言語がこの概念を担うかで束ねる。重力場が変わる。" },
+  { key: "applications", label: "応用・波及", en: "Applications", mode: "lazy-graph", endpoint: "/api/applications",
+    cap: "この概念を主題とする作品を分野別に（文学・芸術・映画・歴史）。応用と波及。クリックでその作品語へ。" },
+  { key: "usage", label: "使用例・引用", en: "Usage", mode: "cards", endpoint: "/api/usage",
+    cap: "この語が実テキスト（学術）で実際にどう使われたか。出典つきの引用カード（賛否は判定しない）。" },
+  { key: "era", label: "時代・変遷", en: "Over time", mode: "timeline", endpoint: "/api/timeline",
+    cap: "原語がいつ現れ・広まり・衰退し・再評価されたか（Google Books Ngram・書物コーパス）。" },
 ];
+
+// 文化圏（言語コード→圏）。欧/漢字圏/日本/その他。同じ概念でもどの圏を基準にするかで見え方が変わる。
+const REGION_EU = ["de", "fr", "en", "es", "it", "la", "grc", "el", "ru", "nl", "pt", "pl",
+  "sv", "da", "no", "nb", "fi", "uk", "cs", "ro", "hu", "tr", "he", "ar", "fa", "ca", "eo"];
+function regionOf(code) {
+  if (code === "ja") return "日本";
+  if (["zh", "ko", "vi", "yue", "wuu", "za"].includes(code)) return "漢字圏";
+  if (REGION_EU.includes(code)) return "欧";
+  return "その他";
+}
+// 言語ノードを文化圏で束ねる再投影（語→圏→言語）。追加取得なし（G_rawの言語ノードから）。
+function applyRegion(d) {
+  const root = d.nodes.find(n => n.kind === "word");
+  const langs = d.nodes.filter(n => n.kind === "language");
+  const nodes = root ? [{ ...root, layer: 1 }] : [];
+  const edges = [], regs = {};
+  langs.forEach(n => {
+    const reg = regionOf((n.id.split(":")[1] || ""));
+    const rid = `reg:${reg}`;
+    if (!regs[reg]) { regs[reg] = 1; nodes.push({ id: rid, label: reg, kind: "appdomain", layer: 2, weight: 2.2 }); if (root) edges.push({ from: root.id, to: rid, strength: 1.2 }); }
+    nodes.push({ ...n, layer: 3 }); edges.push({ from: rid, to: n.id, strength: 0.5 });
+  });
+  return { query: d.query, note: "文化圏で束ねる: どの言語圏がこの概念を担うか。欧／漢字圏／日本／その他。", nodes, edges };
+}
 
 // 選んだレンズで生データを再投影（俯瞰=そのまま／それ以外=語を中心にその型だけの星型）
 function applyLens(d, key) {
@@ -1006,14 +1039,83 @@ function renderLensChips(d) {
     c.addEventListener("click", () => applyLensBuild(c.dataset.k)));
 }
 
-function applyLensBuild(key) {
-  if (!G_raw) return;
-  G_lens = key;
-  const pd = applyLens(G_raw, key);
-  const note = $("graph-note"); if (note) note.textContent = pd.note || G_raw.note || "";
-  gBuild(pd);
+function setActiveChip(key) {
   const el = $("graph-lens");
   if (el) el.querySelectorAll(".lens-chip").forEach(c => c.classList.toggle("on", c.dataset.k === key));
+}
+// グラフ描画（canvas）と専用描画（#graph-alt: カード/チャート）の切替。altに入る時は描画ループを止める。
+function showCanvas() { const c = $("origin-graph"), a = $("graph-alt"); if (c) c.style.display = "block"; if (a) { a.style.display = "none"; a.innerHTML = ""; } }
+function showAlt() { const c = $("origin-graph"), a = $("graph-alt"); if (G && G.raf) { cancelAnimationFrame(G.raf); G.running = false; } if (c) c.style.display = "none"; if (a) a.style.display = "block"; }
+
+async function applyLensBuild(key) {
+  if (!G_raw) return;
+  G_lens = key; setActiveChip(key);
+  const L = LENSES.find(x => x.key === key) || LENSES[0];
+  const jp = LANG === "ja", note = $("graph-note");
+  const setNote = t => { if (note) note.textContent = t; };
+  const mode = L.mode || "filter";
+  if (mode === "filter") { showCanvas(); const pd = applyLens(G_raw, key); setNote(pd.note || G_raw.note || ""); gBuild(pd); return; }
+  if (mode === "region") { showCanvas(); const pd = applyRegion(G_raw); setNote(pd.note); gBuild(pd); return; }
+  // 遅延レンズ（応用/使用例/時代変遷）: エンドポイントを取得（語ごとキャッシュ）して描画
+  const ck = `${L.key}:${G_raw.query}`;
+  let data = G_lenscache[ck];
+  if (!data) {
+    setNote((jp ? "読み込み中… " : "loading… ") + L.cap);
+    if (mode === "cards" || mode === "timeline") { showAlt(); $("graph-alt").innerHTML = `<p class="lens-empty">${jp ? "読み込み中…" : "loading…"}</p>`; }
+    try { data = await api(`${L.endpoint}?q=${encodeURIComponent(G_raw.query)}&lang=${LANG}`); G_lenscache[ck] = data; }
+    catch (e) { if (G_lens === key) { setNote((jp ? "取得に失敗: " : "failed: ") + esc(String(e.message || e))); if (mode !== "lazy-graph") { showAlt(); $("graph-alt").innerHTML = `<p class="lens-empty">${jp ? "取得に失敗しました。" : "failed."}</p>`; } } return; }
+    if (G_lens !== key) return;   // 読み込み中に別レンズへ切替＝古い結果を捨てる（状態一貫性）
+  }
+  setNote(data.note || L.cap);
+  if (mode === "lazy-graph") {
+    if (!data.nodes || data.nodes.length <= 1) { showAlt(); $("graph-alt").innerHTML = `<p class="lens-empty">${esc(data.note || (jp ? "この語ではこのレンズのデータがありません。" : "no data."))}</p>`; return; }
+    showCanvas(); gBuild(data);
+  } else if (mode === "cards") { showAlt(); renderUsageCards(data); }
+  else if (mode === "timeline") { showAlt(); renderTimeline(data); }
+}
+
+// 使用例・引用: 出典つきの引用カード群（賛否は判定しない・中立）
+function renderUsageCards(data) {
+  const a = $("graph-alt"); if (!a) return; const jp = LANG === "ja";
+  const cards = data.cards || [];
+  if (!cards.length) { a.innerHTML = `<p class="lens-empty">${esc(data.note || (jp ? "用例が見つかりませんでした。" : "no usage."))}</p>`; return; }
+  a.innerHTML = `<div class="usage-cards">` + cards.map(c => {
+    const meta = [(c.authors || []).join(", "), c.year, c.venue].filter(Boolean).map(esc).join(" · ");
+    const link = c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">${jp ? "出典を開く" : "open"}</a>` : "";
+    return `<div class="ucard"><div class="ut">${esc(c.title)}</div><div class="um">${meta}${meta && link ? " · " : ""}${link}<br><span class="srcline">${jp ? "用いた語" : "term"}: ${esc(c.term)}</span></div></div>`;
+  }).join("") + `</div>`;
+}
+
+// 時代・変遷: 原語の通時頻度を"川/時間軸"で（Google Books Ngram）
+function renderTimeline(data) {
+  const a = $("graph-alt"); if (!a) return; const jp = LANG === "ja";
+  const series = data.series || [];
+  if (!series.length) { a.innerHTML = `<p class="lens-empty">${esc(data.note || (jp ? "通時頻度が取得できませんでした。" : "no series."))}</p>`; return; }
+  const cols = ["#b45309", "#2e5c7a", "#3a7d44", "#a03b3b"];
+  a.innerHTML = `<div class="tl-wrap"><div class="tl-legend">${series.map((s, i) =>
+    `<span><i class="tl-sw" style="background:${cols[i % cols.length]}"></i>${esc(s.lang)}：${esc(s.term)}（${jp ? "最盛" : "peak"} ${s.peak_year}）</span>`).join("")}</div><canvas id="tl-canvas"></canvas></div>`;
+  drawTimeline($("tl-canvas"), series, cols);
+}
+function drawTimeline(cv, series, cols) {
+  if (!cv) return;
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr; const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const padL = 40, padR = 14, padT = 14, padB = 26, y0 = 1800, y1 = 2019;
+  let maxv = 0; series.forEach(s => s.values.forEach(v => { if (v > maxv) maxv = v; })); if (maxv <= 0) maxv = 1;
+  const X = yr => padL + (yr - y0) / (y1 - y0) * (W - padL - padR);
+  const Y = v => H - padB - (v / maxv) * (H - padT - padB);
+  ctx.strokeStyle = "rgba(0,0,0,0.12)"; ctx.lineWidth = 1; ctx.fillStyle = "#888"; ctx.font = "11px system-ui,sans-serif"; ctx.textAlign = "center";
+  for (let yr = 1800; yr <= 2000; yr += 50) { ctx.beginPath(); ctx.moveTo(X(yr), padT); ctx.lineTo(X(yr), H - padB); ctx.stroke(); ctx.fillText(String(yr), X(yr), H - padB + 16); }
+  series.forEach((s, i) => {
+    const col = cols[i % cols.length], n = s.values.length;
+    const path = () => { s.values.forEach((v, k) => { const x = X(y0 + (y1 - y0) * k / (n - 1)), y = Y(v); k ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); };
+    ctx.beginPath(); path(); ctx.lineTo(X(y1), H - padB); ctx.lineTo(X(y0), H - padB); ctx.closePath();
+    ctx.globalAlpha = 0.13; ctx.fillStyle = col; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.beginPath(); path(); ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.stroke();
+    const pi = Math.round((s.peak_year - y0) / (y1 - y0) * (n - 1));
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(X(s.peak_year), Y(s.values[pi] || 0), 3, 0, 7); ctx.fill();
+  });
 }
 
 // ── 探索の単一真実源（root-A: 状態一貫性・要求ID・古い応答の破棄・再中心完了条件） ──
@@ -1075,13 +1177,19 @@ async function originGraph(q, tok) {
   if (!d.nodes || d.nodes.length <= 1) { wrap.style.display = "none"; return; }
   wrap.style.display = "block";
   G_raw = d;
-  // 選んでいたレンズをこの語でも保つ（見方の連続性）。ただし新しい語でそのレンズが空なら俯瞰へ。
+  // 選んでいたレンズをこの語でも保つ（見方の連続性）。ただし新しい語でそのフィルタが空なら俯瞰へ。
   const cur = LENSES.find(x => x.key === G_lens) || LENSES[0];
   if (cur.kinds && lensLeafCount(d, cur) === 0) G_lens = "all";
   renderLensChips(d);
-  const pd = applyLens(d, G_lens);
-  const note = $("graph-note"); if (note) note.textContent = pd.note || d.note || "";
-  gBuild(pd);
+  const cur2 = LENSES.find(x => x.key === G_lens) || LENSES[0];
+  if ((cur2.mode || "filter") === "filter") {
+    showCanvas();
+    const pd = applyLens(d, G_lens);
+    const note = $("graph-note"); if (note) note.textContent = pd.note || d.note || "";
+    gBuild(pd);
+  } else {
+    applyLensBuild(G_lens);   // region/応用/使用例/時代変遷は新しい語で再描画（遅延取得は語ごとキャッシュ）
+  }
 }
 
 function gBuild(d) {
