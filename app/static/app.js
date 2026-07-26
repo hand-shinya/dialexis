@@ -914,7 +914,11 @@ function originInit(q) {
     res._dimBound = 1;
     res.addEventListener("click", (e) => {
       const b = e.target.closest(".dim");
-      if (b && DIMS) gDimAct(DIMS[Number(b.dataset.i)]);
+      if (b && DIMS) { gDimAct(DIMS[Number(b.dataset.i)]); return; }
+      const th = e.target.closest(".origin-thinker");   // 概念を立てた思想家→経歴・著作・情報源
+      if (th) { e.preventDefault(); gAuthorInvestigate(th.dataset.name, th.dataset.name); return; }
+      const di = e.target.closest(".origin-discourse");  // この概念の言説を広く調べる（外部・多言語）
+      if (di) { e.preventDefault(); gExtPanel(di.dataset.q); return; }
     });
   }
   if (q) { const t = originClaim(q); originGraph(q, t); originRun(q, t); }
@@ -1576,25 +1580,42 @@ async function originRun(q, tok) {
     </div>`;
   }
 
-  // ── 原点：概念-翻訳-原点（密度）＋ 語源原点（語史）を分けて示す ──
+  // ── 原点：単一の断定を禁じ、複数の軸を分けて正直に示す（P1無中心・P6捏造しない）。
+  // (1)概念を立てた思想家(P61/P112・決定論・本命) (2)語形の由来=語源(概念の原点でない)
+  // (3)語源チェーン を明確に分離。「語源だけを唯一の原点」と示す誤誘導を構造的に禁止する。──
   const co = d.concept_origin || [], o = d.word_origin;
+  const orig = d.originators || [], na = d.named_after || [];
   html += `<div class="card orig-card" id="card-origin"><h3>${jp ? "この言葉の原点" : "This word's origin"}</h3>`;
-  // 概念-翻訳-原点：訳語がどの言語の何から来たか（疎外→独 Entfremdung）
-  if (co.length) {
-    html += `<p>${jp ? "概念の原点（この訳語が写した原語）" : "Concept origin (the original this translation renders)"}:
-      ${co.map(o2 => `<b class="origin-lang">${esc(o2.name)}</b> <span lang="${esc(o2.code||'')}">${esc(o2.term)}</span>`).join("　／　")}</p>
-      <p class="srcline">${jp ? "密度の高い言説（記事・著者・論議）から辿った手がかり。権威源での裏取りは今後。" : "A lead traced from dense discourse; authoritative confirmation to follow."}</p>`;
+  // (1) 概念を立てた思想家 — 哲学概念の"原点"の本命（リゾーム→ドゥルーズ・ガタリ）
+  if (orig.length) {
+    html += `<p>${jp ? "この概念を立てた思想家（Wikidata: 発見者・考案者）" : "Thinkers who framed this concept (Wikidata: discoverer/inventor)"}:
+      ${orig.map(p => `<a href="#" class="origin-thinker" data-name="${esc(p.label)}"><b>${esc(p.label)}</b></a>`).join("　／　")}</p>
+      <p class="srcline">${jp ? "名前をクリックすると、その思想家の経歴・著作・多言語の専門情報源（新タブ）へ入れます。これが、この概念が実際に立てられた場所です。" : "Click a name for their bio, works and multilingual sources (new tab)."}</p>`;
   }
-  // 語源原点：語そのものの言語史
+  // (2) 語形の由来（語源）＋翻訳原点の候補 — 思想家がいる場合は"語源"として明確に降格し警告
+  if (co.length || na.length) {
+    const label = orig.length
+      ? (jp ? "語形の由来（語源・この訳語の《形》が写した語）" : "Word-form etymology")
+      : (jp ? "概念-翻訳-原点の候補（この訳語が写した可能性のある原語）" : "Candidate translation-origin (not asserted as the single origin)");
+    const items = co.map(o2 => `<b class="origin-lang">${esc(o2.name)}</b> <span lang="${esc(o2.code||'')}">${esc(o2.term)}</span>`)
+      .concat(na.map(p => `<span class="origin-lang">${esc(p.label)}</span>`));
+    html += `<p>${label}: ${items.join("　／　")}</p>`;
+    html += orig.length
+      ? `<p class="srcline" style="color:var(--warn)">⚠ ${jp ? "これは語の《形》の由来（語源）であって、この概念そのものの原点ではありません。概念の原点は上の思想家です。語源だけを『原点』として断定すると、強い誤った誘導になります。" : "This is the word-FORM's etymology, NOT the concept's origin (the thinkers above are). Asserting the etymology as 'the origin' would mislead."}</p>`
+      : `<p class="srcline">${jp ? "密度の高い言説から辿った手がかり（候補）。単一に断定しません。権威源での裏取りは今後。" : "A lead from dense discourse (a candidate; not asserted as the single origin)."}</p>`;
+  }
+  // (3) 語源の原点：語そのものの言語史（Wiktionary推定）
   if (o) {
     html += `<p>${jp ? "語源の原点（語そのものの言語史・推定）" : "Etymological origin (the word's own history, estimated)"}:
       <b class="origin-lang">${esc(o.name)}</b>
       ${o.native ? `<span class="badge">${jp ? "この言語生まれ" : "native"}</span>` : ""}
       ${o.multi ? `<span class="badge warn2">${jp ? "複数の語源" : "multiple"}</span>` : ""}</p>`;
   }
-  if (!co.length && !o) {
-    html += `<p class="muted">${jp ? "原点を特定できませんでした（記事・語源とも手がかりが乏しい語です）。" : "Could not identify an origin (sparse article/etymology data)."}</p>`;
+  if (!orig.length && !co.length && !na.length && !o) {
+    html += `<p class="muted">${jp ? "この概念の原点を単一に断定できる決定論的手がかりがありませんでした（貧弱な記事や、一人に帰さない概念）。断定は避けます——下の外部の専門情報源や『思想家の系譜』から、実際の言説（誰が・どの著作で・どう使ったか）へ辿ってください。" : "No deterministic single origin found; we do not assert one. Reach the actual discourse via the external sources / thinkers below."}</p>`;
   }
+  // 常に：単一断定の禁止を明示し、言説へ広く辿る入口（普通の検索が届く所へ確実に届く・P4/P1）
+  html += `<p class="srcline"><a href="#" class="origin-discourse" data-q="${esc((d.word || {}).query || q)}">${jp ? "▶ この概念の言説を広く調べる（多言語の専門情報源・新タブ）" : "▶ Explore this concept's discourse (multilingual sources, new tab)"}</a> · ${jp ? "原点は一つに断定しません（無中心・P1）" : "we never assert a single center (P1)"}</p>`;
   if (d.polysemy) {
     html += `<p class="muted">⚠ ${jp ? "この語は多義です：概念経路と語源経路が異なる意味・原点を指しています（両方を示しています）。" : "This word is polysemous: the concept path and the etymology path point to different senses/origins (both shown)."}</p>`;
   }

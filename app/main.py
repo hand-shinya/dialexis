@@ -627,6 +627,8 @@ async def api_origin(q: str, lang: str = "ja"):
         "general_meaning": gen_senses,           # 広く共有されている意味（入力言語）
         "collapse_warning": collapse_warning,    # ⚠ 埋没の明示警告（A←B・C・D）
         "concept_origin": concept_origin,        # 概念-翻訳-原点（疎外→独 Entfremdung）
+        "originators": cd.get("originators") or [],  # 概念を立てた思想家（P61/P112・決定論）
+        "named_after": cd.get("named_after") or [],  # 語形の由来（P138・語源・概念の原点でない）
         "word_origin": word_origin,              # 語源原点（空→梵・推定）
         "chain": td.get("origin_chain", []),     # 変容の連鎖（言語＋語形・全表示）
         "senses": td.get("senses", []),
@@ -696,7 +698,17 @@ async def api_origin_graph(q: str, lang: str = "ja"):
         add(nid, o["term"], "original", 3, 1.6, o["term"], {"lang_name": o.get("name")})
         link(phil or "root", nid, 1.0)
 
-    # 第4階層: 強く関与する著者・著作（重要度＝史的順）
+    # 第4階層: 概念を立てた思想家（Wikidata P61/P112・決定論・seedでなく動的）。
+    # リゾーム→ドゥルーズ・ガタリ。これで語形translationsに埋もれず、次元「思想家の系譜」と
+    # 原点カードとグラフが一致する（貧弱記事の語源だけを原点と誤提示しない）。
+    for i, p in enumerate(cd.get("originators") or []):
+        if not p.get("label"):
+            continue
+        pid = f"auth:{p['label']}"
+        add(pid, p["label"], "author", 4, max(1.4, 2.4 - i * 0.3), None, {"search": p["label"]})
+        link(phil or "root", pid, 1.4)
+
+    # 第4階層: 強く関与する著者・著作（seed系譜・重要度＝史的順）
     for i, a in enumerate(lineage.get("authors", []) if lineage else []):
         w = max(0.9, 2.2 - i * 0.35)
         aid = f"auth:{a['author']}"

@@ -19,7 +19,35 @@ import re
 from .base import cached_get_json, ok, err
 
 WP_API = "https://{lang}.wikipedia.org/w/api.php"
+WD_API = "https://www.wikidata.org/w/api.php"
 ENTITY = "https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
+
+
+def _claim_qids(claims, pid):
+    """Target QIDs of a wikidata entity property (P61/P112/P138…) — deterministic."""
+    out = []
+    for c in claims.get(pid, []):
+        dv = c.get("mainsnak", {}).get("datavalue")
+        if dv and isinstance(dv.get("value"), dict) and dv["value"].get("id"):
+            out.append(dv["value"]["id"])
+    return out
+
+
+async def _resolve(qids, lang="ja"):
+    """Resolve QIDs → [{qid,label,is_person}] in one call (labels + P31 person check)."""
+    qids = list(dict.fromkeys([q for q in qids if q]))
+    if not qids:
+        return {}
+    body, _, _ = await cached_get_json(WD_API, {
+        "action": "wbgetentities", "ids": "|".join(qids[:20]),
+        "props": "labels|claims", "languages": f"{lang}|en", "format": "json"}, ttl=86400)
+    out = {}
+    for q, e in body.get("entities", {}).items():
+        lab = e.get("labels", {})
+        name = (lab.get(lang) or lab.get("en") or {}).get("value")
+        p31 = _claim_qids(e.get("claims", {}), "P31")
+        out[q] = {"qid": q, "label": name, "is_person": "Q5" in p31}
+    return out
 
 # Wikipedia lang-template codes → display name (for {{lang-de|Entfremdung}}).
 _CODE = {
@@ -75,15 +103,26 @@ async def node(word: str, lang: str = "ja") -> dict:
             _add(_ABBREV.get(ab), term)
         origs = list(by_name.values())
 
-        labels = {}
+        labels, originators, named_after = {}, [], []
         if qid:
             eb, _, _ = await cached_get_json(ENTITY.format(qid=qid), ttl=86400)
             ent = eb.get("entities", {}).get(qid, {})
             labels = {lg: v["value"] for lg, v in ent.get("labels", {}).items()}
+            # 概念の知的原点（この概念を"立てた"人）: P61 発見者・考案者／P112 創始者。
+            # 概念自身のclaim＝検索の偏りが無く高精度（リゾーム→ドゥルーズ・ガタリ）。
+            # 無い概念(疎外・縁起)も多い＝高精度・低再現。無いときは捏造しない（P6）。
+            claims = ent.get("claims", {})
+            orig_q = _claim_qids(claims, "P61") + _claim_qids(claims, "P112")
+            na_q = _claim_qids(claims, "P138")  # named after＝語形の由来（rhizome←根茎:植物）
+            res = await _resolve(orig_q + na_q, lang)
+            originators = [res[q] for q in dict.fromkeys(orig_q) if q in res and res[q]["is_person"]]
+            named_after = [res[q] for q in dict.fromkeys(na_q) if q in res]
 
         return ok("concept-node", ts, cached, {
             "word": word, "found": True, "qid": qid,
             "original_terms": origs,          # 概念-翻訳-原点の候補（記事が明示・LEAD）
+            "originators": originators,        # 概念を立てた思想家（P61/P112・決定論・人物のみ）
+            "named_after": named_after,        # 語形の由来（P138・語源であって概念の原点でない）
             "breadth_labels": labels,          # 多言語breadth（Wikidata全ラベル）
             "breadth_count": len(labels),
             "extract": extract[:500],
