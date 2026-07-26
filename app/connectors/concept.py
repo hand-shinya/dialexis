@@ -66,6 +66,36 @@ _ABBREV = {
 }
 
 
+# 概念の星座（類語・対義）: 近い/類する関係と、対立/区別される関係を Wikidata の型付き
+# 属性で。概念自身のclaim＝偏りなく決定論的。人物は含めない（思想家レンズの領分）。
+_REL_NEAR = ["P460", "P1269", "P279", "P361", "P527"]   # 同一視/facet/上位/一部/部分
+_REL_OPP = ["P461", "P1889"]                            # 対義/別物
+
+
+async def _seealso_qids(word, lang):
+    """記事の『関連項目/See also』セクションの他概念（title→qid）。人物除外は呼び出し側。"""
+    try:
+        s, _, _ = await cached_get_json(WP_API.format(lang=lang), {
+            "action": "parse", "page": word, "prop": "sections", "format": "json"}, ttl=86400)
+        idx = next((sec.get("index") for sec in s.get("parse", {}).get("sections", [])
+                    if sec.get("line") in ("関連項目", "関連概念", "See also")), None)
+        if not idx:
+            return []
+        lk, _, _ = await cached_get_json(WP_API.format(lang=lang), {
+            "action": "parse", "page": word, "section": idx, "prop": "links", "format": "json"}, ttl=86400)
+        titles = [l["*"] for l in lk.get("parse", {}).get("links", []) if l.get("ns") == 0][:10]
+        if not titles:
+            return []
+        pp, _, _ = await cached_get_json(WP_API.format(lang=lang), {
+            "action": "query", "prop": "pageprops", "titles": "|".join(titles),
+            "redirects": 1, "format": "json"}, ttl=86400)
+        return [pg.get("pageprops", {}).get("wikibase_item")
+                for pg in pp.get("query", {}).get("pages", {}).values()
+                if pg.get("pageprops", {}).get("wikibase_item")]
+    except Exception:
+        return []
+
+
 async def node(word: str, lang: str = "ja") -> dict:
     try:
         body, ts, cached = await cached_get_json(WP_API.format(lang=lang), {
@@ -104,6 +134,7 @@ async def node(word: str, lang: str = "ja") -> dict:
         origs = list(by_name.values())
 
         labels, originators, named_after = {}, [], []
+        relations = {"near": [], "opposite": []}
         if qid:
             eb, _, _ = await cached_get_json(ENTITY.format(qid=qid), ttl=86400)
             ent = eb.get("entities", {}).get(qid, {})
@@ -114,15 +145,25 @@ async def node(word: str, lang: str = "ja") -> dict:
             claims = ent.get("claims", {})
             orig_q = _claim_qids(claims, "P61") + _claim_qids(claims, "P112")
             na_q = _claim_qids(claims, "P138")  # named after＝語形の由来（rhizome←根茎:植物）
-            res = await _resolve(orig_q + na_q, lang)
+            near_q = [x for p in _REL_NEAR for x in _claim_qids(claims, p)]  # 近い/類する
+            opp_q = [x for p in _REL_OPP for x in _claim_qids(claims, p)]    # 対立/区別
+            seealso_q = await _seealso_qids(word, lang)                      # 記事の関連項目で補完
+            res = await _resolve(orig_q + na_q + near_q + opp_q + seealso_q, lang)
             originators = [res[q] for q in dict.fromkeys(orig_q) if q in res and res[q]["is_person"]]
             named_after = [res[q] for q in dict.fromkeys(na_q) if q in res]
+            # 星座: 人物・自分自身を除外し、近い(Wikidata近縁＋関連項目)/対立(対義・別物)に分類
+            near = [res[q] for q in dict.fromkeys(near_q + seealso_q)
+                    if q in res and res[q]["label"] and not res[q]["is_person"] and q != qid]
+            opp = [res[q] for q in dict.fromkeys(opp_q)
+                   if q in res and res[q]["label"] and not res[q]["is_person"] and q != qid]
+            relations = {"near": near[:10], "opposite": opp[:6]}
 
         return ok("concept-node", ts, cached, {
             "word": word, "found": True, "qid": qid,
             "original_terms": origs,          # 概念-翻訳-原点の候補（記事が明示・LEAD）
             "originators": originators,        # 概念を立てた思想家（P61/P112・決定論・人物のみ）
             "named_after": named_after,        # 語形の由来（P138・語源であって概念の原点でない）
+            "relations": relations,            # 類語・対義の星座（近い/対立・人物除外・決定論）
             "breadth_labels": labels,          # 多言語breadth（Wikidata全ラベル）
             "breadth_count": len(labels),
             "extract": extract[:500],

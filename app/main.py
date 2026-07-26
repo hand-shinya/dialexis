@@ -721,6 +721,22 @@ async def api_origin_graph(q: str, lang: str = "ja"):
             add(wid, a["work"], "work", 4, max(0.7, w - 0.3))
             link(aid, wid, 0.6)
 
+    # 第3階層: 類語・対義の星座（Wikidata型付き関係＋関連項目・人物除外・決定論）。
+    # 近い/類する概念(related)と、対立/区別される概念(opposite)。クリックでその概念へ再中心。
+    rel = cd.get("relations") or {}
+    for r in (rel.get("near") or []):
+        if not r.get("label"):
+            continue
+        rid = f"rel:{r['label']}"
+        add(rid, r["label"], "related", 3, 1.0, r["label"], {"qid": r.get("qid")})
+        link(phil or "root", rid, 0.7)
+    for r in (rel.get("opposite") or []):
+        if not r.get("label"):
+            continue
+        rid = f"opp:{r['label']}"
+        add(rid, r["label"], "opposite", 3, 1.1, r["label"], {"qid": r.get("qid")})
+        link("root", rid, 0.7)
+
     # 第2階層: 世界の言語の広がり（breadth）＋ 第3: 各言語での語（一部）
     labels = cd.get("breadth_labels") or {}
     if labels:

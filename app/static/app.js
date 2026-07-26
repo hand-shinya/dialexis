@@ -955,7 +955,8 @@ function originLinkAttr() {
 
 /* ---------- 言語空間の重力グラフ（canvas force-directed・階層/展開/俯瞰） ---------- */
 const GKIND = { word: "#1d2430", domain: "#2e5c7a", original: "#7a5c2e",
-  author: "#b45309", work: "#9a7b52", language: "#4a7fa5" };
+  author: "#b45309", work: "#9a7b52", language: "#4a7fa5",
+  related: "#3a7d44", opposite: "#a03b3b" };
 let G = null, DIMS = null, G_raw = null, G_lens = "all";
 
 // ── レンズ（複数の地図）: 同じ言葉・同じ取得データを、いくつもの見方で見せる（半田様提案
@@ -971,6 +972,8 @@ const LENSES = [
     cap: "訳語の背後にある原語・埋没した複数の語。クリックでその原語空間へ。" },
   { key: "languages", label: "世界の言語", en: "World languages", kinds: ["language"],
     cap: "この概念を担う世界の言語と、その語。既知の数言語に縮めない。" },
+  { key: "relations", label: "類語・対義（星座）", en: "Related & opposite", kinds: ["related", "opposite"],
+    cap: "近い/類する概念（緑）と、対立・区別される概念（赤）の星座。クリックでその概念へ。思考を横に広げる。" },
   { key: "domains", label: "意味の領域", en: "Fields of meaning", kinds: ["domain"],
     cap: "一般の意味／専門・思想／世界の言語という、意味の大きな分かれ。" },
 ];
