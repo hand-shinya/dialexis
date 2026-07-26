@@ -674,7 +674,7 @@ async def api_origin_graph(q: str, lang: str = "ja"):
     def link(a, b, strength=1.0):
         edges.append({"from": a, "to": b, "strength": strength})
 
-    add("root", q, "word", 1, 3.0, q)
+    add("root", q, "word", 1, 3.0, q, {"qid": cd.get("qid")})
 
     # 第2階層: 分岐（意味の領域）
     if senses:
@@ -719,7 +719,7 @@ async def api_origin_graph(q: str, lang: str = "ja"):
             add(nid, f"{wiktionary.langname(code)}：{label}", "language", 3, 0.85, label)
             link("dom:breadth", nid, 0.4)
 
-    return {"query": q, "queried_at": now(), "nodes": nodes, "edges": edges,
+    return {"query": q, "queried_at": now(), "qid": cd.get("qid"), "nodes": nodes, "edges": edges,
             "note": "重力(nodeの大きさ)・関係(edge)は密度の代理指標＝推定。データのある枝は"
                     "濃く、無い枝は薄い（捏造しない）。著者順は史的順。",
             "sources": [{"source": cn["source"], "retrieved_at": cn["retrieved_at"],

@@ -917,7 +917,7 @@ function originInit(q) {
       if (b && DIMS) gDimAct(DIMS[Number(b.dataset.i)]);
     });
   }
-  if (q) { originRun(q); originGraph(q); }
+  if (q) { const t = originClaim(q); originGraph(q, t); originRun(q, t); }
 }
 
 // UNIVERSAL rule: selecting a word (a node / an in-page link) makes THAT word the
@@ -925,10 +925,12 @@ function originInit(q) {
 // from it. No data from a previously-entered word is reused. Optionally, after the
 // fresh cards render, scroll to a specific card of THIS word (opts.scrollTo).
 async function originRecenter(q, opts) {
+  const tok = originClaim(q);            // this selection becomes THE subject (single source of truth)
   const inp = document.querySelector('.searchbox input[name=q]');
   if (inp) inp.value = q;
-  originGraph(q);            // graph rebuilt for q (async)
-  await originRun(q);        // cards rebuilt for q — awaited so scroll targets exist
+  // graph と cards を同じトークンで並行再構築。両方 settle して初めて再中心「完了」。
+  await Promise.all([originGraph(q, tok), originRun(q, tok)]);
+  if (originStale(tok)) return;          // 別の語に上書きされた＝この古い語のためにスクロール/確定しない
   const id = opts && opts.scrollTo;
   const el = id && $(id);
   if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
@@ -951,6 +953,17 @@ function originLinkAttr() {
 const GKIND = { word: "#1d2430", domain: "#2e5c7a", original: "#7a5c2e",
   author: "#b45309", work: "#9a7b52", language: "#4a7fa5" };
 let G = null, DIMS = null;
+
+// ── 探索の単一真実源（root-A: 状態一貫性・要求ID・古い応答の破棄・再中心完了条件） ──
+// 半田様の「他の語のデータが流用される／動いたり動かなかったり」の機構は意味ドリフトでなく
+// 非同期の状態管理だった。現在の主語(q)と単調増加トークンを唯一の真実源とし、主語を変える
+// 操作は originClaim(q) でトークンを取得、各非同期処理は await の後 originStale(tok) を確認
+// してから DOM/グラフ(G)/パネルを書く。これにより、遅れて届いた古い語の応答が新しい語の画面を
+// 上書きする競合（stale-response）を構造的に排除する。同じ語＋同じメニュー＝どこでも同じ作用（P11）。
+const OZ = { q: null, qid: null, token: 0 };
+function originClaim(q) { OZ.q = q; OZ.qid = null; return ++OZ.token; }
+function originStale(tok) { return tok !== OZ.token; }
+function originCurrent(q) { return OZ.q === q; }
 
 // dispatch a dimension-of-inquiry entry to its data path (or 整備中 note).
 function gDimAct(dm) {
@@ -988,12 +1001,15 @@ async function gCounter(claim) {
   p.querySelector(".gp-body").innerHTML = html;
 }
 
-async function originGraph(q) {
+async function originGraph(q, tok) {
+  if (tok == null) tok = originClaim(q);   // standalone caller (e.g. 全体に戻す) claims its own token
   const wrap = $("origin-graph-wrap"), cv = $("origin-graph");
   if (!wrap || !cv) return;
   let d;
   try { d = await api(`/api/origin/graph?q=${encodeURIComponent(q)}&lang=${LANG}`); }
-  catch (e) { wrap.style.display = "none"; return; }
+  catch (e) { if (!originStale(tok)) wrap.style.display = "none"; return; }
+  if (originStale(tok)) return;            // 古い語の応答＝現在の語のグラフを壊さない（stale破棄）
+  if (d.qid) OZ.qid = d.qid;               // 既存qidをノードから単一真実源へ伝播（後段のP11強化用）
   if (!d.nodes || d.nodes.length <= 1) { wrap.style.display = "none"; return; }
   wrap.style.display = "block";
   const note = $("graph-note"); if (note) note.textContent = d.note || "";
@@ -1495,7 +1511,8 @@ function cleanWikt(s) {
   return String(s || "").replace(/:?\[(\d+)\]/g, "$1.").replace(/\{\{[^}]*\}\}/g, "")
     .replace(/\s+/g, " ").trim();
 }
-async function originRun(q) {
+async function originRun(q, tok) {
+  if (tok == null) tok = originClaim(q);   // standalone caller (newtab re-render) claims its own token
   const jp = LANG === "ja";
   $("origin-status").innerHTML = `<p class="muted">${jp ? "原点へ辿っています…" : "Tracing to the origin…"}</p>`;
   $("origin-results").innerHTML = "";
@@ -1503,7 +1520,9 @@ async function originRun(q) {
   const linkAttr = originLinkAttr();
   let d;
   try { d = await api(`/api/origin?q=${encodeURIComponent(q)}&lang=${LANG}`); }
-  catch (e) { $("origin-status").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+  catch (e) { if (!originStale(tok)) $("origin-status").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+  if (originStale(tok)) return;            // 古い語の応答＝現在の語のカードを上書きしない（stale破棄）
+  if (d.qid) OZ.qid = d.qid;               // 既存qidを単一真実源へ伝播
   $("origin-status").innerHTML = "";
   const olink = (t) => `<a href="/origin?q=${encodeURIComponent(t)}&lang=${LANG}"${linkAttr}>${esc(t)}</a>`;
   let html = "";
@@ -1608,17 +1627,18 @@ async function originRun(q) {
   if (d.note) html += `<p class="srcline muted">${esc(d.note)}</p>`;
 
   $("origin-results").innerHTML = html;
-  gDiscoverDims(q);   // #1: concept-specific dimensions from the article's own structure
+  gDiscoverDims(q, tok);   // #1: concept-specific dimensions from the article's own structure
 }
 
 // 概念固有の次元を発見する層（#1）: その概念自身の記事の節見出し＝固定でなく概念ごとに
 // 変わる切り口。共通次元とは分離して示す。各切り口は記事の該当節を新タブで開く（P4）。
-async function gDiscoverDims(q) {
+async function gDiscoverDims(q, tok) {
   const el = $("dim-discovered"); if (!el) return;
   const jp = LANG === "ja";
   let d;
   try { d = await api(`/api/dimensions?q=${encodeURIComponent(q)}&lang=${LANG}`); }
-  catch (e) { el.innerHTML = ""; return; }
+  catch (e) { if (tok == null || !originStale(tok)) el.innerHTML = ""; return; }
+  if (tok != null && originStale(tok)) return;   // 古い語の固有次元を現在の語に混ぜない（stale破棄）
   if (!d.found || !d.dimensions || !d.dimensions.length) {
     el.innerHTML = `<p class="srcline muted">${esc(d.note || (jp ? "この概念に固有の切り口は取得できませんでした。" : "No concept-specific facets found."))}</p>`;
     return;
