@@ -1138,8 +1138,70 @@ async function gAuthorInvestigate(searchName, label) {
       ${row(jp ? "主要著作" : "works", (d.works || []).map(w => `${w}`))}
     </table>
     <p class="srcline"><a href="${esc(d.wikipedia_url)}" target="_blank">Wikipedia (${LANG})</a>${d.wikidata_url ? ` · <a href="${esc(d.wikidata_url)}" target="_blank">Wikidata</a>` : ""} · ${esc((d.sources && d.sources[0] && d.sources[0].retrieved_at) || "")}</p>
-    <p class="srcline muted">${jp ? "この著者のこの語での固有の用法（著者固有の共起）・一次テキストは整備中です。" : "Author-specific usage / primary text are being built."}</p>`;
+    <h4 class="gp-h">${jp ? "より深く・広く調べる（外部の専門情報源・多言語・新しいタブで開く）" : "Investigate deeper & wider (external expert sources, new tab)"}</h4>
+    ${extResourcesHtml(d.title || searchName)}`;
   p.querySelector(".gp-body").innerHTML = html;
+}
+
+// ── 普遍原理: どの項目からも、公開・合法な専門情報源へ多言語で最大限リンクし、
+//    ユーザーが選んで【新しいタブ】で開ける。当ポータルは選択肢を示すだけ（客観・
+//    無編集・出所明示）。偏った編集をせず、思考の広がりと刺激を与える。──
+function extResources(term) {
+  const t = encodeURIComponent(term);
+  return {
+    "検索": [
+      ["Google", `https://www.google.com/search?q=${t}`],
+      ["Google Scholar", `https://scholar.google.com/scholar?q=${t}`],
+      ["Bing", `https://www.bing.com/search?q=${t}`],
+      ["DuckDuckGo", `https://duckduckgo.com/?q=${t}`],
+    ],
+    "百科事典": [
+      ["Wikipedia 日", `https://ja.wikipedia.org/wiki/Special:Search?search=${t}`],
+      ["Wikipedia 英", `https://en.wikipedia.org/w/index.php?search=${t}`],
+      ["Wikipedia 独", `https://de.wikipedia.org/w/index.php?search=${t}`],
+      ["Wikipedia 仏", `https://fr.wikipedia.org/w/index.php?search=${t}`],
+      ["Stanford哲学百科 SEP", `https://plato.stanford.edu/search/searcher.py?query=${t}`],
+      ["Internet哲学百科 IEP", `https://iep.utm.edu/?s=${t}`],
+      ["Britannica", `https://www.britannica.com/search?query=${t}`],
+      ["コトバンク", `https://kotobank.jp/word/${t}`],
+    ],
+    "辞書・辞典": [
+      ["Wiktionary 日", `https://ja.wiktionary.org/wiki/Special:Search?search=${t}`],
+      ["Wiktionary 英", `https://en.wiktionary.org/wiki/Special:Search?search=${t}`],
+      ["DWDS 独", `https://www.dwds.de/wb/${t}`],
+      ["Perseus 希/羅", `https://www.perseus.tufts.edu/hopper/searchresults?q=${t}`],
+      ["Logeion 希/羅", `https://logeion.uchicago.edu/${t}`],
+      ["Monier-Williams 梵", `https://www.sanskrit-lexicon.uni-koeln.de/scans/MWScan/2020/web/webtc/indexcaller.php`],
+    ],
+    "学術・論文": [
+      ["PhilPapers", `https://philpapers.org/s/${t}`],
+      ["CiNii", `https://cir.nii.ac.jp/all?q=${t}`],
+      ["J-STAGE", `https://www.jstage.jst.go.jp/result/global/-char/ja?globalSearchKey=${t}`],
+      ["JSTOR", `https://www.jstor.org/action/doBasicSearch?Query=${t}`],
+      ["OpenAlex", `https://openalex.org/works?search=${t}`],
+      ["国立国会図書館サーチ", `https://ndlsearch.ndl.go.jp/search?cs=bib&keyword=${t}`],
+    ],
+    "原典・全集": [
+      ["Wikisource 日", `https://ja.wikisource.org/wiki/Special:Search?search=${t}`],
+      ["Wikisource 独", `https://de.wikisource.org/wiki/Spezial:Suche?search=${t}`],
+      ["Project Gutenberg", `https://www.gutenberg.org/ebooks/search/?query=${t}`],
+      ["archive.org", `https://archive.org/search?query=${t}`],
+    ],
+  };
+}
+// render the external-resource fan as HTML (all links open in a NEW TAB)
+function extResourcesHtml(term) {
+  const jp = LANG === "ja", R = extResources(term);
+  let h = `<p class="muted">${jp ? "公開・合法な専門情報源へのリンクです。各リンクは新しいタブで開きます。当ポータルは選択肢を示すだけで、中身は各サイトの提供です（客観・出所明示）。" : "Links to public expert sources; each opens in a new tab. This portal only offers the choices."}</p>`;
+  for (const cat of Object.keys(R)) {
+    h += `<div class="ext-cat"><span class="ext-cat-h">${esc(cat)}</span> `
+      + R[cat].map(([lbl, url]) => `<a class="ext-link" href="${esc(url)}" target="_blank" rel="noopener">${esc(lbl)}</a>`).join(" ") + `</div>`;
+  }
+  return h;
+}
+function gExtPanel(term) {
+  const jp = LANG === "ja";
+  gPanel((jp ? "外部の専門情報で深く・広く調べる：" : "External resources: ") + term, extResourcesHtml(term));
 }
 
 // author info panel — from the lineage node's own data (work/year/term). Never
@@ -1176,8 +1238,8 @@ function gActions(n) {
       { t: `🔍 ${who}を調べる（経歴・著作・出典を取得）`, fn: () => gAuthorInvestigate(sq, L) },
       { t: `🎯 ${who}を中心に（${jp ? "この語の文脈を保ち著作へ" : "keep context, focus works"}）`, fn: () => gFocusSubtree(G.nodes.indexOf(n)) },
       { t: `📖 ${who}の系譜メモ（この語での原語）`, fn: () => gAuthorPanel(n) },
+      { t: `🌐 外部の専門情報で調べる（多言語・新タブ）`, fn: () => gExtPanel(sq) },
       { t: `✍ 深掘り探索プロンプトを作る（${who}）`, fn: () => ds(sq) },
-      { t: "🌐 Wikipediaで開く（新しいタブ）", fn: wp },
       { t: "📖 この著者のこの語での用法（著者固有の共起）", soon: 1 },
       { t: "🕰 時代性・年表上の位置", soon: 1 },
     ];
@@ -1201,8 +1263,8 @@ function gActions(n) {
     { t: "🌍 多言語での言い方を見る", fn: () => gScrollCard("card-breadth", q || L) },
     { t: "✍ 深掘り探索プロンプトを作る", fn: ds },
     { t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(q || L) },
+    { t: "🌐 外部の専門情報で調べる（多言語・新タブ）", fn: () => gExtPanel(q || L) },
     { t: "🔗 新しいタブでこの語を開く", fn: nt },
-    { t: "📚 原語の権威辞書で深掘り", soon: 1 },
   ];
 }
 

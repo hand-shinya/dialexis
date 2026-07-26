@@ -126,6 +126,13 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
   position: sticky; top: 0; background: var(--card); }
 .gp-x { background: none; color: var(--muted); font-size: 1.3rem; padding: 0 .3rem; }
 .gp-body { padding: .8rem .9rem 1.1rem; }
+.ext-cat { margin: .5rem 0; line-height: 2; }
+.ext-cat-h { font-family: system-ui, sans-serif; font-size: .72rem; color: var(--muted);
+  display: inline-block; min-width: 5.5rem; }
+.ext-link { display: inline-block; font-family: system-ui, sans-serif; font-size: .82rem;
+  color: var(--accent2); text-decoration: none; border: 1px solid var(--line); border-radius: 6px;
+  padding: .12rem .5rem; margin: .12rem .15rem; }
+.ext-link:hover { border-color: var(--accent2); background: #eef3f7; }
 .gp-h { font-family: system-ui, sans-serif; font-size: .9rem; margin: .8rem 0 .3rem; border-left: 3px solid var(--accent2); padding-left: .5rem; }
 .gp-ul { margin: .2rem 0 .6rem; padding-left: 1.3rem; font-size: .9rem; }
 .gp-ul li { margin: .25rem 0; }
