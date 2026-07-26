@@ -786,6 +786,10 @@ function deepsearchInit(services) {
   };
   sel.addEventListener("change", upd);
   upd();
+  // prefill the topic from ?q= so the graph's "深掘り探索プロンプト" action lands
+  // with the word already filled in (fixes the empty deep-search page).
+  const q = new URLSearchParams(location.search).get("q");
+  if (q && $("ds-topic")) $("ds-topic").value = q;
 }
 
 async function deepsearchRun() {
@@ -1110,23 +1114,43 @@ function gFocusSubtree(nodeIdx) {
   gBuild({ query: G.rootQ, nodes, edges, note: G.note });
 }
 
+// author info panel — from the lineage node's own data (work/year/term). Never
+// routes a person's name through the word-origin engine.
+function gAuthorPanel(n) {
+  const jp = LANG === "ja";
+  const wp = `https://ja.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(n.label)}`;
+  const rows = [];
+  if (n.work) rows.push([jp ? "主要著作" : "work", esc(n.work) + (n.year ? `（${n.year}）` : "")]);
+  if (n.term_de) rows.push([jp ? "この語での原語" : "term", `<b lang="de">${esc(n.term_de)}</b>`]);
+  const body = `<p class="muted">${jp ? "思想家の系譜（検証済シード）から。著者は語とは別の次元なので、語源エンジンでなく著者情報として示します。" : "From the curated lineage; authors are a different dimension than words."}</p>
+    ${rows.length ? `<table class="plain">${rows.map(r => `<tr><th>${esc(r[0])}</th><td>${r[1]}</td></tr>`).join("")}</table>` : ""}
+    <p class="srcline"><a href="${wp}" target="_blank">${jp ? "Wikipediaで開く" : "Wikipedia"}</a> · <a href="/deepsearch?q=${encodeURIComponent(n.label)}&lang=${LANG}">${jp ? "深掘り探索プロンプト" : "deep-search"}</a></p>
+    <p class="srcline muted">${jp ? "著者固有の用法（その著作でこの語がどう使われたか）・時代性・年表は整備中です。" : "Author-specific usage / timeline are being built."}</p>`;
+  gPanel((jp ? "著者：" : "Author: ") + n.label, body);
+}
+
 // contextual action menu — the dimension of a WORD (origin/meaning/translations)
 // differs from that of an AUTHOR/WORK (usage/texts/era), so the menu ADAPTS to
 // what was clicked. ≥7 actions; the ones not yet built are shown as 次段 (honest).
 function gActions(n) {
   const jp = LANG === "ja", q = n.q, L = n.label;
   const nt = () => window.open(`/origin?q=${encodeURIComponent(q || L)}&lang=${LANG}`, "_blank");
-  const ds = () => { location.href = `/deepsearch?lang=${LANG}`; };
+  const ds = (term) => { location.href = `/deepsearch?q=${encodeURIComponent(term || q || L)}&lang=${LANG}`; };
+  // AUTHOR/WORK is a different DIMENSION than a word — do NOT route the person's
+  // name through the word-origin engine (that gave 'no Wiktionary entry' / an
+  // empty graph). Show author-appropriate content (works, era, their term) and
+  // real external links; the word engine is never called on a person.
   if (n.kind === "author" || n.kind === "work") {
     const who = n.kind === "author" ? "この著者" : "この著作";
+    const wp = () => window.open(`https://ja.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(L)}`, "_blank");
     return [
-      { t: `🎯 ${who}を中心に展開`, fn: () => originGraph(L) },
-      { t: `🔍 ${who}を調べる`, fn: () => originRecenter(L) },
-      { t: `📖 ${who}でのこの語の使われ方`, soon: 1 },
-      { t: n.kind === "author" ? "📚 この著者の著作をたどる" : "📜 一次テキストにあたる", soon: 1 },
-      { t: "✍ 深掘り探索プロンプトを作る", fn: ds },
+      { t: `📖 ${who}について（著作・年・この語での原語）`, fn: () => gAuthorPanel(n) },
+      { t: "🌐 Wikipediaでこの人物/著作を開く", fn: wp },
+      { t: `✍ 深掘り探索プロンプトを作る（${jp ? "この対象で" : ""}）`, fn: () => ds(L) },
+      { t: n.kind === "author" ? `📚 主要著作：${n.work || "—"}` : "📜 一次テキストにあたる", fn: n.kind === "author" ? (() => gAuthorPanel(n)) : undefined, soon: n.kind === "work" ? 1 : 0 },
+      { t: "📖 この著者のこの語での用法（著者固有の共起）", soon: 1 },
       { t: "🕰 時代性・年表上の位置", soon: 1 },
-      { t: "🔗 新しいタブで開く", fn: nt },
+      { t: "🔗 新しいタブでWikipediaを開く", fn: wp },
     ];
   }
   if (n.kind === "domain") {
