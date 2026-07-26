@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import re
+import urllib.parse
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -723,6 +724,61 @@ async def api_origin_graph(q: str, lang: str = "ja"):
                     "濃く、無い枝は薄い（捏造しない）。著者順は史的順。",
             "sources": [{"source": cn["source"], "retrieved_at": cn["retrieved_at"],
                          "error": cn["error"]}]}
+
+
+@app.get("/api/dimensions")
+async def api_dimensions(q: str, lang: str = "ja"):
+    """概念固有の次元を発見する層（#1・固定分類の先）。その概念自身の Wikipedia 記事の
+    節見出し＝その概念に固有の切り口を動的に返す。疎外なら「マルクスの疎外論/ヘーゲル/
+    実存主義」等、別の語なら別の切り口が出る。無料・鍵不要・記事構造に接地・編集しない
+    （節をそのまま出す＝中立 P2）・出所つき。記事が無ければ正直に空。"""
+    if not q.strip():
+        raise HTTPException(400, "empty query")
+    WP = f"https://{lang}.wikipedia.org/w/api.php"
+    try:
+        sb, _, _ = await cached_get_json(WP, {"action": "query", "list": "search",
+                                              "srsearch": q, "srlimit": 1, "format": "json"})
+    except Exception as e:
+        return {"query": q, "found": False, "error": f"{type(e).__name__}: {e}", "dimensions": []}
+    hits = sb.get("query", {}).get("search", [])
+    if not hits:
+        return {"query": q, "found": False, "dimensions": [],
+                "note": f"「{q}」の記事が見つからず、概念固有の次元は取得できませんでした。"}
+    title = hits[0]["title"]
+    # 曖昧さ回避ページ検出（道→楽曲/映画… のような多義ノイズを正直に警告する）
+    disambig = False
+    try:
+        pp, _, _ = await cached_get_json(WP, {"action": "query", "prop": "pageprops",
+                                              "ppprop": "disambiguation", "titles": title, "format": "json"})
+        pg = next(iter(pp.get("query", {}).get("pages", {}).values()), {})
+        disambig = "disambiguation" in pg.get("pageprops", {})
+    except Exception:
+        pass
+    ps, ts, _ = await cached_get_json(WP, {"action": "parse", "page": title,
+                                           "prop": "sections", "format": "json", "redirects": 1})
+    secs = ps.get("parse", {}).get("sections", [])
+    SKIP = {"脚注", "注釈", "出典", "出典・脚注", "参考文献", "関連項目", "外部リンク", "参照",
+            "文献", "ギャラリー", "画像", "References", "Notes", "See also", "External links",
+            "Bibliography", "Further reading", "Citations"}
+    dims = []
+    art = f"https://{lang}.wikipedia.org/wiki/{urllib.parse.quote(title)}"
+    for s in secs:
+        # level 1 (主な切り口) と level 2 (その内訳＝思想家・立場など) を採る。
+        # 疎外は上位節が薄く、ヘーゲル/マルクス等は level 2 に居るため両方拾う。
+        if str(s.get("toclevel")) in ("1", "2"):
+            line = re.sub(r"<[^>]+>", "", s.get("line", "")).strip()
+            if line and line not in SKIP:
+                dims.append({"heading": line, "level": s.get("toclevel"),
+                             "anchor": s.get("anchor", ""),
+                             "url": art + "#" + urllib.parse.quote(s.get("anchor", ""))})
+        if len(dims) >= 14:                    # cap（無音truncationを避け note で明示）
+            break
+    return {"query": q, "found": True, "title": title, "article_url": art,
+            "disambiguation": disambig,
+            "note": ("この語は多義（曖昧さ回避ページ）です。下は特定の概念でなく別義の一覧の可能性があります。"
+                     if disambig else ""),
+            "dimensions": dims, "queried_at": now(),
+            "sources": [{"source": f"wikipedia:{lang}", "retrieved_at": ts, "error": None}]}
 
 
 @app.get("/api/author")

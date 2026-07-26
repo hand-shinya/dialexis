@@ -1507,9 +1507,10 @@ async function originRun(q) {
       : `<span class="dim-b dim-soon">${jp ? "整備中" : "coming"}</span>`;
     DIMS = d.dimensions;
     html += `<div class="card dim-card"><h3>${jp ? "探究の次元（この言葉をどこから見ていくか）" : "Dimensions of inquiry"}</h3>
-      <p class="muted">${jp ? "一つの言葉を、いくつかの次元から見ていく入口です。「辿れる」＝実データに到達する次元／「一部」＝既存機構につながる次元／「整備中」＝まだ路だけで内容は未接続、を正直に区別します。この一覧は例（toyodashaの疎外論）から作った暫定の共通次元で、概念固有の次元を発見する層は今後の課題です。" : "Entry points into several dimensions of a word. ready = reaches real data; partial = wired to an existing engine; coming = path only, source not yet connected. This is a provisional COMMON set; per-concept discovery is future work."}</p>
+      <p class="muted">${jp ? "一つの言葉を、いくつかの次元から見ていく入口です。「辿れる」＝実データに到達する次元／「一部」＝既存機構につながる次元／「整備中」＝まだ路だけで内容は未接続、を正直に区別します。上は暫定の【共通次元】。その下に、この概念自身の記事構造から【概念ごとに異なる固有の切り口】を発見して示します（固定分類でない）。" : "Entry points into several dimensions of a word. ready = reaches real data; partial = wired to an existing engine; coming = path only. Above are COMMON dimensions; below are facets DISCOVERED from this concept's own article — different per concept."}</p>
       <div class="dims">${d.dimensions.map((dm, i) =>
-        `<button type="button" class="dim${dm.status === "soon" ? " dim-x" : ""}" data-i="${i}">${esc(dm.label)} ${badge(dm.status)}</button>`).join("")}</div></div>`;
+        `<button type="button" class="dim${dm.status === "soon" ? " dim-x" : ""}" data-i="${i}">${esc(dm.label)} ${badge(dm.status)}</button>`).join("")}</div>
+      <div id="dim-discovered" class="dim-disc"><p class="srcline muted">${jp ? "この概念に固有の切り口を、記事の構造から取得中…" : "discovering concept-specific facets…"}</p></div></div>`;
   }
 
   // ── 広く共有されている意味（入力言語） ──
@@ -1589,4 +1590,24 @@ async function originRun(q) {
   if (d.note) html += `<p class="srcline muted">${esc(d.note)}</p>`;
 
   $("origin-results").innerHTML = html;
+  gDiscoverDims(q);   // #1: concept-specific dimensions from the article's own structure
+}
+
+// 概念固有の次元を発見する層（#1）: その概念自身の記事の節見出し＝固定でなく概念ごとに
+// 変わる切り口。共通次元とは分離して示す。各切り口は記事の該当節を新タブで開く（P4）。
+async function gDiscoverDims(q) {
+  const el = $("dim-discovered"); if (!el) return;
+  const jp = LANG === "ja";
+  let d;
+  try { d = await api(`/api/dimensions?q=${encodeURIComponent(q)}&lang=${LANG}`); }
+  catch (e) { el.innerHTML = ""; return; }
+  if (!d.found || !d.dimensions || !d.dimensions.length) {
+    el.innerHTML = `<p class="srcline muted">${esc(d.note || (jp ? "この概念に固有の切り口は取得できませんでした。" : "No concept-specific facets found."))}</p>`;
+    return;
+  }
+  const link = (x) => `<a class="dim-disc-l" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.heading)}</a>`;
+  el.innerHTML = `<p class="dim-disc-h">${jp ? "この概念に固有の切り口（記事の構造から・出所つき・概念ごとに異なる）" : "Facets specific to this concept (from its own article structure)"}</p>
+    ${d.disambiguation ? `<p class="srcline" style="color:var(--warn)">⚠ ${esc(d.note)}</p>` : ""}
+    <div class="dim-disc-list">${d.dimensions.map(link).join("")}</div>
+    <p class="srcline muted">${jp ? "出所" : "source"}: <a href="${esc(d.article_url)}" target="_blank">Wikipedia (${LANG})「${esc(d.title)}」</a>。固定の共通次元と違い、語ごとに違う切り口が出ます。</p>`;
 }

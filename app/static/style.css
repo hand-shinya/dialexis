@@ -219,3 +219,10 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .struct-rel { margin-top: .2rem; }
 .struct-rel i { font-style: italic; color: var(--accent); }
 #manual-entry summary { font-family: system-ui, sans-serif; font-size: .85rem; cursor: pointer; color: var(--muted); }
+/* #1 概念固有の次元（記事構造から発見・共通次元と分離） */
+.dim-disc { margin-top: .8rem; border-top: 1px dashed var(--line); padding-top: .6rem; }
+.dim-disc-h { font-family: system-ui, sans-serif; font-size: .82rem; color: var(--accent); margin: 0 0 .4rem; }
+.dim-disc-list { display: flex; flex-wrap: wrap; gap: .4rem; }
+.dim-disc-l { font-family: system-ui, sans-serif; font-size: .84rem; color: var(--accent);
+  text-decoration: none; border: 1px solid var(--accent); border-radius: 6px; padding: .2rem .55rem; }
+.dim-disc-l:hover { background: var(--accent); color: var(--paper); }
