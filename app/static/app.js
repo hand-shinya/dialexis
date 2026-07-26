@@ -920,12 +920,23 @@ function originInit(q) {
   if (q) { originRun(q); originGraph(q); }
 }
 
-// Recenter the whole exploration on a word (from a graph node / in-page link),
-// updating the search box, the cards, and the graph together.
-function originRecenter(q) {
+// UNIVERSAL rule: selecting a word (a node / an in-page link) makes THAT word the
+// new subject — the whole exploration (search box, cards, graph) is rebuilt FRESH
+// from it. No data from a previously-entered word is reused. Optionally, after the
+// fresh cards render, scroll to a specific card of THIS word (opts.scrollTo).
+async function originRecenter(q, opts) {
   const inp = document.querySelector('.searchbox input[name=q]');
   if (inp) inp.value = q;
-  originRun(q); originGraph(q);
+  originGraph(q);            // graph rebuilt for q (async)
+  await originRun(q);        // cards rebuilt for q — awaited so scroll targets exist
+  const id = opts && opts.scrollTo;
+  const el = id && $(id);
+  if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+  if (id) {                 // the requested aspect doesn't exist for THIS word — honest
+    const wc = document.querySelector(".word-card");
+    if (wc) wc.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -1017,7 +1028,7 @@ function gBuild(d) {
     parent[hi] = lo;
   });
   G = { nodes, edges, children, parent, ctx, cv, W, H, cx, cy, rootQ: d.query, note: d.note,
-        view: { x: 0, y: 0, k: 1 }, drag: null, hover: null, hl: null, alpha: 1, raf: 0 };
+        view: { x: 0, y: 0, k: 1 }, drag: null, hover: null, hl: null, alpha: 1, raf: 0, needFit: true };
   gFitInstant();
   gBind();
   gLoop(200);
@@ -1030,7 +1041,7 @@ function gStep() {
     for (let j = i + 1; j < N.length; j++) {
       const b = N[j];
       let dx = a.x - b.x, dy = a.y - b.y, ds = dx * dx + dy * dy || 1;
-      const dist = Math.sqrt(ds), f = 2600 / ds;
+      const dist = Math.sqrt(ds), f = 2900 / ds;   // modest repulsion (auto-fit keeps all on-screen)
       const fx = f * dx / dist, fy = f * dy / dist;
       a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
     }
@@ -1038,7 +1049,7 @@ function gStep() {
   E.forEach(e => {
     const a = N[e.a], b = N[e.b];
     const dx = b.x - a.x, dy = b.y - a.y, dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    const target = 64 + Math.abs(a.layer - b.layer) * 34;
+    const target = 74 + Math.abs(a.layer - b.layer) * 38;   // slightly longer springs
     const f = 0.025 * (dist - target);
     const fx = f * dx / dist, fy = f * dy / dist;
     a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
@@ -1255,15 +1266,18 @@ function gActions(n) {
       { t: "✍ 深掘り探索プロンプトを作る", fn: ds },
     ];
   }
-  // word / original / language
+  // word / original / language — UNIVERSAL: every action operates on THIS node's
+  // word W, starting fresh from it (recenter the whole page on W, then focus the
+  // requested aspect of W). No reuse of the previously-entered word's data.
+  const W = q || L;
   return [
-    { t: "🎯 この語を中心に展開（新たな第1階層に）", fn: () => originGraph(q || L) },
-    { t: "🔍 この語を深く調べる（意味・原点・変容）", fn: () => originRecenter(q || L) },
-    { t: "⚠ 埋没した原語を見る", fn: () => gScrollCard("card-collapse", q || L) },
-    { t: "🌍 多言語での言い方を見る", fn: () => gScrollCard("card-breadth", q || L) },
-    { t: "✍ 深掘り探索プロンプトを作る", fn: ds },
-    { t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(q || L) },
-    { t: "🌐 外部の専門情報で調べる（多言語・新タブ）", fn: () => gExtPanel(q || L) },
+    { t: "🎯 この語を中心に展開（新たな第1階層に）", fn: () => originRecenter(W) },
+    { t: "🔍 この語を深く調べる（意味・原点・変容）", fn: () => originRecenter(W, { scrollTo: "card-origin" }) },
+    { t: "⚠ 埋没した原語を見る", fn: () => originRecenter(W, { scrollTo: "card-collapse" }) },
+    { t: "🌍 多言語での言い方を見る", fn: () => originRecenter(W, { scrollTo: "card-breadth" }) },
+    { t: "✍ 深掘り探索プロンプトを作る", fn: () => ds(W) },
+    { t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(W) },
+    { t: "🌐 外部の専門情報で調べる（多言語・新タブ）", fn: () => gExtPanel(W) },
     { t: "🔗 新しいタブでこの語を開く", fn: nt },
   ];
 }
@@ -1378,7 +1392,11 @@ function gLoop(iters) {
     if (active) gStep();
     gDraw();
     if (active) { G.raf = requestAnimationFrame(tick); }
-    else { G.running = false; G.raf = 0; gDraw(); }
+    else {
+      G.running = false; G.raf = 0;
+      if (G.needFit) { G.needFit = false; graphFit(); }  // fit once after settle → all nodes on-screen
+      else gDraw();
+    }
   };
   tick();
 }
