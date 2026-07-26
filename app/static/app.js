@@ -1768,13 +1768,19 @@ async function originRun(q, tok) {
   // (1)概念を立てた思想家(P61/P112・決定論・本命) (2)語形の由来=語源(概念の原点でない)
   // (3)語源チェーン を明確に分離。「語源だけを唯一の原点」と示す誤誘導を構造的に禁止する。──
   const co = d.concept_origin || [], o = d.word_origin;
-  const orig = d.originators || [], na = d.named_after || [];
+  const orig = d.originators || [], na = d.named_after || [], assoc = d.associated || [];
   html += `<div class="card orig-card" id="card-origin"><h3>${jp ? "この言葉の原点" : "This word's origin"}</h3>`;
-  // (1) 概念を立てた思想家 — 哲学概念の"原点"の本命（リゾーム→ドゥルーズ・ガタリ）
+  // (1) 立てた/著した人 — 決定論（P50著者/P61考案者）。資本論→マルクス、リゾーム→ドゥルーズ・ガタリ
   if (orig.length) {
-    html += `<p>${jp ? "この概念を立てた思想家（Wikidata: 発見者・考案者）" : "Thinkers who framed this concept (Wikidata: discoverer/inventor)"}:
+    html += `<p>${jp ? "この概念を立てた／著した人（Wikidata: 著者・考案者）" : "Who framed/authored this (Wikidata: author/inventor)"}:
       ${orig.map(p => `<a href="#" class="origin-thinker" data-name="${esc(p.label)}"><b>${esc(p.label)}</b></a>`).join("　／　")}</p>
-      <p class="srcline">${jp ? "名前をクリックすると、その思想家の経歴・著作・多言語の専門情報源（新タブ）へ入れます。これが、この概念が実際に立てられた場所です。" : "Click a name for their bio, works and multilingual sources (new tab)."}</p>`;
+      <p class="srcline">${jp ? "名前をクリックすると、その人の経歴・著作・多言語の専門情報源（新タブ）へ入れます。" : "Click a name for their bio, works and multilingual sources (new tab)."}</p>`;
+  }
+  // (1b) 関連する思想家（記事言及・重要度順）— P50/P61が無い概念でも0にしない（資本主義→スミス/マルクス…）
+  if (assoc.length) {
+    html += `<p>${jp ? "関連する思想家（この概念の記事が言及・重要度順）" : "Associated thinkers (named in the article, by prominence)"}:
+      ${assoc.map(p => `<a href="#" class="origin-thinker" data-name="${esc(p.label)}">${esc(p.label)}</a>`).join("　／　")}</p>
+      <p class="srcline">${jp ? "『立てた人』が特定できない概念でも、通常検索が結びつける主要人物へ届くための層。記事の言及に接地（賛否は判定しない）。" : "A recall layer reaching the figures normal search associates; grounded in the article's mentions."}</p>`;
   }
   // (2) 語形の由来（語源）＋翻訳原点の候補 — 思想家がいる場合は"語源"として明確に降格し警告
   if (co.length || na.length) {

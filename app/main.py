@@ -630,7 +630,8 @@ async def api_origin(q: str, lang: str = "ja"):
         "general_meaning": gen_senses,           # 広く共有されている意味（入力言語）
         "collapse_warning": collapse_warning,    # ⚠ 埋没の明示警告（A←B・C・D）
         "concept_origin": concept_origin,        # 概念-翻訳-原点（疎外→独 Entfremdung）
-        "originators": cd.get("originators") or [],  # 概念を立てた思想家（P61/P112・決定論）
+        "originators": cd.get("originators") or [],  # 立てた/著した人（P50/P61/P112・決定論）
+        "associated": cd.get("associated") or [],    # 関連する思想家（記事言及・重要度順・再現向上）
         "named_after": cd.get("named_after") or [],  # 語形の由来（P138・語源・概念の原点でない）
         "word_origin": word_origin,              # 語源原点（空→梵・推定）
         "chain": td.get("origin_chain", []),     # 変容の連鎖（言語＋語形・全表示）
@@ -710,6 +711,13 @@ async def api_origin_graph(q: str, lang: str = "ja"):
         pid = f"auth:{p['label']}"
         add(pid, p["label"], "author", 4, max(1.4, 2.4 - i * 0.3), None, {"search": p["label"]})
         link(phil or "root", pid, 1.4)
+    # 関連する思想家（記事言及・重要度順）＝P50/P61の無い概念(資本主義)でも思想家を0にしない
+    for i, p in enumerate(cd.get("associated") or []):
+        if not p.get("label"):
+            continue
+        pid = f"auth:{p['label']}"
+        add(pid, p["label"], "author", 4, max(0.9, 1.8 - i * 0.12), None, {"search": p["label"]})
+        link(phil or "root", pid, 0.9)
 
     # 第4階層: 強く関与する著者・著作（seed系譜・重要度＝史的順）
     for i, a in enumerate(lineage.get("authors", []) if lineage else []):

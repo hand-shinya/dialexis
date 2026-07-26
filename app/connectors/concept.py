@@ -34,20 +34,52 @@ def _claim_qids(claims, pid):
 
 
 async def _resolve(qids, lang="ja"):
-    """Resolve QIDs → [{qid,label,is_person}] in one call (labels + P31 person check)."""
-    qids = list(dict.fromkeys([q for q in qids if q]))
-    if not qids:
-        return {}
-    body, _, _ = await cached_get_json(WD_API, {
-        "action": "wbgetentities", "ids": "|".join(qids[:20]),
-        "props": "labels|claims", "languages": f"{lang}|en", "format": "json"}, ttl=86400)
+    """Resolve QIDs → {qid:{label,is_person,nclaims}}. wbgetentities は 50 ids/回が上限なので
+    50 件ずつ全件解決する（以前は先頭20件で切れ、記事人物の再現が落ちていた）。"""
+    qids = list(dict.fromkeys([q for q in qids if q]))[:260]
     out = {}
-    for q, e in body.get("entities", {}).items():
-        lab = e.get("labels", {})
-        name = (lab.get(lang) or lab.get("en") or {}).get("value")
-        p31 = _claim_qids(e.get("claims", {}), "P31")
-        out[q] = {"qid": q, "label": name, "is_person": "Q5" in p31}
+    for i in range(0, len(qids), 50):
+        try:
+            body, _, _ = await cached_get_json(WD_API, {
+                "action": "wbgetentities", "ids": "|".join(qids[i:i + 50]),
+                "props": "labels|claims", "languages": f"{lang}|en", "format": "json"}, ttl=86400)
+        except Exception:
+            continue
+        for q, e in body.get("entities", {}).items():
+            lab = e.get("labels", {})
+            name = (lab.get(lang) or lab.get("en") or {}).get("value")
+            claims = e.get("claims", {})
+            out[q] = {"qid": q, "label": name, "is_person": "Q5" in _claim_qids(claims, "P31"),
+                      "nclaims": sum(len(v) for v in claims.values())}  # 重要度の代理（言明数）
     return out
+
+
+async def _article_persons(title, lang, exclude):
+    """記事が言及する人物（P31=Q5）を重要度順で。P50/P61等が無い概念（資本主義）でも、通常
+    検索が筆頭に出す人物（マルクス/スミス/ケインズ）へ届く再現向上。偏りは記事の言及に接地。"""
+    try:
+        lk, _, _ = await cached_get_json(WP_API.format(lang=lang), {
+            "action": "query", "prop": "links", "pllimit": 500, "plnamespace": 0,
+            "titles": title, "format": "json"}, ttl=86400)
+        # 五十音順の全リンクを対象に（先頭だけだと『カ』行のマルクス等が脱落する）。重要度で後段選別。
+        titles = [l["title"] for pg in lk.get("query", {}).get("pages", {}).values()
+                  for l in pg.get("links", [])][:220]
+        if not titles:
+            return []
+        qids = []
+        for i in range(0, len(titles), 50):
+            pp, _, _ = await cached_get_json(WP_API.format(lang=lang), {
+                "action": "query", "prop": "pageprops", "titles": "|".join(titles[i:i + 50]),
+                "redirects": 1, "format": "json"}, ttl=86400)
+            qids += [pg.get("pageprops", {}).get("wikibase_item")
+                     for pg in pp.get("query", {}).get("pages", {}).values()
+                     if pg.get("pageprops", {}).get("wikibase_item")]
+        res = await _resolve(qids, lang)
+        persons = [v for q, v in res.items() if v["is_person"] and v["label"] and q not in exclude]
+        persons.sort(key=lambda v: -v.get("nclaims", 0))   # 重要度（言明数）順＝マルクス等が上位
+        return persons[:10]
+    except Exception:
+        return []
 
 # Wikipedia lang-template codes → display name (for {{lang-de|Entfremdung}}).
 _CODE = {
@@ -169,17 +201,16 @@ async def node(word: str, lang: str = "ja") -> dict:
             _add(_ABBREV.get(ab), term)
         origs = list(by_name.values())
 
-        labels, originators, named_after = {}, [], []
+        labels, originators, named_after, associated = {}, [], [], []
         relations = {"near": [], "opposite": []}
         if qid:
             eb, _, _ = await cached_get_json(ENTITY.format(qid=qid), ttl=86400)
             ent = eb.get("entities", {}).get(qid, {})
             labels = {lg: v["value"] for lg, v in ent.get("labels", {}).items()}
-            # 概念の知的原点（この概念を"立てた"人）: P61 発見者・考案者／P112 創始者。
-            # 概念自身のclaim＝検索の偏りが無く高精度（リゾーム→ドゥルーズ・ガタリ）。
-            # 無い概念(疎外・縁起)も多い＝高精度・低再現。無いときは捏造しない（P6）。
+            # 概念を立てた/著した人: P50 著者（資本論→マルクス）／P61 発見者・考案者／P112 創始者。
+            # 決定論・高精度。ただし P50/P61 等が無い概念（資本主義）も多い＝これだけでは低再現。
             claims = ent.get("claims", {})
-            orig_q = _claim_qids(claims, "P61") + _claim_qids(claims, "P112")
+            orig_q = _claim_qids(claims, "P50") + _claim_qids(claims, "P61") + _claim_qids(claims, "P112")
             na_q = _claim_qids(claims, "P138")  # named after＝語形の由来（rhizome←根茎:植物）
             near_q = [x for p in _REL_NEAR for x in _claim_qids(claims, p)]  # 近い/類する
             opp_q = [x for p in _REL_OPP for x in _claim_qids(claims, p)]    # 対立/区別
@@ -187,6 +218,9 @@ async def node(word: str, lang: str = "ja") -> dict:
             res = await _resolve(orig_q + na_q + near_q + opp_q + seealso_q, lang)
             originators = [res[q] for q in dict.fromkeys(orig_q) if q in res and res[q]["is_person"]]
             named_after = [res[q] for q in dict.fromkeys(na_q) if q in res]
+            # 関連する思想家（再現向上）: P50/P61が無い概念でも記事が言及する人物を重要度順に。
+            # 資本主義→スミス/マルクス/ケインズ… 通常検索が筆頭に出す人物へ届く（0にしない）。
+            associated = await _article_persons(title, lang, set(orig_q) | {qid})
             # 星座: 人物・自分自身を除外し、近い(Wikidata近縁＋関連項目)/対立(対義・別物)に分類
             near = [res[q] for q in dict.fromkeys(near_q + seealso_q)
                     if q in res and res[q]["label"] and not res[q]["is_person"] and q != qid]
@@ -199,7 +233,8 @@ async def node(word: str, lang: str = "ja") -> dict:
             "title": title,                    # 実際に辿った記事名（間主観→間主観性）
             "resolved_from": resolved_from,    # 入力語と異なる記事へ解決した場合の元語
             "original_terms": origs,          # 概念-翻訳-原点の候補（記事が明示・LEAD）
-            "originators": originators,        # 概念を立てた思想家（P61/P112・決定論・人物のみ）
+            "originators": originators,        # 立てた/著した人（P50/P61/P112・決定論・人物のみ）
+            "associated": associated,          # 関連する思想家（記事言及・重要度順・再現向上）
             "named_after": named_after,        # 語形の由来（P138・語源であって概念の原点でない）
             "relations": relations,            # 類語・対義の星座（近い/対立・人物除外・決定論）
             "breadth_labels": labels,          # 多言語breadth（Wikidata全ラベル）

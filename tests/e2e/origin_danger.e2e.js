@@ -16,7 +16,7 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
   await page.waitForTimeout(1500);
   const card = await page.$eval("#card-origin", el => el.textContent);
 
-  ok("原点カードに『この概念を立てた思想家』が出る", /この概念を立てた思想家/.test(card));
+  ok("原点カードに『この概念を立てた／著した人』が出る", /この概念を立てた／著した人|この概念を立てた思想家/.test(card));
   ok("ドゥルーズが思想家として現れる（Googleが届く本命に到達）", /ドゥルーズ/.test(card), "");
   ok("ガタリが思想家として現れる", /ガタリ/.test(card));
   ok("ギリシャ語ρίζωμαは『語形の由来（語源』に降格されている", /語形の由来（語源/.test(card));
