@@ -1016,11 +1016,15 @@ function applyLens(d, key) {
   const L = LENSES.find(x => x.key === key) || LENSES[0];
   if (!L.kinds) return d;
   const root = d.nodes.find(n => n.kind === "word");
-  const leaves = d.nodes.filter(n => L.kinds.includes(n.kind));
-  const nodes = [];
-  if (root) nodes.push({ ...root, layer: 1 });
-  leaves.forEach(n => nodes.push({ ...n, layer: 2 }));
-  const edges = root ? leaves.map(n => ({ from: root.id, to: n.id, strength: 0.9 })) : [];
+  const keep = new Set(), nodes = [];
+  if (root) { keep.add(root.id); nodes.push({ ...root }); }
+  d.nodes.filter(n => L.kinds.includes(n.kind)).forEach(n => { keep.add(n.id); nodes.push({ ...n }); });
+  // 元の枝を保つ＝思想家→著作の階層／思想家どうしの関係線（P737）を残す（星型に潰さない）
+  const edges = d.edges.filter(e => keep.has(e.from) && keep.has(e.to)).map(e => ({ ...e }));
+  // 入ってくる枝の無いノードだけ語に結ぶ（浮かせない・関係のある者は関係線で繋がったまま）
+  if (root) nodes.forEach(n => {
+    if (n.id !== root.id && !edges.some(e => e.to === n.id)) edges.push({ from: root.id, to: n.id, strength: 0.6 });
+  });
   return { query: d.query, note: L.cap, nodes, edges };
 }
 

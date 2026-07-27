@@ -11,6 +11,7 @@ of the seven axioms. In particular:
 """
 import asyncio
 import json
+import math
 import os
 import re
 import urllib.parse
@@ -705,19 +706,43 @@ async def api_origin_graph(q: str, lang: str = "ja"):
     # 第4階層: 概念を立てた思想家（Wikidata P61/P112・決定論・seedでなく動的）。
     # リゾーム→ドゥルーズ・ガタリ。これで語形translationsに埋もれず、次元「思想家の系譜」と
     # 原点カードとグラフが一致する（貧弱記事の語源だけを原点と誤提示しない）。
-    for i, p in enumerate(cd.get("originators") or []):
-        if not p.get("label"):
-            continue
-        pid = f"auth:{p['label']}"
-        add(pid, p["label"], "author", 4, max(1.4, 2.4 - i * 0.3), None, {"search": p["label"]})
-        link(phil or "root", pid, 1.4)
-    # 関連する思想家（記事言及・重要度順）＝P50/P61の無い概念(資本主義)でも思想家を0にしない
-    for i, p in enumerate(cd.get("associated") or []):
-        if not p.get("label"):
-            continue
-        pid = f"auth:{p['label']}"
-        add(pid, p["label"], "author", 4, max(0.9, 1.8 - i * 0.12), None, {"search": p["label"]})
-        link(phil or "root", pid, 0.9)
+    # 第4階層: 思想家（立てた/著した人＋関連思想家）。大きさ＝影響度（Wikidata言明数の対数を
+    # 集合内で正規化＝マルクスが際立って大きくなる）。思想家どうしは P737(影響を受けた) で線を結ぶ
+    # ＝力学レイアウトで関係の近い者が引き寄せられ、距離・並びが関係を反映する。
+    thinkers = ([("orig", p) for p in (cd.get("originators") or []) if p.get("label")]
+                + [("assoc", p) for p in (cd.get("associated") or []) if p.get("label")])
+    if thinkers:
+        logs = [math.log1p(p.get("nclaims") or 0) for _, p in thinkers]
+        lo, hi = min(logs), max(logs)
+        node_of = {}
+        for kind, p in thinkers:
+            norm = (math.log1p(p.get("nclaims") or 0) - lo) / (hi - lo) if hi > lo else 1.0
+            w = round((2.8 if kind == "orig" else 1.0) + norm * 3.4, 2)  # 著者本人を際立たせ＋影響度で大小
+            pid = f"auth:{p['label']}"
+            add(pid, p["label"], "author", 4, w, None, {"search": p["label"], "qid": p.get("qid")})
+            link(phil or "root", pid, 1.4 if kind == "orig" else 0.9)
+            if p.get("qid"):
+                node_of[p["qid"]] = pid
+        for _, p in thinkers:   # 思想家どうしの関係線（影響を受けた・双方が居る時）
+            src = node_of.get(p.get("qid"))
+            for tgt in (p.get("influenced_by") or []):
+                if src and tgt in node_of and node_of[tgt] != src:
+                    link(src, node_of[tgt], 1.1)
+        for p in (cd.get("originators") or []):   # 思想家→著作の階層（第5階層に分岐）
+            if not p.get("qid"):
+                continue
+            pid = node_of.get(p["qid"])
+            works = await _sparql(
+                f'SELECT ?wLabel WHERE {{ ?w wdt:P50 wd:{p["qid"]}. '
+                f'SERVICE wikibase:label {{ bd:serviceParam wikibase:language "{lang},en". }} }} LIMIT 8')
+            for r in works:
+                wl = r.get("wLabel", {}).get("value", "")
+                if not wl or wl.startswith("Q"):
+                    continue
+                wid = f"authwork:{p['label']}:{wl}"
+                add(wid, wl, "work", 5, 0.8, wl)
+                if pid:
+                    link(pid, wid, 0.7)
 
     # 第4階層: 強く関与する著者・著作（seed系譜・重要度＝史的順）
     for i, a in enumerate(lineage.get("authors", []) if lineage else []):

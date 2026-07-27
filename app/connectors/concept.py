@@ -50,7 +50,8 @@ async def _resolve(qids, lang="ja"):
             name = (lab.get(lang) or lab.get("en") or {}).get("value")
             claims = e.get("claims", {})
             out[q] = {"qid": q, "label": name, "is_person": "Q5" in _claim_qids(claims, "P31"),
-                      "nclaims": sum(len(v) for v in claims.values())}  # 重要度の代理（言明数）
+                      "nclaims": sum(len(v) for v in claims.values()),  # 重要度の代理（言明数）
+                      "influenced_by": _claim_qids(claims, "P737")}     # 影響を受けた（関係線用）
     return out
 
 
