@@ -24,7 +24,7 @@ from fastapi.templating import Jinja2Templates
 from . import db
 from .db import get_conn, init_db, now, rows
 from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept
-from .connectors.base import cached_get_json
+from .connectors.base import cached_get_json, cached_get_text
 from . import citations as cites
 from . import deepsearch
 from . import bibliography
@@ -897,7 +897,20 @@ async def api_usage(q: str, lang: str = "ja"):
                           "venue": ((w.get("primary_location") or {}).get("source") or {}).get("display_name")})
         if len(cards) >= 12:
             break
-    return {"query": q, "queried_at": now(), "cards": cards[:12],
+    # 現代の研究者（OpenAlex著者集計・被研究度順）。歴史的正典（マルクス等）でなく「いま最も
+    # この概念を論じている研究者」＝文脈的prominence。歴史的思想家は思想家レンズが担う（区別）。
+    scholars = []
+    try:
+        term0 = (cd.get("original_terms") or [{}])[0].get("term") or q
+        sd, _, _ = await cached_get_json("https://api.openalex.org/works",
+            {"search": term0, "group_by": "authorships.author.id", "mailto": "handa.shinya@gmail.com"}, ttl=86400)
+        for g in sd.get("group_by", [])[:10]:
+            nm = g.get("key_display_name")
+            if nm and nm != "unknown":
+                scholars.append({"name": nm, "count": g.get("count")})
+    except Exception:
+        pass
+    return {"query": q, "queried_at": now(), "cards": cards[:12], "scholars": scholars,
             "note": "この語が学術テキストで実際に使われた著作（OpenAlex・出典つき／賛否は判定しない）。"
                     if cards else "実テキストの用例が見つかりませんでした（正直に空）。"}
 
@@ -937,6 +950,76 @@ async def api_timeline(q: str, lang: str = "ja"):
             "note": "原語の語形の通時頻度（Google Books Ngram・書物コーパス）。いつ現れ・広まり・"
                     "衰退し・再評価されたか。カタカナ語でなく原語で辿る。" if series
                     else "通時頻度を取得できる原語形が見つかりませんでした（正直に空）。"}
+
+
+_REGION_EU = {"de", "fr", "en", "es", "it", "la", "grc", "el", "ru", "nl", "pt", "pl", "sv",
+              "da", "no", "nb", "fi", "uk", "cs", "ro", "hu", "tr", "he", "ar", "fa", "ca", "eo"}
+
+
+def _region_of(code):
+    if code == "ja":
+        return "日本"
+    if code in {"zh", "ko", "vi", "yue", "wuu", "za"}:
+        return "漢字圏"
+    return "欧" if code in _REGION_EU else "その他"
+
+
+async def _ndl_works(q, n=6):
+    """国立国会図書館サーチ（鍵不要・文化圏:日本の受容史）。RSSの<item><title>を抽出。"""
+    try:
+        import xml.etree.ElementTree as ET
+        txt, _, _ = await cached_get_text("https://ndlsearch.ndl.go.jp/api/opensearch",
+                                          {"any": q, "cnt": n}, ttl=86400)
+        root = ET.fromstring(txt)
+        out = []
+        for it in root.iter("item"):
+            t = it.findtext("title")
+            if t:
+                out.append(t.strip())
+        return out[:n]
+    except Exception:
+        return []
+
+
+@app.get("/api/culture")
+async def api_culture(q: str, lang: str = "ja"):
+    """文化圏レンズ: この概念を担う言語を欧/漢字圏/日本/その他で束ね、日本圏には国立国会図書館
+    （NDL・鍵不要）の国内文献を実データで足す＝どの文化圏を基準にするかで重力場が変わる。"""
+    cn = await concept.node(q, lang)
+    cd = cn["data"] if not cn["error"] else {}
+    labels = cd.get("breadth_labels") or {}
+    nodes = [{"id": "root", "label": q, "kind": "word", "layer": 1, "weight": 3.0, "q": q}]
+    edges, seen = [], {"root"}
+
+    def region(name):
+        rid = f"reg:{name}"
+        if rid not in seen:
+            seen.add(rid)
+            nodes.append({"id": rid, "label": name, "kind": "appdomain", "layer": 2, "weight": 2.2})
+            edges.append({"from": "root", "to": rid, "strength": 1.2})
+        return rid
+
+    for code, label in list(labels.items())[:40]:
+        rid = region(_region_of(code))
+        nid = f"lang:{code}"
+        if nid not in seen:
+            seen.add(nid)
+            nodes.append({"id": nid, "label": f"{wiktionary.langname(code)}：{label}", "kind": "language",
+                          "layer": 3, "weight": 0.85, "q": label})
+            edges.append({"from": rid, "to": nid, "strength": 0.5})
+    # 日本圏: NDLの国内文献（受容史）
+    ndl = await _ndl_works(q)
+    if ndl:
+        rid = region("日本")
+        for i, t in enumerate(ndl):
+            wid = f"ndl:{i}"
+            nodes.append({"id": wid, "label": (t[:40] + "…") if len(t) > 40 else t,
+                          "kind": "application", "layer": 3, "weight": 0.9})
+            edges.append({"from": rid, "to": wid, "strength": 0.5})
+    note = ("文化圏で束ねる: 欧／漢字圏／日本／その他。日本圏は国立国会図書館の国内文献も。"
+            if len(nodes) > 1 else "文化圏データが見つかりませんでした（正直に空）。")
+    return {"query": q, "queried_at": now(), "nodes": nodes, "edges": edges, "note": note,
+            "sources": [{"source": "wikidata-breadth + NDL", "retrieved_at": now(), "error": None}]}
 
 
 @app.get("/api/dimensions")

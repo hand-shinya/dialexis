@@ -19,7 +19,7 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
      `keys=${JSON.stringify(chipKeys)}`);
 
   // 文化圏（region・グラフ再投影）
-  await page.click('#graph-lens .lens-chip[data-k="spheres"]'); await page.waitForTimeout(900);
+  await page.click('#graph-lens .lens-chip[data-k="spheres"]'); await page.waitForTimeout(3500);
   const regs = await page.evaluate(() => G.nodes.filter(n => n.kind === "appdomain").map(n => n.label));
   ok("文化圏レンズ: 言語が圏（欧/漢字圏/日本/その他）で束ねられる", regs.some(r => ["欧", "漢字圏", "日本", "その他"].includes(r)), `regs=${JSON.stringify(regs)}`);
 

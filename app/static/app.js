@@ -977,8 +977,8 @@ const LENSES = [
     cap: "近い/類する概念（緑）と、対立・区別される概念（赤）の星座。クリックでその概念へ。思考を横に広げる。" },
   { key: "domains", label: "意味の領域", en: "Fields of meaning", kinds: ["domain"],
     cap: "一般の意味／専門・思想／世界の言語という、意味の大きな分かれ。" },
-  { key: "spheres", label: "文化圏", en: "Cultural spheres", mode: "region",
-    cap: "欧／漢字圏／日本など、どの文化圏の言語がこの概念を担うかで束ねる。重力場が変わる。" },
+  { key: "spheres", label: "文化圏", en: "Cultural spheres", mode: "lazy-graph", endpoint: "/api/culture",
+    cap: "欧／漢字圏／日本／その他で束ねる。日本圏は国立国会図書館の国内文献も（受容史）。重力場が変わる。" },
   { key: "applications", label: "応用・波及", en: "Applications", mode: "lazy-graph", endpoint: "/api/applications",
     cap: "応用（主題とする作品＝文学・芸術・映画）と、波及（結びつく思想・体制・運動＝資本論→共産主義/マルクス経済学…）。クリックでその語へ。" },
   { key: "usage", label: "使用例・引用", en: "Usage", mode: "cards", endpoint: "/api/usage",
@@ -1081,9 +1081,12 @@ async function applyLensBuild(key) {
 // 使用例・引用: 出典つきの引用カード群（賛否は判定しない・中立）
 function renderUsageCards(data) {
   const a = $("graph-alt"); if (!a) return; const jp = LANG === "ja";
-  const cards = data.cards || [];
-  if (!cards.length) { a.innerHTML = `<p class="lens-empty">${esc(data.note || (jp ? "用例が見つかりませんでした。" : "no usage."))}</p>`; return; }
-  a.innerHTML = `<div class="usage-cards">` + cards.map(c => {
+  const cards = data.cards || [], scholars = data.scholars || [];
+  if (!cards.length && !scholars.length) { a.innerHTML = `<p class="lens-empty">${esc(data.note || (jp ? "用例が見つかりませんでした。" : "no usage."))}</p>`; return; }
+  // 現代の研究者（OpenAlex著者集計・被研究度順）＝いま最もこの概念を論じている人（歴史的正典と区別）
+  const schHtml = scholars.length ? `<p class="dim-disc-h">${jp ? "この概念を今、最も論じている研究者（OpenAlex・被研究度順／歴史的思想家は「思想家」レンズ）" : "Most-publishing scholars now (OpenAlex)"}</p>
+    <div class="dim-disc-list">${scholars.map(s => `<a class="dim-disc-l" href="/origin?q=${encodeURIComponent(s.name)}&lang=${LANG}"${originLinkAttr()}>${esc(s.name)} <span class="lens-n">${s.count}</span></a>`).join("")}</div>` : "";
+  a.innerHTML = schHtml + `<div class="usage-cards">` + cards.map(c => {
     const meta = [(c.authors || []).join(", "), c.year, c.venue].filter(Boolean).map(esc).join(" · ");
     const link = c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">${jp ? "出典を開く" : "open"}</a>` : "";
     return `<div class="ucard"><div class="ut">${esc(c.title)}</div><div class="um">${meta}${meta && link ? " · " : ""}${link}<br><span class="srcline">${jp ? "用いた語" : "term"}: ${esc(c.term)}</span></div></div>`;

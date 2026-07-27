@@ -185,6 +185,24 @@ async def _fulltext(word, lang):
         return []
 
 
+async def _conceptnet_related(word, lang):
+    """ConceptNetの類語・関連語（多言語・鍵不要）。Lexical Gap補完の best-effort＝到達不能や
+    空でも無害（例外時[]）。現状この環境からは不通のことがあるため fail-safe に留める。"""
+    import urllib.parse
+    try:
+        node = urllib.parse.quote(f"/c/{lang}/{word}")
+        d, _, _ = await cached_get_json(f"https://api.conceptnet.io/query", {"node": f"/c/{lang}/{word}", "limit": 12}, ttl=86400)
+        out = []
+        for e in (d.get("edges") or []):
+            for side in ("start", "end"):
+                lab = e.get(side, {}).get("label")
+                if lab and lab != word and lab not in out:
+                    out.append(lab)
+        return out[:8]
+    except Exception:
+        return []
+
+
 async def _fetch_article(title, lang):
     body, ts, cached = await cached_get_json(WP_API.format(lang=lang), {
         "action": "query", "prop": "pageprops|extracts|revisions",
@@ -206,10 +224,14 @@ async def node(word: str, lang: str = "ja") -> dict:
                 page, ts, cached = await _fetch_article(pick, lang)
                 title, resolved_from = pick, word
         if "missing" in page:
-            # それでも無い＝行き止まりにせず、候補（opensearch＋全文）を返す（第二次戦略）
+            # それでも無い＝行き止まりにせず、候補（opensearch＋全文＋ConceptNet類語）を返す（第二次戦略）
             sugg = await _opensearch(word, lang) or await _fulltext(word, lang)
-            return ok("concept-node", ts, cached, {"word": word, "found": False,
-                      "suggestions": [s for s in sugg if s and s != word][:6]})
+            sugg = list(sugg) + await _conceptnet_related(word, lang)   # best-effort・不通なら無害
+            seen_s, uniq = set(), []
+            for s in sugg:
+                if s and s != word and s not in seen_s:
+                    seen_s.add(s); uniq.append(s)
+            return ok("concept-node", ts, cached, {"word": word, "found": False, "suggestions": uniq[:8]})
         qid = page.get("pageprops", {}).get("wikibase_item")
         extract = page.get("extract", "") or ""
         wikitext = (page.get("revisions", [{}])[0].get("slots", {})
