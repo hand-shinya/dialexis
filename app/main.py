@@ -23,7 +23,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import db
 from .db import get_conn, init_db, now, rows
-from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept
+from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept, searxng
 from .connectors.base import cached_get_json, cached_get_text
 from . import citations as cites
 from . import deepsearch
@@ -1020,6 +1020,85 @@ async def api_culture(q: str, lang: str = "ja"):
             if len(nodes) > 1 else "文化圏データが見つかりませんでした（正直に空）。")
     return {"query": q, "queried_at": now(), "nodes": nodes, "edges": edges, "note": note,
             "sources": [{"source": "wikidata-breadth + NDL", "retrieved_at": now(), "error": None}]}
+
+
+@app.get("/api/websearch")
+async def api_websearch(q: str, lang: str = "ja"):
+    """一般ウェブ検索ボックス（SearXNG）。Wikipedia系＝構造の背骨に対し、一般ウェブの広さ。
+    賛否・順位はエンジン由来（中立に列挙）。出所つき・新タブ。未稼働時は正直に空。"""
+    res = await searxng.search(q, lang, n=20)
+    cards = [{"title": r["title"], "url": r["url"], "content": r["content"][:160], "engine": r["engine"]}
+             for r in res if r["title"] and r["url"]]
+    return {"query": q, "queried_at": now(), "cards": cards[:16],
+            "note": "一般ウェブ検索（SearXNG＝Google等を束ねる自前メタ検索・鍵不要）。順位はエンジン由来。"
+                    if cards else "一般ウェブ検索が利用できませんでした（SearXNG未稼働の可能性）。"}
+
+
+# 一般ウェブの「重力分布」を測るためのドメイン語彙（頻度で意味の重い領域を推定）
+_GRAV_DOMAINS = {
+    "哲学・思想": ["哲学", "思想", "思想家", "形而上学", "存在論", "認識論", "現象学", "弁証法"],
+    "植物・生物": ["植物", "地下茎", "根茎", "生物", "植物学", "園芸", "茎", "花"],
+    "経済": ["経済", "経済学", "資本", "市場", "金融", "産業", "貨幣"],
+    "政治・社会": ["政治", "社会", "社会学", "制度", "運動", "革命", "階級"],
+    "歴史": ["歴史", "時代", "世紀", "古代", "近代"],
+    "宗教": ["宗教", "仏教", "キリスト", "神学", "信仰", "禅"],
+    "芸術・文学": ["芸術", "美術", "文学", "小説", "詩", "音楽", "映画", "建築", "デザイン"],
+    "科学・技術": ["科学", "物理", "数学", "化学", "工学", "技術", "情報", "コンピュータ", "医学"],
+    "心理": ["心理", "精神", "認知", "無意識"],
+    "企業・商業": ["株式会社", "有限会社", "企業", "会社", "ビジネス", "採用", "製品", "店舗"],
+}
+
+
+def _wiki_title_from_url(url):
+    m = re.search(r"wikipedia\.org/wiki/([^?#]+)", url or "")
+    if not m:
+        return None
+    t = urllib.parse.unquote(m.group(1)).replace("_", " ")
+    return t if ":" not in t else None   # 特別ページ等を除外
+
+
+@app.get("/api/gravity")
+async def api_gravity(q: str, lang: str = "ja"):
+    """重力探索: 一般ウェブ検索で「意味の重力分布」を測り、重い領域を語とAND検索して次階層へ
+    連続展開する（半田様設計）。リゾーム→哲学/植物が重い→『リゾーム 哲学』のAND検索で
+    ドゥルーズ等を次階層に。頻度＝重力に従い、重い枝ほど大きく深く掘る。SearXNG依存・鍵不要。"""
+    root = {"id": "root", "label": q, "kind": "word", "layer": 1, "weight": 3.0, "q": q}
+    res = await searxng.search(q, lang, n=20)
+    if not res:
+        return {"query": q, "nodes": [root], "edges": [],
+                "note": "一般ウェブ検索（SearXNG）が利用できないため重力分布を測れませんでした。"}
+    # Pass 1: 一般検索の結果テキストで各領域語の出現頻度＝重力分布を測る
+    blob = " ".join((r["title"] + " " + r["content"]) for r in res)
+    grav = {d: sum(blob.count(k) for k in kws) for d, kws in _GRAV_DOMAINS.items()}
+    top = [(d, g) for d, g in sorted(grav.items(), key=lambda x: -x[1]) if g > 0][:5]
+    nodes, edges = [root], []
+    maxg = top[0][1] if top else 1
+    # Pass 2: 重い領域ごとに『語 AND 領域』検索→次階層の実体（Wikipedia項目/上位結果）を展開
+    for d, g in top:
+        did = f"gdom:{d}"
+        nodes.append({"id": did, "label": f"{d}（{g}）", "kind": "appdomain", "layer": 2,
+                      "weight": round(1.6 + 2.6 * g / maxg, 2)})
+        edges.append({"from": "root", "to": did, "strength": 0.8 + 0.6 * g / maxg})
+        sub = await searxng.search(q, lang, extra=_GRAV_DOMAINS[d][0], n=12)
+        ents, seene = [], set()
+        for r in sub:                       # まずWikipedia項目（きれいな実体名）
+            t = _wiki_title_from_url(r["url"])
+            if t and t != q and t not in seene:
+                seene.add(t); ents.append(t)
+        for r in sub:                       # 不足時は上位結果の題で補完
+            if len(ents) >= 5:
+                break
+            t = (r["title"] or "").split(" - ")[0].split("｜")[0].strip()
+            if t and t != q and t not in seene and len(t) <= 40:
+                seene.add(t); ents.append(t)
+        for e in ents[:5]:
+            eid = f"gent:{d}:{e}"
+            nodes.append({"id": eid, "label": e, "kind": "application", "layer": 3, "weight": 1.0, "q": e})
+            edges.append({"from": did, "to": eid, "strength": 0.6})
+    note = ("一般ウェブ検索の重力分布（重い順: " + "・".join(d for d, _ in top) +
+            "）。頻度＝重力。重い領域を語とAND検索し、次階層に実体を展開。クリックでその語へ。")
+    return {"query": q, "queried_at": now(), "nodes": nodes, "edges": edges, "note": note,
+            "sources": [{"source": "SearXNG(一般ウェブ)", "retrieved_at": now(), "error": None}]}
 
 
 @app.get("/api/dimensions")

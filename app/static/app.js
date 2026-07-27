@@ -985,6 +985,10 @@ const LENSES = [
     cap: "この語が実テキスト（学術）で実際にどう使われたか。出典つきの引用カード（賛否は判定しない）。" },
   { key: "era", label: "時代・変遷", en: "Over time", mode: "timeline", endpoint: "/api/timeline",
     cap: "原語がいつ現れ・広まり・衰退し・再評価されたか（Google Books Ngram・書物コーパス）。" },
+  { key: "gravity", label: "重力探索", en: "Gravity (web)", mode: "lazy-graph", endpoint: "/api/gravity",
+    cap: "一般ウェブ検索で意味の重力分布を測り、重い領域（例 リゾーム→哲学/植物）を語とAND検索して次階層へ連続展開。頻度＝重力・重い枝ほど大きい。" },
+  { key: "websearch", label: "一般ウェブ", en: "Web search", mode: "cards", endpoint: "/api/websearch",
+    cap: "一般ウェブ検索（SearXNG＝Google等を束ねる自前メタ検索・鍵不要）。Wikipedia系の背骨に対し一般の広さ。順位はエンジン由来・新タブ。" },
 ];
 
 // 文化圏（言語コード→圏）。欧/漢字圏/日本/その他。同じ概念でもどの圏を基準にするかで見え方が変わる。
