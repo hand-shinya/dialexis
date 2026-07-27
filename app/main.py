@@ -822,35 +822,53 @@ async def api_applications(q: str, lang: str = "ja"):
     分野に粗分類して『分野別の枝＋作品の点』のグラフで返す。データはWikidataの作品claim＝
     捏造しない・分野は型/ジャンルラベルに接地（中立）。無ければ正直に空。"""
     cn = await concept.node(q, lang)
-    qid = (cn["data"] if not cn["error"] else {}).get("qid")
-    if not qid:
-        return {"query": q, "nodes": [{"id": "root", "label": q, "kind": "word", "layer": 1, "weight": 3.0, "q": q}],
-                "edges": [], "note": "この語のWikidata項目が特定できず、応用・波及を取得できませんでした。"}
-    rows_ = await _sparql(f"""SELECT DISTINCT ?work ?workLabel ?typeLabel ?genreLabel ?date WHERE {{
-      ?work wdt:P921 wd:{qid}. OPTIONAL {{ ?work wdt:P31 ?type. }} OPTIONAL {{ ?work wdt:P136 ?genre. }}
-      OPTIONAL {{ ?work wdt:P577 ?date. }}
-      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "{lang},en". }} }} ORDER BY ?date LIMIT 40""")
+    cd = cn["data"] if not cn["error"] else {}
+    qid, title = cd.get("qid"), cd.get("title") or q
     nodes = [{"id": "root", "label": q, "kind": "word", "layer": 1, "weight": 3.0, "q": q}]
-    edges, seenw, domains = [], set(), {}
-    for r in rows_:
-        wl = r.get("workLabel", {}).get("value", "")
-        if not wl or wl.startswith("Q") or wl in seenw:
-            continue
-        seenw.add(wl)
-        dom = _app_domain(f"{r.get('typeLabel',{}).get('value','')} {r.get('genreLabel',{}).get('value','')}")
-        did = f"appdom:{dom}"
-        if dom not in domains:
-            domains[dom] = True
-            nodes.append({"id": did, "label": dom, "kind": "appdomain", "layer": 2, "weight": 2.0})
+    edges, seen = [], {"root"}
+
+    def dom(name, w=2.0):
+        did = f"appdom:{name}"
+        if did not in seen:
+            seen.add(did)
+            nodes.append({"id": did, "label": name, "kind": "appdomain", "layer": 2, "weight": w})
             edges.append({"from": "root", "to": did, "strength": 1.2})
-        yr = (r.get("date", {}).get("value", "") or "")[:4]
-        nodes.append({"id": f"appwork:{wl}", "label": wl + (f"（{yr}）" if yr else ""),
-                      "kind": "application", "layer": 3, "weight": 1.0, "q": wl})
-        edges.append({"from": did, "to": f"appwork:{wl}", "strength": 0.7})
-    note = ("この概念を主題とする作品を、分野別に。翻訳・小説・映画・歴史等への応用と波及。"
-            if len(nodes) > 1 else "この概念を主題とする作品はWikidataに見つかりませんでした（正直に空）。")
+        return did
+
+    def leaf(label, did, weight=1.0):
+        wid = f"appwork:{label}"
+        if not label or wid in seen:
+            return
+        seen.add(wid)
+        nodes.append({"id": wid, "label": label, "kind": "application", "layer": 3, "weight": weight, "q": label})
+        edges.append({"from": did, "to": wid, "strength": 0.7})
+
+    # A) この概念を主題とする作品（P921）＝文学・芸術・映画・歴史への応用
+    if qid:
+        rows_ = await _sparql(f"""SELECT DISTINCT ?workLabel ?typeLabel ?genreLabel ?date WHERE {{
+          ?work wdt:P921 wd:{qid}. OPTIONAL {{ ?work wdt:P31 ?type. }} OPTIONAL {{ ?work wdt:P136 ?genre. }}
+          OPTIONAL {{ ?work wdt:P577 ?date. }}
+          SERVICE wikibase:label {{ bd:serviceParam wikibase:language "{lang},en". }} }} ORDER BY ?date LIMIT 40""")
+        for r in rows_:
+            wl = r.get("workLabel", {}).get("value", "")
+            if not wl or wl.startswith("Q"):
+                continue
+            d = _app_domain(f"{r.get('typeLabel',{}).get('value','')} {r.get('genreLabel',{}).get('value','')}")
+            yr = (r.get("date", {}).get("value", "") or "")[:4]
+            leaf(wl + (f"（{yr}）" if yr else ""), dom(d))
+
+    # B) 社会体制・思想・運動への波及（記事が言及する非人物の概念を重要度順）＝資本論→
+    #    共産主義/社会主義/マルクス経済学… ご指摘の「社会体制のきっかけ」を機械的に出す。
+    concepts = await concept.article_concepts(title, lang, {qid} if qid else set())
+    if concepts:
+        did = dom("思想・体制・運動への波及", 2.4)
+        for i, c in enumerate(concepts):
+            leaf(c["label"], did, weight=max(0.8, 1.6 - i * 0.08))
+
+    note = ("この概念の応用（主題とする作品）と波及（結びつく思想・体制・運動）を分野別に。"
+            if len(nodes) > 1 else "応用・波及を特定できるデータが見つかりませんでした（正直に空）。")
     return {"query": q, "queried_at": now(), "qid": qid, "nodes": nodes, "edges": edges, "note": note,
-            "sources": [{"source": "wikidata:P921", "retrieved_at": now(), "error": None}]}
+            "sources": [{"source": "wikidata:P921 + article-concepts", "retrieved_at": now(), "error": None}]}
 
 
 @app.get("/api/usage")

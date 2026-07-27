@@ -980,7 +980,7 @@ const LENSES = [
   { key: "spheres", label: "文化圏", en: "Cultural spheres", mode: "region",
     cap: "欧／漢字圏／日本など、どの文化圏の言語がこの概念を担うかで束ねる。重力場が変わる。" },
   { key: "applications", label: "応用・波及", en: "Applications", mode: "lazy-graph", endpoint: "/api/applications",
-    cap: "この概念を主題とする作品を分野別に（文学・芸術・映画・歴史）。応用と波及。クリックでその作品語へ。" },
+    cap: "応用（主題とする作品＝文学・芸術・映画）と、波及（結びつく思想・体制・運動＝資本論→共産主義/マルクス経済学…）。クリックでその語へ。" },
   { key: "usage", label: "使用例・引用", en: "Usage", mode: "cards", endpoint: "/api/usage",
     cap: "この語が実テキスト（学術）で実際にどう使われたか。出典つきの引用カード（賛否は判定しない）。" },
   { key: "era", label: "時代・変遷", en: "Over time", mode: "timeline", endpoint: "/api/timeline",

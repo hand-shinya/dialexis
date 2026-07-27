@@ -49,20 +49,34 @@ async def _resolve(qids, lang="ja"):
             lab = e.get("labels", {})
             name = (lab.get(lang) or lab.get("en") or {}).get("value")
             claims = e.get("claims", {})
-            out[q] = {"qid": q, "label": name, "is_person": "Q5" in _claim_qids(claims, "P31"),
+            p31 = _claim_qids(claims, "P31")
+            out[q] = {"qid": q, "label": name, "is_person": "Q5" in p31, "p31": p31,
                       "nclaims": sum(len(v) for v in claims.values()),  # 重要度の代理（言明数）
                       "influenced_by": _claim_qids(claims, "P737")}     # 影響を受けた（関係線用）
     return out
 
 
-async def _article_persons(title, lang, exclude):
-    """記事が言及する人物（P31=Q5）を重要度順で。P50/P61等が無い概念（資本主義）でも、通常
-    検索が筆頭に出す人物（マルクス/スミス/ケインズ）へ届く再現向上。偏りは記事の言及に接地。"""
+# 波及の「思想・体制・運動」から除外する型（地名・言語・時間・組織等＝重要度が巨大でノイズ源）
+_NOT_IDEA = {
+    "Q6256", "Q3624078", "Q515", "Q486972", "Q1549591", "Q5119", "Q1637706",  # 国・州・都市・首都
+    "Q34770", "Q33742", "Q1288568", "Q436240",                                  # 言語
+    "Q577", "Q3186692", "Q29964144",                                            # 年・時代区分
+    "Q43229", "Q4830453", "Q783794", "Q6881511", "Q327333", "Q163740",          # 組織・企業・政府機関・非営利
+    "Q3918", "Q38723", "Q875538", "Q2085381", "Q7075", "Q35127", "Q31855",      # 大学・出版社・図書館・website・研究所
+    "Q13100073", "Q7318358",                                                     # 世界の記憶・賞等
+    "Q5",                                                                        # 人物（保険）
+}
+# 思想・体制・運動・宗教・学派を軽く優遇する語尾（言明数の地名/組織ノイズより意味的に近い）
+_IDEA_SUFFIX = ("主義", "論", "思想", "運動", "教", "制", "学派", "学")
+
+
+async def _article_resolved(title, lang):
+    """記事が言及するエンティティ（人物・概念）を解決して返す（重要度=言明数つき）。五十音順の
+    全リンクを対象に（先頭だけだと『カ』行のマルクス等が脱落）、人物/概念の後段選別に共用。"""
     try:
         lk, _, _ = await cached_get_json(WP_API.format(lang=lang), {
             "action": "query", "prop": "links", "pllimit": 500, "plnamespace": 0,
             "titles": title, "format": "json"}, ttl=86400)
-        # 五十音順の全リンクを対象に（先頭だけだと『カ』行のマルクス等が脱落する）。重要度で後段選別。
         titles = [l["title"] for pg in lk.get("query", {}).get("pages", {}).values()
                   for l in pg.get("links", [])][:220]
         if not titles:
@@ -75,12 +89,33 @@ async def _article_persons(title, lang, exclude):
             qids += [pg.get("pageprops", {}).get("wikibase_item")
                      for pg in pp.get("query", {}).get("pages", {}).values()
                      if pg.get("pageprops", {}).get("wikibase_item")]
-        res = await _resolve(qids, lang)
-        persons = [v for q, v in res.items() if v["is_person"] and v["label"] and q not in exclude]
-        persons.sort(key=lambda v: -v.get("nclaims", 0))   # 重要度（言明数）順＝マルクス等が上位
-        return persons[:10]
+        return list((await _resolve(qids, lang)).values())
     except Exception:
         return []
+
+
+async def _article_persons(title, lang, exclude):
+    """記事が言及する人物（P31=Q5）を重要度順で。P50/P61等が無い概念（資本主義）でも、通常
+    検索が筆頭に出す人物（マルクス/スミス/ケインズ）へ届く再現向上。偏りは記事の言及に接地。"""
+    ps = [v for v in await _article_resolved(title, lang)
+          if v["is_person"] and v["label"] and v["qid"] not in exclude]
+    ps.sort(key=lambda v: -v.get("nclaims", 0))   # 重要度（言明数）順＝マルクス等が上位
+    return ps[:10]
+
+
+async def article_concepts(title, lang, exclude=()):
+    """記事が言及する非人物の概念（思想・体制・運動・理論等）を重要度順で。応用・波及レンズで
+    『社会体制への波及』（資本論→共産主義/社会主義/マルクス経済学…）を出すのに使う。"""
+    cs = [v for v in await _article_resolved(title, lang)
+          if not v["is_person"] and v["label"] and v["qid"] not in set(exclude)
+          and not (_NOT_IDEA & set(v.get("p31") or []))]   # 地名・言語・時間・組織を除外
+
+    def _score(v):   # 思想語尾は優遇（地名/組織のnclaims優位を是正・語に接地した軽い重み）
+        lab = v["label"] or ""
+        boost = 3.0 if (lab.endswith(_IDEA_SUFFIX) or "ズム" in lab) else 1.0
+        return (v.get("nclaims", 0)) * boost
+    cs.sort(key=lambda v: -_score(v))
+    return cs[:12]
 
 # Wikipedia lang-template codes → display name (for {{lang-de|Entfremdung}}).
 _CODE = {
