@@ -909,6 +909,10 @@ function originInit(q) {
   }
   const fit = $("graph-fit");
   if (fit) fit.addEventListener("click", () => graphFit());
+  const nb = $("nav-back"), nf = $("nav-fwd");
+  if (nb) nb.addEventListener("click", () => navGo(-1));
+  if (nf) nf.addEventListener("click", () => navGo(1));
+  if (q) { NAV.stack = [q]; NAV.idx = 0; navUpdate(); }   // 初期の語を履歴に
   const res = $("origin-results");
   if (res && !res._dimBound) {
     res._dimBound = 1;
@@ -924,17 +928,52 @@ function originInit(q) {
   if (q) { const t = originClaim(q); originGraph(q, t); originRun(q, t); }
 }
 
+// 探索の履歴（戻る/進む）。originRecenter で語を辿るたびに積む（nav操作時は積み直さない）。
+const NAV = { stack: [], idx: -1 };
+function navPush(q) {
+  if (NAV.stack[NAV.idx] === q) return;
+  NAV.stack = NAV.stack.slice(0, NAV.idx + 1); NAV.stack.push(q); NAV.idx = NAV.stack.length - 1;
+  navUpdate();
+}
+function navUpdate() {
+  const b = $("nav-back"), f = $("nav-fwd");
+  if (b) b.disabled = NAV.idx <= 0;
+  if (f) f.disabled = NAV.idx >= NAV.stack.length - 1;
+}
+function navGo(d) {
+  const i = NAV.idx + d;
+  if (i < 0 || i >= NAV.stack.length) return;
+  NAV.idx = i; navUpdate(); originRecenter(NAV.stack[i], { nav: true });
+}
+// 処理中インジケータ（選んだ付近に出す・止まって見えないように）
+function gBusy(on, text, x, y) {
+  const el = $("graph-busy"); if (!el) return;
+  if (!on) { el.style.display = "none"; return; }
+  el.querySelector(".bt").textContent = text || "探索中…";
+  const stage = el.parentElement, r = stage.getBoundingClientRect();
+  let cx = (x != null) ? (x - r.left) : stage.clientWidth / 2;
+  let cy = (y != null) ? (y - r.top) : stage.clientHeight / 2;
+  cx = Math.max(70, Math.min(cx, stage.clientWidth - 70));
+  cy = Math.max(26, Math.min(cy, stage.clientHeight - 26));
+  el.style.left = cx + "px"; el.style.top = cy + "px";
+  el.style.display = "flex";
+}
+
 // UNIVERSAL rule: selecting a word (a node / an in-page link) makes THAT word the
 // new subject — the whole exploration (search box, cards, graph) is rebuilt FRESH
 // from it. No data from a previously-entered word is reused. Optionally, after the
 // fresh cards render, scroll to a specific card of THIS word (opts.scrollTo).
 async function originRecenter(q, opts) {
+  opts = opts || {};
   const tok = originClaim(q);            // this selection becomes THE subject (single source of truth)
+  if (!opts.nav) navPush(q);             // 履歴に積む（戻る/進む可）
   const inp = document.querySelector('.searchbox input[name=q]');
   if (inp) inp.value = q;
+  gBusy(true, "「" + q + "」を探索中…", G && G.lastX, G && G.lastY);   // 選んだ付近に処理中を表示
   // graph と cards を同じトークンで並行再構築。両方 settle して初めて再中心「完了」。
   await Promise.all([originGraph(q, tok), originRun(q, tok)]);
   if (originStale(tok)) return;          // 別の語に上書きされた＝この古い語のためにスクロール/確定しない
+  gBusy(false);                          // 完了＝インジケータを消す
   const id = opts && opts.scrollTo;
   const el = id && $(id);
   if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
@@ -1239,12 +1278,14 @@ function gBuild(d) {
 
 function gStep() {
   const N = G.nodes, E = G.edges;
+  // 反発は節点数でスケール（大きいグラフが線状に潰れるのを防ぐ）＋近接時に強く押す（下限床）
+  const REP = 3400 + N.length * 140;
   for (let i = 0; i < N.length; i++) {
     const a = N[i];
     for (let j = i + 1; j < N.length; j++) {
       const b = N[j];
       let dx = a.x - b.x, dy = a.y - b.y, ds = dx * dx + dy * dy || 1;
-      const dist = Math.sqrt(ds), f = 2900 / ds;   // modest repulsion (auto-fit keeps all on-screen)
+      const dist = Math.sqrt(ds), f = REP / Math.max(ds, 90);
       const fx = f * dx / dist, fy = f * dy / dist;
       a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
     }
@@ -1252,13 +1293,13 @@ function gStep() {
   E.forEach(e => {
     const a = N[e.a], b = N[e.b];
     const dx = b.x - a.x, dy = b.y - a.y, dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    const target = 74 + Math.abs(a.layer - b.layer) * 38;   // slightly longer springs
-    const f = 0.025 * (dist - target);
+    const target = 88 + Math.abs(a.layer - b.layer) * 42;   // やや長いバネ（潰れ防止）
+    const f = 0.02 * (dist - target);
     const fx = f * dx / dist, fy = f * dy / dist;
     a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
   });
   N.forEach(n => {
-    n.vx += (G.cx - n.x) * 0.006; n.vy += (G.cy - n.y) * 0.006;
+    n.vx += (G.cx - n.x) * 0.004; n.vy += (G.cy - n.y) * 0.004;   // 中心引力は弱め（広がりを保つ）
     if (n === G.drag) { n.vx = 0; n.vy = 0; return; }
     n.vx *= 0.86; n.vy *= 0.86; n.x += n.vx * G.alpha; n.y += n.vy * G.alpha;
   });
@@ -1293,16 +1334,19 @@ function gDraw() {
     ctx.font = (bold ? "bold " : "") + (isRoot ? 18 : Math.round(10 + n.weight * 1.4)) + "px system-ui, sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "bottom";
     const lab = n.label.length > 22 ? n.label.slice(0, 21) + "…" : n.label;
-    const ly = n.y - r - 5;
-    if (bold) {                             // 強調ノードはラベルを下地つきで読みやすく
-      const tw = ctx.measureText(lab).width, pad = 6 / view.k;
+    if (bold) {                             // 強調ノードは下地つき・文字を下地の中央に（欠けない）
+      const fs = isRoot ? 18 : 13, th = fs + 8, tw = ctx.measureText(lab).width + 14;
+      const screenY = n.y * view.k + view.y;
+      const above = screenY > 60;           // 画面上端に近ければ下に描いてクリップ回避
+      const cyP = above ? (n.y - r - 7 - th / 2) : (n.y + r + 7 + th / 2);
+      ctx.globalAlpha = on ? 0.96 : 0.12;
       ctx.fillStyle = isRoot ? "#7c2d12" : "#111";
-      ctx.globalAlpha = on ? 0.95 : 0.12;
-      ctx.fillRect(n.x - tw / 2 - pad, ly - (isRoot ? 20 : 17), tw + pad * 2, (isRoot ? 22 : 19));
+      ctx.fillRect(n.x - tw / 2, cyP - th / 2, tw, th);
       ctx.globalAlpha = on ? 1 : 0.12;
-      ctx.fillStyle = "#fff"; ctx.fillText(lab, n.x, ly - 3);
+      ctx.fillStyle = "#fff"; ctx.textBaseline = "middle"; ctx.fillText(lab, n.x, cyP + 1);
+      ctx.textBaseline = "bottom";
     } else {
-      ctx.fillStyle = "#1d2430"; ctx.fillText(lab, n.x, ly);
+      ctx.fillStyle = "#1d2430"; ctx.fillText(lab, n.x, n.y - r - 5);
     }
   });
   ctx.globalAlpha = 1;
@@ -1493,8 +1537,8 @@ function gActions(n) {
   // requested aspect of W). No reuse of the previously-entered word's data.
   const W = q || L;
   return [
-    { t: "🎯 この語を中心に展開（新たな第1階層に）", fn: () => originRecenter(W) },
-    { t: "🔍 この語を深く調べる（意味・原点・変容）", fn: () => originRecenter(W, { scrollTo: "card-origin" }) },
+    { t: "🎯 この語を地図の中心に据え直す（グラフを再構成）", fn: () => originRecenter(W) },
+    { t: "📖 この語の詳細へ（下の意味・原点カードへ移動）", fn: () => originRecenter(W, { scrollTo: "card-origin" }) },
     { t: "⚠ 埋没した原語を見る", fn: () => originRecenter(W, { scrollTo: "card-collapse" }) },
     { t: "🌍 多言語での言い方を見る", fn: () => originRecenter(W, { scrollTo: "card-breadth" }) },
     { t: "✍ 深掘り探索プロンプトを作る", fn: () => ds(W) },
@@ -1524,6 +1568,7 @@ function gMenuEdge(cx, cy, ei) {
 }
 function gShowMenu(cx, cy, title, items) {
   gMenuClose();
+  if (G) { G.lastX = cx; G.lastY = cy; }   // 処理中インジケータを選択付近に出すため記録
   const m = document.createElement("div");
   m.id = "graph-menu";
   m.innerHTML = `<div class="gm-title" title="ドラッグで移動できます">⠿ ${esc(title)}</div>` + items.map((it, i) =>

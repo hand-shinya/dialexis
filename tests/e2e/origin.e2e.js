@@ -83,10 +83,10 @@ function log(name, ok, detail) { results.push({ name, ok, detail }); console.log
   // click a menu item: '深く調べる'
   let clicked = false;
   if (await page.locator("#graph-menu").count()) {
-    const item = page.locator(".gm-item", { hasText: "深く調べる" });
+    const item = page.locator(".gm-item", { hasText: "詳細へ" });
     if (await item.count()) { await item.first().click(); await page.waitForTimeout(400); clicked = true; }
   }
-  log("menu item '深く調べる' clickable", clicked);
+  log("menu item (詳細へ) clickable", clicked);
 
   // 3. click an ORIGINAL node (Entfremdung) → menu → 共起
   await page.waitForTimeout(500);
@@ -193,7 +193,7 @@ function log(name, ok, detail) { results.push({ name, ok, detail }); console.log
   if (es) {
     await page.mouse.move(box2.x + es.sx, box2.y + es.sy); await page.mouse.down(); await page.mouse.up();
     await page.waitForTimeout(200);
-    const item = page.locator(".gm-item", { hasText: "深く調べる" });
+    const item = page.locator(".gm-item", { hasText: "中心に据え直す" });
     if (await item.count()) {
       await item.first().click();
       for (let i = 0; i < 30; i++) { freshWord = await page.evaluate(() => { const t = document.querySelector(".theword"); return t ? t.textContent : ""; }); if (/Entfremdung/.test(freshWord)) break; await page.waitForTimeout(300); }
