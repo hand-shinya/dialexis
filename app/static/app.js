@@ -1520,6 +1520,31 @@ async function gAnatomyPanel(word) {
   body.innerHTML = h;
 }
 
+// 並置比較カード（第三者提案・半田様承認の方向）: 訳語の意味と原語の意味を左右に並べ、機械が
+// 差分を断定せず、人が自分の目で「字面が隠しているもの（対話性など）」を発見する（並ぶことの喜び）。
+// 既存の /api/origin(日本語語義) と /api/anatomy(原語の構成要素・連鎖) を合成。RAM/新API不要。
+async function gContrastPanel(word) {
+  const jp = LANG === "ja";
+  const p = gPanel((jp ? "訳語と原語の意味を並べて比べる：" : "Contrast: ") + word, `<p class="muted">${jp ? "日本語訳の意味と、原語の意味を並べて取得中…" : "…"}</p>`);
+  let o = {}, a = {};
+  try { [o, a] = await Promise.all([api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}`), api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`)]); } catch (e) {}
+  const jaMean = (o.general_meaning || []).map(s => `<li>${esc(s.length > 200 ? s.slice(0, 200) + "…" : s)}</li>`).join("") || `<li class="muted">${jp ? "（日本語語義を取得できず）" : "—"}</li>`;
+  const cw = o.collapse_warning;
+  const jaCollapse = cw && cw.lemmas && cw.lemmas.length ? `<p class="srcline">${jp ? "※この一語に埋没した原語：" : "collapsed: "}${cw.lemmas.map(l => esc(l.lemma)).join("・")}</p>` : "";
+  const comps = (a.components || []).map(c => `<li><b lang="grc">${esc(c.part)}</b>＝${esc(c.meaning)}</li>`).join("");
+  const chain = (a.chain || []).map(c => `<li>${esc(c.lang)}：${esc(c.term)}${c.gloss ? `「${esc(c.gloss)}」` : ""}</li>`).join("");
+  const origHtml = (comps || chain)
+    ? `${comps ? `<p class="srcline">${jp ? "構成要素（元のパーツと意味）" : "components"}</p><ul class="ct-ul">${comps}</ul>` : ""}${chain ? `<p class="srcline">${jp ? "変容の連鎖（原語へ）" : "chain"}</p><ul class="ct-ul">${chain}</ul>` : ""}`
+    : `<p class="muted">${jp ? "（原語の語源を辿れませんでした）" : "—"}</p>`;
+  p.querySelector(".gp-body").innerHTML = `
+    <p class="muted">${jp ? "左の【日本語訳の意味】と右の【原語の意味】を、機械の判定でなく、あなた自身の目で並べて比べてください。字面が何を隠しているか（例：弁証法の「対話性」）が、並べることで見えてきます。" : "Compare the two meaning-spaces yourself."}</p>
+    <div class="contrast">
+      <div class="ct-col"><h4 class="gp-h">【日本語訳の意味空間】「${esc(word)}」</h4><ul class="ct-ul">${jaMean}</ul>${jaCollapse}</div>
+      <div class="ct-col"><h4 class="gp-h">【原語の意味空間】${a.term ? `（${esc(a.term)}）` : ""}</h4>${origHtml}</div>
+    </div>
+    <p class="srcline">${jp ? "出所つき（ja.wiktionary / en.wiktionary）・全語に普遍適用。機械が差分を断定せず、人が発見する（並ぶことの喜び・捏造しないP6）。" : "source-grounded; universal."}</p>`;
+}
+
 async function gExtPanel(term) {
   const jp = LANG === "ja";
   const p = gPanel((jp ? "外部の専門情報で深く・広く調べる：" : "External resources: ") + term,
@@ -1586,6 +1611,7 @@ function gActions(n) {
     extra = [
       { t: "📖 この語の詳細へ（下の意味・原点カードへ移動）", fn: () => originRecenter(W, { scrollTo: "card-origin" }) },
       { t: "🔬 語源と構成要素を解剖する（原義を復元）", fn: () => gAnatomyPanel(W) },
+      { t: "⚖ 訳語と原語の意味を並べて比べる（何が隠れたか）", fn: () => gContrastPanel(W) },
       { t: "⚠ 埋没した原語を見る", fn: () => originRecenter(W, { scrollTo: "card-collapse" }) },
       { t: "🌍 多言語での言い方を見る", fn: () => originRecenter(W, { scrollTo: "card-breadth" }) },
       { t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(W) },

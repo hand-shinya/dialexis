@@ -143,6 +143,11 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .shelf-item a { text-decoration: none; }
 .shelf-go, .path-go, .lens-use { color: var(--accent); }
 .shelf-x, .path-x, .lens-x { color: var(--muted); font-weight: 700; }
+/* 並置比較カード（訳語 vs 原語の意味空間） */
+.contrast { display: flex; gap: .8rem; flex-wrap: wrap; }
+.ct-col { flex: 1 1 260px; border: 1px solid var(--line); border-radius: 8px; padding: .3rem .7rem .6rem; background: var(--paper); }
+.ct-ul { margin: .2rem 0 .4rem; padding-left: 1.1rem; font-size: .88rem; line-height: 1.5; }
+.ct-ul li { margin: .2rem 0; }
 /* 語源解剖 */
 .anat-comp { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
 .anat-part { border: 1px solid var(--line); border-radius: 6px; padding: .25rem .5rem; font-size: .9rem; }
