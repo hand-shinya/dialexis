@@ -12,7 +12,9 @@
   <label><input type="checkbox" id="origin-newtab"> {{ t.origin_newtab }}</label>
 </p>
 <div id="origin-status"></div>
-<div id="origin-graph-wrap" style="display:none">
+<!-- 操作shell（ナビ＋共通メニュー）は語がある限り常設。グラフは欠損しうる子要素にする
+     （Codex対審E2の是正: graph取得失敗・root-only時にも操作帯と帰路を消さない・普遍性）。 -->
+<div id="origin-shell" style="display:none">
   <div class="graph-head">
     <button type="button" id="nav-back" class="small navbtn" title="{{ '前に戻る' if lang=='ja' else 'Back' }}" disabled>◀ {{ '戻る' if lang=='ja' else 'Back' }}</button>
     <button type="button" id="nav-fwd" class="small navbtn" title="{{ '次へ進む' if lang=='ja' else 'Forward' }}" disabled>{{ '進む' if lang=='ja' else 'Forward' }} ▶</button>
@@ -22,12 +24,15 @@
     <button type="button" id="graph-fit" class="small">{{ '俯瞰' if lang=='ja' else 'Fit' }}</button>
   </div>
   <div id="graph-lens" class="graph-lens"></div>
-  <div class="graph-stage">
-    <canvas id="origin-graph"></canvas>
-    <div id="graph-busy" style="display:none"><span class="spin"></span><span class="bt"></span></div>
+  <div id="origin-graph-wrap">
+    <div class="graph-stage">
+      <canvas id="origin-graph"></canvas>
+      <div id="graph-busy" style="display:none"><span class="spin"></span><span class="bt"></span></div>
+    </div>
+    <div id="graph-alt" style="display:none"></div>
+    <p class="srcline muted" id="graph-note"></p>
   </div>
-  <div id="graph-alt" style="display:none"></div>
-  <p class="srcline muted" id="graph-note"></p>
+  <div id="graph-thin" class="graph-thin" style="display:none"></div>
 </div>
 <div id="origin-results"></div>
 {% endblock %}

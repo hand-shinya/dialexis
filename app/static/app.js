@@ -942,7 +942,7 @@ function originInit(q) {
     });
   }
   if (q) {
-    const wrap = $("origin-graph-wrap"); if (wrap) wrap.style.display = "block";   // 初期でも枠を出し
+    originShellShow(q);   // 初期から操作shell（ナビ＋共通メニュー）を出す（graph成否に依存しない）
     gBusy(true, "「" + q + "」を探索中…");                                          // 明確な処理中表示（他画面と同じ）
     const t = originClaim(q);
     Promise.all([originGraph(q, t), originRun(q, t)]).then(() => gBusy(false)).catch(() => gBusy(false));
@@ -1241,17 +1241,37 @@ async function gCounter(claim) {
   p.querySelector(".gp-body").innerHTML = html;
 }
 
+// 操作shell（ナビ＋共通メニュー）は語がある限り常設。graph の成否に依存しない（普遍性・Codex E2是正）。
+// gActions は語だけで作れる（graphデータ不要）ので、取得前・失敗時でもメニューが出せる。
+function originShellShow(q) {
+  const sh = $("origin-shell"); if (sh) sh.style.display = "block";
+  renderTopMenu({ query: q });
+}
+// グラフ本体と「薄い/失敗」代替表示の切替。msg=null でグラフ表示、msg文字列で代替表示（メニューは常設のまま）。
+function graphThin(msg) {
+  const wrap = $("origin-graph-wrap"), thin = $("graph-thin");
+  if (msg) {
+    if (wrap) wrap.style.display = "none";
+    if (thin) { thin.style.display = "block"; thin.innerHTML = `<p class="lens-empty">${esc(msg)}</p>`; }
+  } else {
+    if (wrap) wrap.style.display = "block";
+    if (thin) { thin.style.display = "none"; thin.innerHTML = ""; }
+  }
+}
+
 async function originGraph(q, tok) {
   if (tok == null) tok = originClaim(q);   // standalone caller (e.g. 全体に戻す) claims its own token
   const wrap = $("origin-graph-wrap"), cv = $("origin-graph");
   if (!wrap || !cv) return;
+  const jp = LANG === "ja";
+  originShellShow(q);   // 取得の成否に関わらず、まず操作帯（ナビ＋共通メニュー）を出す
   let d;
   try { d = await api(`/api/origin/graph?q=${encodeURIComponent(q)}&lang=${LANG}`); }
-  catch (e) { if (!originStale(tok)) wrap.style.display = "none"; return; }
+  catch (e) { if (!originStale(tok)) graphThin(jp ? "この語では地図（重力分布）を取得できませんでした。上のメニューから解剖・並置・外部情報・組み合わせ・見方などで、この語のまま探索できます。" : "map unavailable for this word; use the menu above to explore it."); return; }
   if (originStale(tok)) return;            // 古い語の応答＝現在の語のグラフを壊さない（stale破棄）
   if (d.qid) OZ.qid = d.qid;               // 既存qidをノードから単一真実源へ伝播（後段のP11強化用）
-  if (!d.nodes || d.nodes.length <= 1) { wrap.style.display = "none"; return; }
-  wrap.style.display = "block";
+  if (!d.nodes || d.nodes.length <= 1) { graphThin(jp ? "この語では地図が薄い（データが少ない）ですが、上のメニューから解剖・並置・外部情報・組み合わせ・見方などで、この語のまま探索できます。" : "sparse map for this word; the menu above still works."); return; }
+  graphThin(null);   // グラフ本体を表示（薄い/失敗表示を隠す）
   G_raw = d;
   // 選んでいたレンズをこの語でも保つ（見方の連続性）。ただし新しい語でそのフィルタが空なら俯瞰へ。
   const cur = LENSES.find(x => x.key === G_lens) || LENSES[0];
@@ -1703,6 +1723,7 @@ function _gmFill(m, title, items) {
 function gMenuRetarget(n) {
   const m = $("graph-menu"); if (!m || !n || G.menuNode === n) return;
   G.menuNode = n;
+  if (MENUCTX) MENUCTX.n = n;   // ホバー追従で対象が変わったら戻る文脈も更新（Codex E2是正: 元ノードへ誤帰還を防ぐ）
   _gmFill(m, (LANG === "ja" ? "選択：" : "Selected: ") + n.label, gActions(n));
 }
 function gShowMenu(cx, cy, title, items) {
@@ -2245,3 +2266,13 @@ async function gDiscoverDims(q, tok) {
     <div class="dim-disc-list">${d.dimensions.map(link).join("")}</div>
     <p class="srcline muted">${jp ? "出所" : "source"}: <a href="${esc(d.article_url)}" target="_blank">Wikipedia (${LANG})「${esc(d.title)}」</a>。固定の共通次元と違い、語ごとに違う切り口が出ます。</p>`;
 }
+
+// テスト用の読み取り専用アクセサ（本番でも無害。E2Eが内部状態を検査するため。内部を書き換えない）。
+try {
+  window.__dx = {
+    get G() { return G; },
+    get G_raw() { return G_raw; },
+    get MENUCTX() { return MENUCTX; },
+    setPanelFromMenu(v) { _panelFromMenu = v; },
+  };
+} catch (e) {}

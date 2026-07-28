@@ -101,8 +101,11 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .facet-col { border-top: 3px solid var(--line); padding-top: .6rem; }
 .facet-col h4 { font-family: system-ui, sans-serif; font-size: .92rem; margin: 0 0 .5rem; }
 /* 言語空間の重力グラフ */
-#origin-graph-wrap { border: 1px solid var(--line); border-radius: 8px; background: #fcfbf8;
+/* 操作shell＝ナビ＋共通メニュー＋グラフを一つの枠に（グラフは欠損しうる子・普遍性） */
+#origin-shell { border: 1px solid var(--line); border-radius: 8px; background: #fcfbf8;
   margin: 1rem 0; overflow: hidden; }
+#origin-graph-wrap { background: #fcfbf8; }
+.graph-thin { padding: .8rem; }
 .graph-head { display: flex; align-items: center; gap: .8rem; padding: .5rem .8rem;
   border-bottom: 1px solid var(--line); font-family: system-ui, sans-serif; }
 .graph-title { font-size: .78rem; color: var(--muted); flex: 1; }

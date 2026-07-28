@@ -268,12 +268,14 @@ async def node(word: str, lang: str = "ja") -> dict:
         by_name = {}
 
         def _add(name, term):
-            term = re.sub(r"'''?|\[\[|\]\]", "", term or "").strip()
-            if not name or not term:
+            term = re.sub(r"'''?|\[\[|\]\]", "", term or "")
+            term = re.split(r"\{\{|\}\}|[<>{}|]", term)[0]   # 入れ子template/タグ/pipe以降を捨てる（{{Post-nominals 混入バグ是正）
+            term = term.strip(" \t·・-–—,、。;；")
+            if not name or not term or len(term) > 60:
                 return
             if name not in by_name or len(term) > len(by_name[name]["term"]):
                 by_name[name] = {"name": name, "term": term}
-        for code, term in re.findall(r"\{\{lang-([a-z-]+)\|([^|}\n]+)", wikitext[:2500]):
+        for code, term in re.findall(r"\{\{lang-([a-z-]+)\|([^|}{\n]+)", wikitext[:2500]):
             base = code.split("-")[0]
             _add(_CODE.get(code) or _CODE.get(base) or base, term)
         for ab, term in re.findall(
