@@ -1277,14 +1277,33 @@ function gDraw() {
   });
   nodes.forEach((n, i) => {
     const on = !hl || hl.nset.has(i);
-    ctx.globalAlpha = on ? 1 : 0.14;
-    ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 7); ctx.fillStyle = GKIND[n.kind] || "#888"; ctx.fill();
-    if (n === G.hover) { ctx.lineWidth = 2 / view.k; ctx.strokeStyle = "#111"; ctx.stroke(); }
-    ctx.fillStyle = "#1d2430";
-    ctx.font = (n.layer === 1 ? "bold 15px" : Math.round(10 + n.weight * 1.4) + "px") + " system-ui, sans-serif";
+    const isRoot = n.layer === 1;          // 入力語（現在地）＝はっきり目立たせる
+    const isHover = n === G.hover;          // ホバー中＝何を選んでいるか明瞭に
+    ctx.globalAlpha = on ? 1 : 0.12;
+    const r = n.r * (isHover ? 1.4 : (isRoot ? 1.25 : 1));
+    if (isRoot || isHover) {                // ハロー（外側の輪）で強調
+      ctx.beginPath(); ctx.arc(n.x, n.y, r + (isRoot ? 9 : 6), 0, 7);
+      ctx.fillStyle = isRoot ? "rgba(194,65,12,0.20)" : "rgba(17,17,17,0.12)"; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7);
+    ctx.fillStyle = isRoot ? "#c2410c" : (GKIND[n.kind] || "#888"); ctx.fill();
+    if (isRoot) { ctx.lineWidth = 3 / view.k; ctx.strokeStyle = "#7c2d12"; ctx.stroke(); }
+    else if (isHover) { ctx.lineWidth = 3 / view.k; ctx.strokeStyle = "#111"; ctx.stroke(); }
+    const bold = isRoot || isHover;
+    ctx.font = (bold ? "bold " : "") + (isRoot ? 18 : Math.round(10 + n.weight * 1.4)) + "px system-ui, sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "bottom";
     const lab = n.label.length > 22 ? n.label.slice(0, 21) + "…" : n.label;
-    ctx.fillText(lab, n.x, n.y - n.r - 2);
+    const ly = n.y - r - 5;
+    if (bold) {                             // 強調ノードはラベルを下地つきで読みやすく
+      const tw = ctx.measureText(lab).width, pad = 6 / view.k;
+      ctx.fillStyle = isRoot ? "#7c2d12" : "#111";
+      ctx.globalAlpha = on ? 0.95 : 0.12;
+      ctx.fillRect(n.x - tw / 2 - pad, ly - (isRoot ? 20 : 17), tw + pad * 2, (isRoot ? 22 : 19));
+      ctx.globalAlpha = on ? 1 : 0.12;
+      ctx.fillStyle = "#fff"; ctx.fillText(lab, n.x, ly - 3);
+    } else {
+      ctx.fillStyle = "#1d2430"; ctx.fillText(lab, n.x, ly);
+    }
   });
   ctx.globalAlpha = 1;
   ctx.restore();
@@ -1450,7 +1469,7 @@ function gActions(n) {
     const wp = () => window.open(`https://ja.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(sq)}`, "_blank");
     return [
       { t: `🔍 ${who}を調べる（経歴・著作・出典を取得）`, fn: () => gAuthorInvestigate(sq, L) },
-      { t: `🎯 ${who}を中心に（${jp ? "この語の文脈を保ち著作へ" : "keep context, focus works"}）`, fn: () => gFocusSubtree(G.nodes.indexOf(n)) },
+      { t: `🎯 ${who}を中心に据えて展開（${jp ? "新たな第1階層に・経歴/著作/関係を豊かに" : "recenter richly"}）`, fn: () => originRecenter(sq) },
       { t: `📖 ${who}の系譜メモ（この語での原語）`, fn: () => gAuthorPanel(n) },
       { t: `🌐 外部の専門情報で調べる（多言語・新タブ）`, fn: () => gExtPanel(sq) },
       { t: `✍ 深掘り探索プロンプトを作る（${who}）`, fn: () => ds(sq) },
@@ -1507,12 +1526,26 @@ function gShowMenu(cx, cy, title, items) {
   gMenuClose();
   const m = document.createElement("div");
   m.id = "graph-menu";
-  m.innerHTML = `<div class="gm-title">${esc(title)}</div>` + items.map((it, i) =>
+  m.innerHTML = `<div class="gm-title" title="ドラッグで移動できます">⠿ ${esc(title)}</div>` + items.map((it, i) =>
     `<div class="gm-item${it.soon ? " gm-soon" : ""}" data-i="${i}">${esc(it.t)}${it.soon ? "（次段）" : ""}</div>`).join("");
   document.body.appendChild(m);
-  const w = m.offsetWidth || 300, x = Math.min(cx, window.innerWidth - w - 10),
-        y = Math.min(cy + window.scrollY, window.scrollY + window.innerHeight - m.offsetHeight - 10);
-  m.style.left = Math.max(6, x) + "px"; m.style.top = Math.max(6, y) + "px";
+  // ノードを覆わないよう、クリック点の右（はみ出す時は左）へずらして配置する
+  const w = m.offsetWidth || 300, h = m.offsetHeight || 200, gap = 24;
+  let x = cx + gap;
+  if (x + w > window.innerWidth - 10) x = cx - w - gap;
+  x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+  let y = cy + window.scrollY - 12;
+  y = Math.max(window.scrollY + 8, Math.min(y, window.scrollY + window.innerHeight - h - 8));
+  m.style.left = x + "px"; m.style.top = y + "px";
+  // タイトルをドラッグして移動できる（掴んでいる対象を隠さないため）
+  const tt = m.querySelector(".gm-title");
+  tt.addEventListener("pointerdown", (ev) => {
+    ev.stopPropagation(); ev.preventDefault();
+    const sx = ev.clientX, sy = ev.clientY, ox = parseFloat(m.style.left), oy = parseFloat(m.style.top);
+    const mv = (e) => { m.style.left = (ox + e.clientX - sx) + "px"; m.style.top = (oy + e.clientY - sy) + "px"; };
+    const up = () => { document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up); };
+    document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up);
+  });
   // BUGFIX: keep the item's pointerdown from reaching the document-level closer,
   // which previously removed the menu on the SAME pointerdown so the click that
   // runs the action never landed (→ every item looked dead).
