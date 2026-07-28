@@ -11,12 +11,14 @@ const BASE = process.argv[2] || "http://219.94.244.239:8000";
   const ok = (n, c, d) => { R.push(c); console.log(`${c ? "PASS" : "FAIL"}  ${n}${d ? "  — " + d : ""}`); };
 
   await page.goto(`${BASE}/origin?q=%E7%96%8E%E5%A4%96&lang=ja`, { waitUntil: "networkidle" });
-  await page.waitForTimeout(2500);
-  // 語ノード(root)をクリック→メニュー
+  // レイアウトが沈静するまで待つ（強化した力学で settle が長め）
+  await page.waitForFunction(() => typeof G !== "undefined" && G && G.running === false, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  // 語ノード(root)をクリック→メニュー（座標はクリック直前に取得）
   const box = await page.$eval("#origin-graph", el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y }; });
   const pt = await page.evaluate(() => { const n = G.nodes.find(x => x.kind === "word"); return { x: n.x * G.view.k + G.view.x, y: n.y * G.view.k + G.view.y }; });
   await page.mouse.click(box.x + pt.x, box.y + pt.y);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(600);
   ok("語ノードのメニューが出る", !!(await page.$("#graph-menu")));
   await page.$$eval("#graph-menu .gm-item", els => { const t = els.find(e => /組み合わせる/.test(e.textContent)); if (t) { const r = t.getBoundingClientRect(); t.dispatchEvent(new MouseEvent("click", { bubbles: true })); } });
   await page.waitForTimeout(600);
