@@ -1535,6 +1535,7 @@ function gActions(n) {
   const CORE_HEAD = [
     { t: "🎯 これを地図の中心に据え直す（グラフを再構成）", fn: () => originRecenter(W) },
     { t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", fn: () => gCombinePanel(W) },
+    { t: "👓 見方を選ぶ（視点・目的・難易度）", fn: () => gPerspectivePanel(W) },
   ];
   const CORE_TAIL = [
     { t: "🌐 外部の専門情報で調べる（各サイトの言語で・新タブ）", fn: () => gExtPanel(W) },
@@ -1672,6 +1673,53 @@ async function gCombineRun(a, b, op) {
   const note = $("graph-note"); if (note) note.textContent = d.note || "";
   gBuild(d);
   const w = $("origin-graph-wrap"); if (w) w.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// B: 視点・目的・難易度＝同じ概念を「あなたの見方」で。選ぶと、その見方に合う入口(言語対応の
+// 外部源)＋その見方で深掘りするAI用プロンプト(あなたのAIに貼る)を作る。ポータル内LLMは使わない。
+const PERSPECTIVES = {
+  "子ども向け": { cur: ["Wikipedia 日", "コトバンク"], frame: "やさしい言葉で、身近な例や物語を交え、なぜ面白いかを伝える。専門用語は避ける。" },
+  "一般向け": { cur: ["Wikipedia 日", "Wikipedia 英", "Britannica"], frame: "一般の大人に、背景と要点をバランスよく。" },
+  "専門家向け": { cur: ["Stanford哲学百科 SEP", "PhilPapers", "OpenAlex", "Perseus 希/羅"], frame: "専門家向けに、一次文献・標準的な参照箇所・論争の所在を厳密に。原語で確認する。" },
+  "批判的に": { cur: ["Stanford哲学百科 SEP", "PhilPapers"], frame: "批判的視点で、主要な反論・対立仮説・弱点を steelman（最強の形）で検討する。" },
+  "歴史的に": { cur: ["Wikipedia 独", "Perseus 希/羅", "Project Gutenberg"], frame: "歴史的・通時的に、概念の起源・変遷・再評価を年代順に辿る。" },
+  "実用（AI・仕事）": { cur: ["OpenAlex", "Google Scholar"], frame: "実用・応用の観点で、現代の労働・消費・AI・制度への含意を具体的に。" },
+};
+const PURPOSES = { "知りたい": "", "レポート": "レポートに使える構成（主張・根拠・引用）で。", "議論の材料": "議論のための論点・賛否・具体例を。", "授業で使う": "授業で使える説明・問い・活動案を。", "面白がる": "意外な関係やセレンディピティ、驚きのある切り口を。" };
+const LEVELS = { "やさしい": "小学生〜中学生にも分かる平易さで。", "ふつう": "高校〜一般の水準で。", "専門的": "専門・研究水準で厳密に。" };
+
+async function gPerspectivePanel(word) {
+  const jp = LANG === "ja", sel = { p: "一般向け", u: "知りたい", l: "ふつう" };
+  const chips = (obj, g, cur) => Object.keys(obj).map(k => `<button type="button" class="psp-chip${k === cur ? " on" : ""}" data-g="${g}" data-v="${esc(k)}">${esc(k)}</button>`).join("");
+  const html = `<p class="muted">${jp ? "同じ概念を、あなたの見方で。視点・目的・難易度を選ぶと、その見方に合う入口と、その見方で深掘りするAI用プロンプトを作ります。" : "View this concept your way."}</p>
+    <div class="psp-g"><span class="psp-l">視点</span>${chips(PERSPECTIVES, "p", sel.p)}</div>
+    <div class="psp-g"><span class="psp-l">目的</span>${chips(PURPOSES, "u", sel.u)}</div>
+    <div class="psp-g"><span class="psp-l">難易度</span>${chips(LEVELS, "l", sel.l)}</div>
+    <div class="psp-ops"><button type="button" id="psp-go" class="cmb-op">この見方で見る</button></div>
+    <div id="psp-out"></div>`;
+  const p = gPanel((jp ? "見方を選ぶ：" : "View: ") + word, html);
+  p.querySelectorAll(".psp-chip").forEach(c => c.addEventListener("click", () => {
+    const g = c.dataset.g; p.querySelectorAll(`.psp-chip[data-g="${g}"]`).forEach(x => x.classList.remove("on"));
+    c.classList.add("on"); sel[g] = c.dataset.v;
+  }));
+  p.querySelector("#psp-go").addEventListener("click", async () => {
+    const out = p.querySelector("#psp-out");
+    out.innerHTML = `<p class="muted">${jp ? "この見方の入口とプロンプトを作成中…" : "building…"}</p>`;
+    const P = PERSPECTIVES[sel.p], goal = [P.frame, PURPOSES[sel.u], LEVELS[sel.l]].filter(Boolean).join(" ");
+    const V = await resolveVariants(word);
+    const all = extResources(word, V), flat = {};
+    for (const cat in all) all[cat].forEach(([lbl, url]) => flat[lbl] = url);
+    const curated = P.cur.filter(n => flat[n]).map(n => `<a class="ext-link" href="${esc(flat[n])}" target="_blank" rel="noopener">${esc(n)}</a>`).join(" ");
+    let prompt = "";
+    try { const d = await api("/api/deepsearch", { method: "POST", body: { topic: word, goal, service: "generic", lang: LANG } }); prompt = d.level0 || ""; }
+    catch (e) { prompt = ""; }
+    out.innerHTML = `<h4 class="gp-h">${jp ? "この見方に合う入口（各サイトの言語で・新タブ）" : "Entry points"}</h4><div class="ext-cat">${curated || "—"}</div>
+      <h4 class="gp-h">${jp ? `この見方（${esc(sel.p)}／${esc(sel.u)}／${esc(sel.l)}）で深掘りするAI用プロンプト` : "Tailored deep-search prompt"}</h4>
+      ${prompt ? `<textarea class="psp-prompt" readonly>${esc(prompt)}</textarea>
+      <p class="srcline"><button type="button" id="psp-copy" class="cmb-op">コピー</button> ${jp ? "→ お使いのAI（ChatGPT/Gemini/Claude等）に貼って実行してください" : "→ paste into your AI"}</p>` : `<p class="muted">${jp ? "プロンプト生成に失敗しました。" : "failed."}</p>`}`;
+    const cp = p.querySelector("#psp-copy");
+    if (cp) cp.addEventListener("click", () => { const ta = p.querySelector(".psp-prompt"); ta.select(); try { document.execCommand("copy"); } catch (e) {} cp.textContent = jp ? "コピーしました" : "copied"; });
+  });
 }
 // 原語空間の共起（DWDS）— the benchmark's『関連概念群』dimension, made real.
 // BUGFIX (Codex): a non-Latin node label (Japanese 疎外) can't be sent to DWDS
