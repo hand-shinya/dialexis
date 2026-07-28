@@ -1026,7 +1026,7 @@ async def api_culture(q: str, lang: str = "ja"):
 async def api_websearch(q: str, lang: str = "ja"):
     """一般ウェブ検索ボックス（SearXNG）。Wikipedia系＝構造の背骨に対し、一般ウェブの広さ。
     賛否・順位はエンジン由来（中立に列挙）。出所つき・新タブ。未稼働時は正直に空。"""
-    res = await searxng.search(q, lang, n=20)
+    res = await searxng.search(q, lang, n=20, drop_commercial=True)
     cards = [{"title": r["title"], "url": r["url"], "content": r["content"][:160], "engine": r["engine"]}
              for r in res if r["title"] and r["url"]]
     return {"query": q, "queried_at": now(), "cards": cards[:16],
@@ -1045,7 +1045,6 @@ _GRAV_DOMAINS = {
     "芸術・文学": ["芸術", "美術", "文学", "小説", "詩", "音楽", "映画", "建築", "デザイン"],
     "科学・技術": ["科学", "物理", "数学", "化学", "工学", "技術", "情報", "コンピュータ", "医学"],
     "心理": ["心理", "精神", "認知", "無意識"],
-    "企業・商業": ["株式会社", "有限会社", "企業", "会社", "ビジネス", "採用", "製品", "店舗"],
 }
 
 
@@ -1063,7 +1062,7 @@ async def api_gravity(q: str, lang: str = "ja"):
     連続展開する（半田様設計）。リゾーム→哲学/植物が重い→『リゾーム 哲学』のAND検索で
     ドゥルーズ等を次階層に。頻度＝重力に従い、重い枝ほど大きく深く掘る。SearXNG依存・鍵不要。"""
     root = {"id": "root", "label": q, "kind": "word", "layer": 1, "weight": 3.0, "q": q}
-    res = await searxng.search(q, lang, n=20)
+    res = await searxng.search(q, lang, n=20, drop_commercial=True)
     if not res:
         return {"query": q, "nodes": [root], "edges": [],
                 "note": "一般ウェブ検索（SearXNG）が利用できないため重力分布を測れませんでした。"}
@@ -1079,7 +1078,7 @@ async def api_gravity(q: str, lang: str = "ja"):
         nodes.append({"id": did, "label": f"{d}（{g}）", "kind": "appdomain", "layer": 2,
                       "weight": round(1.6 + 2.6 * g / maxg, 2)})
         edges.append({"from": "root", "to": did, "strength": 0.8 + 0.6 * g / maxg})
-        sub = await searxng.search(q, lang, extra=_GRAV_DOMAINS[d][0], n=12)
+        sub = await searxng.search(q, lang, extra=_GRAV_DOMAINS[d][0], n=12, drop_commercial=True)
         ents, seene = [], set()
         for r in sub:                       # まずWikipedia項目（きれいな実体名）
             t = _wiki_title_from_url(r["url"])
