@@ -914,6 +914,8 @@ function originInit(q) {
   if (nf) nf.addEventListener("click", () => navGo(1));
   const pl = $("graph-play");
   if (pl) pl.addEventListener("click", () => gPlayPanel());
+  const sh = $("graph-shelf");
+  if (sh) sh.addEventListener("click", () => gShelfPanel());
   if (q) { NAV.stack = [q]; NAV.idx = 0; navUpdate(); }   // 初期の語を履歴に
   const res = $("origin-results");
   if (res && !res._dimBound) {
@@ -1541,6 +1543,7 @@ function gActions(n) {
   ];
   const CORE_TAIL = [
     { t: "🌐 外部の専門情報で調べる（各サイトの言語で・新タブ）", fn: () => gExtPanel(W) },
+    { t: "⭐ 棚に追加（あとで見る）", fn: () => shelfAdd(W) },
     { t: "✍ 深掘り探索プロンプトを作る", fn: () => ds(W) },
     { t: "🔗 新しいタブでこの語を開く", fn: nt },
   ];
@@ -1733,6 +1736,43 @@ function gPlayPanel() {
     out.innerHTML = `<p><b>${esc(qtext)}</b></p><p><button type="button" id="quiz-rev" class="cmb-op">${jp ? "答えを見る" : "reveal"}</button> <span id="quiz-ans"></span></p>`;
     p.querySelector("#quiz-rev").addEventListener("click", () => { p.querySelector("#quiz-ans").innerHTML = `→ <b>${esc(ans)}</b>`; });
   });
+}
+
+// D: 収集・経路保存・自分のレンズ（localStorage・鍵不要・自分で拡張し蓄積する＝並ぶことの喜び）
+function _lsGet(k, def) { try { return JSON.parse(localStorage.getItem(k)) || def; } catch (e) { return def; } }
+function _lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function gToast(msg) { let t = $("dx-toast"); if (!t) { t = document.createElement("div"); t.id = "dx-toast"; document.body.appendChild(t); } t.textContent = msg; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => { t.style.display = "none"; }, 1800); }
+function shelfAdd(w) { const s = _lsGet("dx_shelf", []); if (w && !s.includes(w)) { s.push(w); _lsSet("dx_shelf", s); } gToast(`「${w}」を棚に追加しました`); }
+
+function gShelfPanel() {
+  const jp = LANG === "ja";
+  const cur = (G_raw && G_raw.query) || ((document.querySelector('.searchbox input[name=q]') || {}).value) || "";
+  const shelf = _lsGet("dx_shelf", []), paths = _lsGet("dx_paths", []), lenses = _lsGet("dx_lenses", []);
+  const empty = `<span class="muted">${jp ? "（まだありません）" : "(empty)"}</span>`;
+  const chip = w => `<span class="shelf-item"><a href="#" class="shelf-go" data-w="${esc(w)}">${esc(w)}</a><a href="#" class="shelf-x" data-w="${esc(w)}" title="削除">×</a></span>`;
+  const html = `<p class="muted">${jp ? "気に入った概念を集め、辿った道を保存し、自分の観点（レンズ）を作れます。あなただけの知の航海図です（この端末に保存）。" : "Your own collection, paths and lenses (saved on this device)."}</p>
+    <h4 class="gp-h">⭐ ${jp ? "棚（集めた概念）" : "Shelf"}</h4>
+    <p><button type="button" id="shelf-add" class="cmb-op">${jp ? `今の「${esc(cur)}」を棚に追加` : "add current"}</button></p>
+    <div class="shelf-list">${shelf.length ? shelf.map(chip).join("") : empty}</div>
+    <h4 class="gp-h">🧭 ${jp ? "探索の道（辿った経路を保存・再生）" : "Paths"}</h4>
+    <p><button type="button" id="path-save" class="cmb-op">${jp ? "今の探索の道を保存" : "save path"}</button></p>
+    <div class="shelf-list">${paths.length ? paths.map((pt, i) => `<span class="shelf-item"><a href="#" class="path-go" data-i="${i}">${esc(pt[0])}→…→${esc(pt[pt.length - 1])}（${pt.length}歩）</a><a href="#" class="path-x" data-i="${i}">×</a></span>`).join("") : empty}</div>
+    <h4 class="gp-h">🔬 ${jp ? "自分のレンズ（観点を作って拡張）" : "My lenses"}</h4>
+    <p class="srcline muted">${jp ? "観点の名前と語（カンマ区切り）を決めると、任意の概念をその観点で絞れます。例：名前「労働から」語「労働,搾取,賃金」" : ""}</p>
+    <div class="psp-g"><input id="lens-name" class="cmb-in" style="width:30%" placeholder="${jp ? "観点の名前" : "name"}"/><input id="lens-words" class="cmb-in" style="width:58%" placeholder="${jp ? "観点の語（カンマ区切り）" : "words"}"/></div>
+    <p><button type="button" id="lens-save" class="cmb-op">${jp ? "レンズを保存" : "save"}</button></p>
+    <div class="shelf-list">${lenses.length ? lenses.map((l, i) => `<span class="shelf-item"><a href="#" class="lens-use" data-i="${i}">${esc(l.name)}</a><a href="#" class="lens-x" data-i="${i}">×</a></span>`).join("") : empty}</div>`;
+  const p = gPanel(jp ? "棚：集める・道を保存・自分のレンズ" : "Shelf", html);
+  const refresh = () => { p.remove(); gShelfPanel(); };
+  p.querySelector("#shelf-add").addEventListener("click", () => { if (cur) { shelfAdd(cur); refresh(); } });
+  p.querySelectorAll(".shelf-go").forEach(a => a.addEventListener("click", e => { e.preventDefault(); p.remove(); originRecenter(a.dataset.w); }));
+  p.querySelectorAll(".shelf-x").forEach(a => a.addEventListener("click", e => { e.preventDefault(); _lsSet("dx_shelf", _lsGet("dx_shelf", []).filter(w => w !== a.dataset.w)); refresh(); }));
+  p.querySelector("#path-save").addEventListener("click", () => { if (NAV.stack.length > 1) { const ps = _lsGet("dx_paths", []); ps.push(NAV.stack.slice()); _lsSet("dx_paths", ps); refresh(); } else gToast(jp ? "道がまだ1歩です" : "path too short"); });
+  p.querySelectorAll(".path-go").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const pt = _lsGet("dx_paths", [])[+a.dataset.i]; if (pt) { NAV.stack = pt.slice(); NAV.idx = pt.length - 1; navUpdate(); p.remove(); originRecenter(pt[pt.length - 1], { nav: true }); } }));
+  p.querySelectorAll(".path-x").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const ps = _lsGet("dx_paths", []); ps.splice(+a.dataset.i, 1); _lsSet("dx_paths", ps); refresh(); }));
+  p.querySelector("#lens-save").addEventListener("click", () => { const name = p.querySelector("#lens-name").value.trim(), words = p.querySelector("#lens-words").value.trim(); if (name && words) { const ls = _lsGet("dx_lenses", []); ls.push({ name, words }); _lsSet("dx_lenses", ls); refresh(); } });
+  p.querySelectorAll(".lens-use").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const l = _lsGet("dx_lenses", [])[+a.dataset.i]; if (l && cur) { p.remove(); gCombineRun(cur, l.words.split(/[,、\s]+/).filter(Boolean).join(" "), "and"); } else gToast(jp ? "先に語を選んでください" : "pick a word"); }));
+  p.querySelectorAll(".lens-x").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const ls = _lsGet("dx_lenses", []); ls.splice(+a.dataset.i, 1); _lsSet("dx_lenses", ls); refresh(); }));
 }
 
 async function gPerspectivePanel(word) {
