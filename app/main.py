@@ -23,7 +23,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import db
 from .db import get_conn, init_db, now, rows
-from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept, searxng
+from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept, searxng, etymology
 from .connectors.base import cached_get_json, cached_get_text
 from . import citations as cites
 from . import deepsearch
@@ -1220,6 +1220,18 @@ async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
     note = (f"「{a}」を「{b}」で絞り込み（AND）。両方に関わるものだけ。" if op == "and"
             else f"「{a}」から「{b}」を除外（NOT）。" if op == "not" else f"「{a}」の一般ウェブ。")
     return {"query": a, "nodes": nodes, "edges": edges, "note": note + "クリックでその語へ。", "queried_at": now()}
+
+
+@app.get("/api/anatomy")
+async def api_anatomy(q: str, lang: str = "ja"):
+    """普遍的な語源解剖: 語を原語へ辿り、構成要素(prefix+root)と連鎖を意味glossつきで返す。
+    翻訳で見えなくなった原義(弁証法→dia-=間・対話)を原語の実文書(Wiktionary)に接地して復元。"""
+    v = await concept.variants(q, lang)
+    labels = (v["data"] if not v["error"] else {}).get("labels", {})
+    cands = [labels.get("en"), labels.get("la"), labels.get("de"), labels.get("grc"), labels.get("fr")]
+    r = await etymology.anatomy(q, cands, lang)
+    r.update({"query": q, "queried_at": now()})
+    return r
 
 
 @app.get("/api/variants")

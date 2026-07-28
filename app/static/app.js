@@ -929,7 +929,12 @@ function originInit(q) {
       if (di) { e.preventDefault(); gExtPanel(di.dataset.q); return; }
     });
   }
-  if (q) { const t = originClaim(q); originGraph(q, t); originRun(q, t); }
+  if (q) {
+    const wrap = $("origin-graph-wrap"); if (wrap) wrap.style.display = "block";   // 初期でも枠を出し
+    gBusy(true, "「" + q + "」を探索中…");                                          // 明確な処理中表示（他画面と同じ）
+    const t = originClaim(q);
+    Promise.all([originGraph(q, t), originRun(q, t)]).then(() => gBusy(false)).catch(() => gBusy(false));
+  }
 }
 
 // 探索の履歴（戻る/進む）。originRecenter で語を辿るたびに積む（nav操作時は積み直さない）。
@@ -1493,6 +1498,28 @@ function extResourcesHtml(term, V) {
   }
   return h;
 }
+// 普遍的な語源解剖（半田様指摘の弁証法ケース＝dia-対話性の復元）。原語へ辿り構成要素と
+// 意味の連鎖をWiktionaryの実文書から。どんな語にも普遍適用（seed不要）。
+async function gAnatomyPanel(word) {
+  const jp = LANG === "ja";
+  const p = gPanel((jp ? "語源と構成要素を解剖する：" : "Anatomy: ") + word, `<p class="muted">${jp ? "原語へ辿り、構成要素と意味を復元中…" : "…"}</p>`);
+  let d; try { d = await api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`); } catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+  const body = p.querySelector(".gp-body");
+  if (!d.term) { body.innerHTML = `<p class="muted">${jp ? "この語の語源を辿れる原語が特定できませんでした（原語がLatin/Greek系でない語など）。" : "no etymology."}</p>`; return; }
+  let h = `<p class="muted">${jp ? "日本語の字面には現れにくい、原語の構成要素と意味の連鎖です。翻訳で削ぎ落とされた原義を、原語の実文書（Wiktionary）に接地して復元します。" : ""}</p>`;
+  if (d.components.length) {
+    h += `<h4 class="gp-h">${jp ? "構成要素（この語は元々このパーツの組み合わせ）" : "Components"}</h4><div class="anat-comp">`
+      + d.components.map(c => `<span class="anat-part"><b lang="grc">${esc(c.part)}</b>＝${esc(c.meaning)}</span>`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
+  }
+  if (d.chain.length) {
+    h += `<h4 class="gp-h">${jp ? "変容の連鎖（原語へさかのぼる）" : "Chain"}</h4><div class="chain">`
+      + `<span class="chain-now">「${esc(word)}」</span>`
+      + d.chain.map(c => `<span class="chain-arrow">←</span><span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span><span class="chain-form">${esc(c.term)}</span>${c.gloss ? `<span class="anat-gloss">「${esc(c.gloss)}」</span>` : ""}</span>`).join("") + `</div>`;
+  }
+  h += `<p class="srcline"><a href="${esc(d.wiktionary_url)}" target="_blank">Wiktionary（${esc(d.term)}）</a> · ${jp ? "全語に普遍適用・出所つき（意味drift差分の自動化は埋め込み層＝要RAMで将来）" : "universal"}</p>`;
+  body.innerHTML = h;
+}
+
 async function gExtPanel(term) {
   const jp = LANG === "ja";
   const p = gPanel((jp ? "外部の専門情報で深く・広く調べる：" : "External resources: ") + term,
@@ -1558,6 +1585,7 @@ function gActions(n) {
   } else {   // word / original / language / related / application
     extra = [
       { t: "📖 この語の詳細へ（下の意味・原点カードへ移動）", fn: () => originRecenter(W, { scrollTo: "card-origin" }) },
+      { t: "🔬 語源と構成要素を解剖する（原義を復元）", fn: () => gAnatomyPanel(W) },
       { t: "⚠ 埋没した原語を見る", fn: () => originRecenter(W, { scrollTo: "card-collapse" }) },
       { t: "🌍 多言語での言い方を見る", fn: () => originRecenter(W, { scrollTo: "card-breadth" }) },
       { t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(W) },
