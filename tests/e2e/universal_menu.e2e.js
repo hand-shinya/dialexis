@@ -54,6 +54,24 @@ const CORE = ["中心に据える","組み合わせ","見方","外部で調べ�
   await p.waitForTimeout(400);
   const reopened = await p.evaluate(()=>!!document.querySelector("#graph-menu"));
   ok("『←メニュー』でノードのメニューが再表示（別項目を選び直せる）", reopened);
+  // 7) 見方バッジ: 今この地図が何の見方(menu)で描かれているかを常時表示
+  await p.goto(`${BASE}/origin?q=${encodeURIComponent("弁証法")}&lang=ja`,{waitUntil:"networkidle"});
+  for(let i=0;i<20;i++){const v=await p.evaluate(()=>{const w=document.getElementById("origin-graph-wrap");return w&&getComputedStyle(w).display!=="none";});if(v)break;await p.waitForTimeout(600);}
+  const badge0 = await p.evaluate(()=>(document.getElementById("tm-view")||{}).textContent||"");
+  ok("初期に『今の見方：俯瞰』バッジが常時表示される", /今の見方/.test(badge0)&&/俯瞰/.test(badge0), `badge=${badge0}`);
+  await p.evaluate(()=>{[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方")).click();});
+  await p.waitForTimeout(300);
+  await p.evaluate(()=>{const r=[...document.querySelectorAll(".lens-row")].find(x=>x.querySelector("b").textContent.trim()==="世界の言語");r&&r.click();});
+  await p.waitForTimeout(1500);
+  const badge1 = await p.evaluate(()=>(document.getElementById("tm-view")||{}).textContent||"");
+  ok("見方切替でバッジが『世界の言語』に更新（生成元が画面で分かる）", /世界の言語/.test(badge1), `badge=${badge1}`);
+  // 8) 空状態でも行き止まりにしない: 解剖できない語(矛盾)のパネルに普遍「続ける」フッター
+  await p.evaluate(()=>{ const n={kind:"word",label:"矛盾",q:"矛盾"}; gMenu(200,200,n); });
+  await p.evaluate(()=>{const it=[...document.querySelectorAll("#graph-menu .gm-item")].find(e=>/解剖/.test(e.textContent));it.click();});
+  await p.waitForTimeout(2500);
+  const cont = await p.evaluate(()=>({btns:[...document.querySelectorAll("#graph-panel .gp-cont-b")].map(x=>x.textContent),back:!!document.querySelector("#graph-panel .gp-back")}));
+  ok("解剖不能語(矛盾)でも『この語で続ける』普遍フッターで行き止まりにならない", cont.btns.length>=5&&["中心に据える","多言語","外部"].every(k=>cont.btns.some(t=>t.includes(k))), `btns=${JSON.stringify(cont.btns)}`);
+  ok("空パネルにも『←メニュー』が併存（別項目へ戻れる）", cont.back);
   const pass=R.filter(Boolean).length;
   console.log(`\n${pass}/${R.length} PASS`);
   await b.close(); process.exit(pass===R.length?0:1);

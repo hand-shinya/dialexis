@@ -1103,15 +1103,26 @@ function renderTopMenu(d) {
   const jp = LANG === "ja";
   const rootNode = { kind: "word", label: d.query, q: d.query };
   const items = gActions(rootNode);
-  el._items = items;
+  el._items = items; el._word = d.query;
   el.innerHTML = `<span class="tm-label" title="${jp ? "この中心語のメニュー。どのノードをクリックしても同じ操作が出ます（普遍）。" : "menu of the centre word; every node offers the same"}">◉ ${esc(d.query)}</span>`
+    + `<button type="button" class="tm-view" id="tm-view" title="${jp ? "今この地図を描いている見方（menu）。クリックで別の見方に切り替え。" : "the view this map is drawn from; click to switch"}"></button>`
     + items.map((it, i) => `<button type="button" class="tm-chip" data-i="${i}" title="${esc(it.t)}">${esc(it.s || it.t)}</button>`).join("");
   el.querySelectorAll(".tm-chip").forEach(b => b.addEventListener("click", () => {
     const it = el._items[+b.dataset.i]; if (it && it.fn) it.fn();
   }));
+  const vb = $("tm-view"); if (vb) vb.addEventListener("click", () => gLensMenu(el._word));
+  updateViewBadge(G_lens);   // 現在の見方を表示（初期は俯瞰）
 }
 
-function setActiveChip(key) {   // 現在の見方（レンズ）を graph-note に一行表示（旧レンズ帯は廃止）
+// 「今この地図が何の見方（menu）で描かれているか」を常時表示（半田様指摘: 生成元が画面に無い）。
+function updateViewBadge(key) {
+  const Lz = LENSES.find(x => x.key === key) || LENSES[0];
+  const vb = $("tm-view"); if (!vb) return;
+  vb.textContent = (LANG === "ja" ? "◉ 今の見方：" : "◉ view: ") + (LANG === "ja" ? Lz.label : Lz.en) + " ▾";
+}
+
+function setActiveChip(key) {   // 現在の見方（レンズ）を上部バッジ＋graph-note に反映（旧レンズ帯は廃止）
+  updateViewBadge(key);
   const Lz = LENSES.find(x => x.key === key), note = $("graph-note");
   if (Lz && note) note.textContent = (LANG === "ja" ? "見方：" : "view: ") + (LANG === "ja" ? Lz.label : Lz.en) + " — " + (Lz.cap || "");
 }
@@ -1227,7 +1238,7 @@ function gDimAct(dm) {
 // perspectives + real opposing literature). Benchmark's『批判・異論』dimension.
 async function gCounter(claim) {
   const jp = LANG === "ja";
-  const p = gPanel((jp ? "批判・異論：" : "Critique: ") + claim, `<p class="muted">${jp ? "読み込み中…" : "loading…"}</p>`);
+  const p = gPanel((jp ? "批判・異論：" : "Critique: ") + claim, `<p class="muted">${jp ? "読み込み中…" : "loading…"}</p>`, claim);
   let d;
   try { d = await api("/api/counter", { method: "POST", body: { claim, lang: LANG } }); }
   catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
@@ -1443,7 +1454,7 @@ function gFocusSubtree(nodeIdx) {
 async function gAuthorInvestigate(searchName, label) {
   const jp = LANG === "ja";
   const p = gPanel((jp ? "著者を調べる：" : "Author: ") + (label || searchName),
-    `<p class="muted">${jp ? "取得中…" : "loading…"}</p>`);
+    `<p class="muted">${jp ? "取得中…" : "loading…"}</p>`, searchName);
   let d;
   try { d = await api(`/api/author?name=${encodeURIComponent(searchName)}&lang=${LANG}`); }
   catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
@@ -1539,7 +1550,7 @@ function extResourcesHtml(term, V) {
 // 意味の連鎖をWiktionaryの実文書から。どんな語にも普遍適用（seed不要）。
 async function gAnatomyPanel(word) {
   const jp = LANG === "ja";
-  const p = gPanel((jp ? "語源と構成要素を解剖する：" : "Anatomy: ") + word, `<p class="muted">${jp ? "原語へ辿り、構成要素と意味を復元中…" : "…"}</p>`);
+  const p = gPanel((jp ? "語源と構成要素を解剖する：" : "Anatomy: ") + word, `<p class="muted">${jp ? "原語へ辿り、構成要素と意味を復元中…" : "…"}</p>`, word);
   let d; try { d = await api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`); } catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
   const body = p.querySelector(".gp-body");
   if (!d.term) { body.innerHTML = `<p class="muted">${jp ? "この語の語源を辿れる原語が特定できませんでした（原語がLatin/Greek系でない語など）。" : "no etymology."}</p>`; return; }
@@ -1562,7 +1573,7 @@ async function gAnatomyPanel(word) {
 // 既存の /api/origin(日本語語義) と /api/anatomy(原語の構成要素・連鎖) を合成。RAM/新API不要。
 async function gContrastPanel(word) {
   const jp = LANG === "ja";
-  const p = gPanel((jp ? "訳語と原語の意味を並べて比べる：" : "Contrast: ") + word, `<p class="muted">${jp ? "日本語訳の意味と、原語の意味を並べて取得中…" : "…"}</p>`);
+  const p = gPanel((jp ? "訳語と原語の意味を並べて比べる：" : "Contrast: ") + word, `<p class="muted">${jp ? "日本語訳の意味と、原語の意味を並べて取得中…" : "…"}</p>`, word);
   let o = {}, a = {};
   try { [o, a] = await Promise.all([api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}`), api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`)]); } catch (e) {}
   const jaMean = (o.general_meaning || []).map(s => `<li>${esc(s.length > 200 ? s.slice(0, 200) + "…" : s)}</li>`).join("") || `<li class="muted">${jp ? "（日本語語義を取得できず）" : "—"}</li>`;
@@ -1585,7 +1596,7 @@ async function gContrastPanel(word) {
 async function gExtPanel(term) {
   const jp = LANG === "ja";
   const p = gPanel((jp ? "外部の専門情報で深く・広く調べる：" : "External resources: ") + term,
-    `<p class="muted">${jp ? "各サイトが受け付ける言語形を解決中…" : "resolving language forms…"}</p>`);
+    `<p class="muted">${jp ? "各サイトが受け付ける言語形を解決中…" : "resolving language forms…"}</p>`, term);
   const V = await resolveVariants(term);
   const body = p.querySelector(".gp-body"); if (body) body.innerHTML = extResourcesHtml(term, V);
 }
@@ -1602,7 +1613,7 @@ function gAuthorPanel(n) {
     ${rows.length ? `<table class="plain">${rows.map(r => `<tr><th>${esc(r[0])}</th><td>${r[1]}</td></tr>`).join("")}</table>` : ""}
     <p class="srcline"><a href="${wp}" target="_blank">${jp ? "Wikipediaで開く" : "Wikipedia"}</a> · <a href="/deepsearch?q=${encodeURIComponent(n.label)}&lang=${LANG}"${originLinkAttr()}>${jp ? "深掘り探索プロンプト" : "deep-search"}</a></p>
     <p class="srcline muted">${jp ? "著者固有の用法（その著作でこの語がどう使われたか）・時代性・年表は整備中です。" : "Author-specific usage / timeline are being built."}</p>`;
-  gPanel((jp ? "著者：" : "Author: ") + n.label, body);
+  gPanel((jp ? "著者：" : "Author: ") + n.label, body, n.label);
 }
 
 // contextual action menu — the dimension of a WORD (origin/meaning/translations)
@@ -1759,18 +1770,37 @@ function gMenuClose() {
   if (G && G.menuCloser) { document.removeEventListener("pointerdown", G.menuCloser); G.menuCloser = null; }
 }
 // dismissible overlay panel (for menu actions that show their own content)
-function gPanel(title, bodyHtml) {
+// 語に関するパネルには term を渡す。すると下部に「この語で続ける」普遍フッターが必ず付き、
+// 空状態・失敗（例: 解剖で原語が特定できない）でも行き止まりにならず探索を続けられる（根源的・全パネル共通）。
+function gPanel(title, bodyHtml, term) {
   const old = $("graph-panel"); if (old) old.remove();
   const jp = LANG === "ja";
   const back = (_panelFromMenu && MENUCTX);   // ノードのメニューから開いた＝別メニューへ戻れるようにする
   const p = document.createElement("div");
   p.id = "graph-panel";
+  const foot = term ? `<div class="gp-cont"><span class="gp-cont-h">🧭 ${jp ? `「${esc(term)}」で続ける` : `continue with “${esc(term)}”`}：</span>` + [
+    ["center", "🎯 " + (jp ? "中心に据える" : "centre")],
+    ["lens", "👓 " + (jp ? "見方" : "views")],
+    ["lang", "🌍 " + (jp ? "多言語" : "languages")],
+    ["ext", "🌐 " + (jp ? "外部で調べる" : "external")],
+    ["combine", "🔗 " + (jp ? "組み合わせ" : "combine")],
+    ["new", "↗ " + (jp ? "新タブ" : "new tab")],
+  ].map(([a, l]) => `<button type="button" class="gp-cont-b" data-a="${a}">${esc(l)}</button>`).join("") + `</div>` : "";
   p.innerHTML = `<div class="gp-head">${back ? `<button type="button" class="gp-back" title="${jp ? "このノードのメニューに戻って別の項目を選ぶ" : "back to menu"}">← ${jp ? "メニュー" : "menu"}</button>` : ""}<b>${esc(title)}</b><button type="button" class="gp-x">×</button></div>
-    <div class="gp-body">${bodyHtml}</div>`;
+    <div class="gp-body">${bodyHtml}</div>${foot}`;
   document.body.appendChild(p);
   p.querySelector(".gp-x").addEventListener("click", () => p.remove());
   const bb = p.querySelector(".gp-back");
   if (bb) bb.addEventListener("click", () => { p.remove(); gReopenMenu(); });
+  p.querySelectorAll(".gp-cont-b").forEach(btn => btn.addEventListener("click", () => {
+    const a = btn.dataset.a;
+    if (a === "center") { p.remove(); originRecenter(term); }
+    else if (a === "lens") { p.remove(); gLensMenu(term); }
+    else if (a === "lang") { p.remove(); originRecenter(term, { scrollTo: "card-breadth" }); }
+    else if (a === "ext") { gExtPanel(term); }
+    else if (a === "combine") { gCombinePanel(term); }
+    else if (a === "new") { window.open(`/origin?q=${encodeURIComponent(term)}&lang=${LANG}`, "_blank"); }
+  }));
   return p;
 }
 
@@ -1783,7 +1813,7 @@ function gCombinePanel(a) {
     <input id="cmb-b" class="cmb-in" placeholder="${jp ? "組み合わせる語（例：教育／労働／音楽）" : "second word"}" autocomplete="off" />
     <div class="cmb-ops">${ops.map(([k, l]) => `<button type="button" class="cmb-op" data-op="${k}">${esc(l)}</button>`).join("")}</div>
     <p class="srcline muted">${jp ? "AND=両方に関わる／意味で絞る=意味の近縁をその観点で／NOT=除外／OR=合わせる／比較=共有と差分。ORと比較は空でも可。" : ""}</p>`;
-  const p = gPanel((jp ? "別の語と組み合わせる：" : "Combine: ") + a, html);
+  const p = gPanel((jp ? "別の語と組み合わせる：" : "Combine: ") + a, html, a);
   const inp = p.querySelector("#cmb-b");
   setTimeout(() => inp && inp.focus(), 30);
   p.querySelectorAll(".cmb-op").forEach(btn => btn.addEventListener("click", () => {
@@ -1798,9 +1828,9 @@ async function gCombineRun(a, b, op) {
   gBusy(true, jp ? "組み合わせ探索中…" : "combining…", G && G.lastX, G && G.lastY);
   let d;
   try { d = await api(`/api/combine?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&op=${op}&lang=${LANG}`); }
-  catch (e) { gBusy(false); gPanel(jp ? "組み合わせ探索" : "Combine", `<p class="badge err">${esc(String(e.message || e))}</p>`); return; }
+  catch (e) { gBusy(false); gPanel(jp ? "組み合わせ探索" : "Combine", `<p class="badge err">${esc(String(e.message || e))}</p>`, a); return; }
   gBusy(false);
-  if (!d.nodes || d.nodes.length <= 1) { gPanel(jp ? "組み合わせ探索" : "Combine", `<p class="muted">${esc(d.note || (jp ? "結果が得られませんでした。" : "no result."))}</p>`); return; }
+  if (!d.nodes || d.nodes.length <= 1) { gPanel(jp ? "組み合わせ探索" : "Combine", `<p class="muted">${esc(d.note || (jp ? "結果が得られませんでした。" : "no result."))}</p>`, a); return; }
   showCanvas();
   G_raw = d; G_lens = "all";                    // 組み合わせ結果を今のグラフに描く
   const note = $("graph-note"); if (note) note.textContent = d.note || "";
@@ -1912,7 +1942,7 @@ async function gPerspectivePanel(word) {
     <div class="psp-g"><span class="psp-l">難易度</span>${chips(LEVELS, "l", sel.l)}</div>
     <div class="psp-ops"><button type="button" id="psp-go" class="cmb-op">この見方で見る</button></div>
     <div id="psp-out"></div>`;
-  const p = gPanel((jp ? "見方を選ぶ：" : "View: ") + word, html);
+  const p = gPanel((jp ? "見方を選ぶ：" : "View: ") + word, html, word);
   p.querySelectorAll(".psp-chip").forEach(c => c.addEventListener("click", () => {
     const g = c.dataset.g; p.querySelectorAll(`.psp-chip[data-g="${g}"]`).forEach(x => x.classList.remove("on"));
     c.classList.add("on"); sel[g] = c.dataset.v;
@@ -1943,7 +1973,7 @@ async function gPerspectivePanel(word) {
 async function gColloc(term) {
   const jp = LANG === "ja";
   const p = gPanel((jp ? "原語空間の共起：" : "Collocations: ") + term,
-    `<p class="muted">${jp ? "読み込み中…" : "loading…"}</p>`);
+    `<p class="muted">${jp ? "読み込み中…" : "loading…"}</p>`, term);
   let deTerm = term;
   if (!/[A-Za-zÀ-ɏ]/.test(term)) {
     try {

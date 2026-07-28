@@ -178,6 +178,17 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .tm-chip { font-size: .82rem; padding: .28rem .62rem; border: 1px solid var(--line);
   border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; white-space: nowrap; }
 .tm-chip:hover { border-color: var(--accent); background: #f2eee4; }
+/* 「今この地図が何の見方(menu)で描かれているか」を示すバッジ（クリックで切替） */
+.tm-view { font-size: .82rem; padding: .28rem .66rem; border: 1px solid var(--accent);
+  border-radius: 999px; background: var(--accent); color: var(--paper); cursor: pointer; white-space: nowrap; font-weight: 600; }
+.tm-view:hover { filter: brightness(1.08); }
+/* パネル下部の普遍「この語で続ける」フッター＝空状態でも行き止まりにしない（全パネル共通） */
+.gp-cont { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; padding: .6rem .9rem;
+  border-top: 1px solid var(--line); background: #faf7f0; position: sticky; bottom: 0; }
+.gp-cont-h { font-family: system-ui, sans-serif; font-size: .8rem; color: var(--muted); margin-right: .2rem; }
+.gp-cont-b { font-family: system-ui, sans-serif; font-size: .8rem; padding: .24rem .6rem; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.gp-cont-b:hover { border-color: var(--accent); background: #f2eee4; }
 /* 👓 見方を選ぶ（この地図の切り口）パネルのレンズ一覧 */
 .lens-list { display: flex; flex-direction: column; gap: .4rem; margin-top: .5rem; }
 .lens-row { text-align: left; border: 1px solid var(--line); border-radius: 8px; background: var(--paper);
