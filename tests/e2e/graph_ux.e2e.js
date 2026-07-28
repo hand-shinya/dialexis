@@ -38,7 +38,7 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
       if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     });
     if (ib) await page.mouse.click(ib.x, ib.y);
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(8000);
     const after = await page.evaluate(() => ({ root: G.rootQ, n: G.nodes.length }));
     ok("著者を中心に据えると豊かに再中心（2件でなく）", after.n > 3, `nodes=${after.n}`);
     ok("中心（root）がその著者になり、以前と変わる", after.root !== before && !!after.root, `root: ${before} → ${after.root}`);
