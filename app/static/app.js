@@ -1407,6 +1407,7 @@ async function gAuthorInvestigate(searchName, label) {
     return;
   }
   const row = (k, v) => v && v.length ? `<tr><th>${esc(k)}</th><td>${esc(Array.isArray(v) ? v.join("、") : v)}</td></tr>` : "";
+  const V = await resolveVariants(d.title || searchName);   // 外部リンクを各サイトの言語形で
   let html = `<p>${esc(d.extract || "")}</p>
     <table class="plain">
       ${row(jp ? "生" : "born", (d.born || [])[0])}
@@ -1416,69 +1417,84 @@ async function gAuthorInvestigate(searchName, label) {
     </table>
     <p class="srcline"><a href="${esc(d.wikipedia_url)}" target="_blank">Wikipedia (${LANG})</a>${d.wikidata_url ? ` · <a href="${esc(d.wikidata_url)}" target="_blank">Wikidata</a>` : ""} · ${esc((d.sources && d.sources[0] && d.sources[0].retrieved_at) || "")}</p>
     <h4 class="gp-h">${jp ? "より深く・広く調べる（外部の専門情報源・多言語・新しいタブで開く）" : "Investigate deeper & wider (external expert sources, new tab)"}</h4>
-    ${extResourcesHtml(d.title || searchName)}`;
+    ${extResourcesHtml(d.title || searchName, V)}`;
   p.querySelector(".gp-body").innerHTML = html;
 }
 
 // ── 普遍原理: どの項目からも、公開・合法な専門情報源へ多言語で最大限リンクし、
 //    ユーザーが選んで【新しいタブ】で開ける。当ポータルは選択肢を示すだけ（客観・
 //    無編集・出所明示）。偏った編集をせず、思考の広がりと刺激を与える。──
-function extResources(term) {
-  const t = encodeURIComponent(term);
+// 語の多言語variants（各外部サイトが受け付ける言語形へ）。カタカナのニーチェ→英名 等。cache付。
+const _varCache = {};
+async function resolveVariants(term) {
+  if (_varCache[term]) return _varCache[term];
+  try { const d = await api(`/api/variants?q=${encodeURIComponent(term)}&lang=${LANG}`); const V = d.labels || {}; _varCache[term] = V; return V; }
+  catch (e) { _varCache[term] = {}; return {}; }
+}
+// 外部リンク一覧。各サイトが受け付ける言語形を選ぶ（普遍原則: 全サイト・全場面に適用）。
+// 英語系サイトにカタカナを渡さない＝V.en(ローマ字/英名)を使い、無ければ原語→ja の順で退避。
+function extResources(term, V) {
+  V = V || {};
+  const enc = s => encodeURIComponent(s || term);
+  const ja = enc(V.ja || term), en = enc(V.en || term), de = enc(V.de || V.en || term),
+        fr = enc(V.fr || V.en || term), grla = enc(V.grc || V.la || V.en || term);
   return {
     "検索": [
-      ["Google", `https://www.google.com/search?q=${t}`],
-      ["Google Scholar", `https://scholar.google.com/scholar?q=${t}`],
-      ["Bing", `https://www.bing.com/search?q=${t}`],
-      ["DuckDuckGo", `https://duckduckgo.com/?q=${t}`],
+      ["Google", `https://www.google.com/search?q=${ja}`],
+      ["Google Scholar", `https://scholar.google.com/scholar?q=${en}`],
+      ["Bing", `https://www.bing.com/search?q=${ja}`],
+      ["DuckDuckGo", `https://duckduckgo.com/?q=${ja}`],
     ],
     "百科事典": [
-      ["Wikipedia 日", `https://ja.wikipedia.org/wiki/Special:Search?search=${t}`],
-      ["Wikipedia 英", `https://en.wikipedia.org/w/index.php?search=${t}`],
-      ["Wikipedia 独", `https://de.wikipedia.org/w/index.php?search=${t}`],
-      ["Wikipedia 仏", `https://fr.wikipedia.org/w/index.php?search=${t}`],
-      ["Stanford哲学百科 SEP", `https://plato.stanford.edu/search/searcher.py?query=${t}`],
-      ["Internet哲学百科 IEP", `https://iep.utm.edu/?s=${t}`],
-      ["Britannica", `https://www.britannica.com/search?query=${t}`],
-      ["コトバンク", `https://kotobank.jp/word/${t}`],
+      ["Wikipedia 日", `https://ja.wikipedia.org/wiki/Special:Search?search=${ja}`],
+      ["Wikipedia 英", `https://en.wikipedia.org/w/index.php?search=${en}`],
+      ["Wikipedia 独", `https://de.wikipedia.org/w/index.php?search=${de}`],
+      ["Wikipedia 仏", `https://fr.wikipedia.org/w/index.php?search=${fr}`],
+      ["Stanford哲学百科 SEP", `https://plato.stanford.edu/search/searcher.py?query=${en}`],
+      ["Internet哲学百科 IEP", `https://iep.utm.edu/?s=${en}`],
+      ["Britannica", `https://www.britannica.com/search?query=${en}`],
+      ["コトバンク", `https://kotobank.jp/word/${ja}`],
     ],
     "辞書・辞典": [
-      ["Wiktionary 日", `https://ja.wiktionary.org/wiki/Special:Search?search=${t}`],
-      ["Wiktionary 英", `https://en.wiktionary.org/wiki/Special:Search?search=${t}`],
-      ["DWDS 独", `https://www.dwds.de/wb/${t}`],
-      ["Perseus 希/羅", `https://www.perseus.tufts.edu/hopper/searchresults?q=${t}`],
-      ["Logeion 希/羅", `https://logeion.uchicago.edu/${t}`],
+      ["Wiktionary 日", `https://ja.wiktionary.org/wiki/Special:Search?search=${ja}`],
+      ["Wiktionary 英", `https://en.wiktionary.org/wiki/Special:Search?search=${en}`],
+      ["DWDS 独", `https://www.dwds.de/wb/${de}`],
+      ["Perseus 希/羅", `https://www.perseus.tufts.edu/hopper/searchresults?q=${grla}`],
+      ["Logeion 希/羅", `https://logeion.uchicago.edu/${grla}`],
       ["Monier-Williams 梵", `https://www.sanskrit-lexicon.uni-koeln.de/scans/MWScan/2020/web/webtc/indexcaller.php`],
     ],
     "学術・論文": [
-      ["PhilPapers", `https://philpapers.org/s/${t}`],
-      ["CiNii", `https://cir.nii.ac.jp/all?q=${t}`],
-      ["J-STAGE", `https://www.jstage.jst.go.jp/result/global/-char/ja?globalSearchKey=${t}`],
-      ["JSTOR", `https://www.jstor.org/action/doBasicSearch?Query=${t}`],
-      ["OpenAlex", `https://openalex.org/works?search=${t}`],
-      ["国立国会図書館サーチ", `https://ndlsearch.ndl.go.jp/search?cs=bib&keyword=${t}`],
+      ["PhilPapers", `https://philpapers.org/s/${en}`],
+      ["CiNii", `https://cir.nii.ac.jp/all?q=${ja}`],
+      ["J-STAGE", `https://www.jstage.jst.go.jp/result/global/-char/ja?globalSearchKey=${ja}`],
+      ["JSTOR", `https://www.jstor.org/action/doBasicSearch?Query=${en}`],
+      ["OpenAlex", `https://openalex.org/works?search=${en}`],
+      ["国立国会図書館サーチ", `https://ndlsearch.ndl.go.jp/search?cs=bib&keyword=${ja}`],
     ],
     "原典・全集": [
-      ["Wikisource 日", `https://ja.wikisource.org/wiki/Special:Search?search=${t}`],
-      ["Wikisource 独", `https://de.wikisource.org/wiki/Spezial:Suche?search=${t}`],
-      ["Project Gutenberg", `https://www.gutenberg.org/ebooks/search/?query=${t}`],
-      ["archive.org", `https://archive.org/search?query=${t}`],
+      ["Wikisource 日", `https://ja.wikisource.org/wiki/Special:Search?search=${ja}`],
+      ["Wikisource 独", `https://de.wikisource.org/wiki/Spezial:Suche?search=${de}`],
+      ["Project Gutenberg", `https://www.gutenberg.org/ebooks/search/?query=${en}`],
+      ["archive.org", `https://archive.org/search?query=${en}`],
     ],
   };
 }
 // render the external-resource fan as HTML (all links open in a NEW TAB)
-function extResourcesHtml(term) {
-  const jp = LANG === "ja", R = extResources(term);
-  let h = `<p class="muted">${jp ? "公開・合法な専門情報源へのリンクです。各リンクは新しいタブで開きます。当ポータルは選択肢を示すだけで、中身は各サイトの提供です（客観・出所明示）。" : "Links to public expert sources; each opens in a new tab. This portal only offers the choices."}</p>`;
+function extResourcesHtml(term, V) {
+  const jp = LANG === "ja", R = extResources(term, V);
+  let h = `<p class="muted">${jp ? "公開・合法な専門情報源へのリンクです。各サイトが受け付ける言語（英語系は英名・独語系は独語…）で開きます。各リンクは新しいタブ。当ポータルは選択肢を示すだけで、中身は各サイトの提供です（客観・出所明示）。" : "Links to public expert sources, each in the language that site accepts; open in a new tab."}</p>`;
   for (const cat of Object.keys(R)) {
     h += `<div class="ext-cat"><span class="ext-cat-h">${esc(cat)}</span> `
       + R[cat].map(([lbl, url]) => `<a class="ext-link" href="${esc(url)}" target="_blank" rel="noopener">${esc(lbl)}</a>`).join(" ") + `</div>`;
   }
   return h;
 }
-function gExtPanel(term) {
+async function gExtPanel(term) {
   const jp = LANG === "ja";
-  gPanel((jp ? "外部の専門情報で深く・広く調べる：" : "External resources: ") + term, extResourcesHtml(term));
+  const p = gPanel((jp ? "外部の専門情報で深く・広く調べる：" : "External resources: ") + term,
+    `<p class="muted">${jp ? "各サイトが受け付ける言語形を解決中…" : "resolving language forms…"}</p>`);
+  const V = await resolveVariants(term);
+  const body = p.querySelector(".gp-body"); if (body) body.innerHTML = extResourcesHtml(term, V);
 }
 
 // author info panel — from the lineage node's own data (work/year/term). Never
@@ -1499,59 +1515,54 @@ function gAuthorPanel(n) {
 // contextual action menu — the dimension of a WORD (origin/meaning/translations)
 // differs from that of an AUTHOR/WORK (usage/texts/era), so the menu ADAPTS to
 // what was clicked. ≥7 actions; the ones not yet built are shown as 次段 (honest).
+// 普遍原則（原理原則）: どの factor（ノード）にも "共通コア" の操作が必ず付く。ここに1つ
+// 足せば全場面へ普遍適用される（個別menuへの付け忘れが構造的に起きない）。domain は語でなく
+// 構造ラベルなので語操作を出さない（＝概念/人物/著作/言語など"実在の語"にのみ普遍コアを適用）。
 function gActions(n) {
-  const jp = LANG === "ja", q = n.q, L = n.label;
-  const nt = () => window.open(`/origin?q=${encodeURIComponent(q || L)}&lang=${LANG}`, "_blank");
-  const ds = (term) => { location.href = `/deepsearch?q=${encodeURIComponent(term || q || L)}&lang=${LANG}`; };
-  // AUTHOR/WORK is a different DIMENSION than a word — do NOT route the person's
-  // name through the word-origin engine (that gave 'no Wiktionary entry' / an
-  // empty graph). Show author-appropriate content (works, era, their term) and
-  // real external links; the word engine is never called on a person.
-  if (n.kind === "author" || n.kind === "work") {
-    const who = n.kind === "author" ? "この著者" : "この著作";
-    const sq = n.search || L;
-    const wp = () => window.open(`https://ja.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(sq)}`, "_blank");
-    return [
-      { t: `🔍 ${who}を調べる（経歴・著作・出典を取得）`, fn: () => gAuthorInvestigate(sq, L) },
-      { t: `🎯 ${who}を中心に据えて展開（${jp ? "新たな第1階層に・経歴/著作/関係を豊かに" : "recenter richly"}）`, fn: () => originRecenter(sq) },
-      { t: `📖 ${who}の系譜メモ（この語での原語）`, fn: () => gAuthorPanel(n) },
-      { t: `🌐 外部の専門情報で調べる（多言語・新タブ）`, fn: () => gExtPanel(sq) },
-      { t: `✍ 深掘り探索プロンプトを作る（${who}）`, fn: () => ds(sq) },
-      { t: "📖 この著者のこの語での用法（著者固有の共起）", soon: 1 },
-      { t: "🕰 時代性・年表上の位置", soon: 1 },
-    ];
-  }
-  if (n.kind === "domain") {
+  const jp = LANG === "ja", q = n.q, L = n.label, W = q || L;
+  const nt = () => window.open(`/origin?q=${encodeURIComponent(W)}&lang=${LANG}`, "_blank");
+  const ds = (t) => { location.href = `/deepsearch?q=${encodeURIComponent(t || W)}&lang=${LANG}`; };
+
+  if (n.kind === "domain") {   // 構造の分岐＝語操作でなく分岐操作
     return [
       { t: "🎯 この分岐を中心に（下層を最大表示）", fn: () => gFocusSubtree(G.nodes.indexOf(n)) },
       { t: "↩ 全体の重力分布に戻す", fn: () => originGraph(G.rootQ) },
       { t: "🔦 この分岐の経路を強調（ホバーでも可）", fn: () => { G.hl = gHl(G.nodes.indexOf(n)); gDraw(); } },
-      { t: "📖 この意味領域の説明", soon: 1 },
-      { t: "🔎 この領域の主要な語をたどる", soon: 1 },
-      { t: "🌍 この領域を多言語で見る", soon: 1 },
-      { t: "✍ 深掘り探索プロンプトを作る", fn: ds },
+      { t: "✍ 深掘り探索プロンプトを作る", fn: () => ds(W) },
     ];
   }
-  // word / original / language — UNIVERSAL: every action operates on THIS node's
-  // word W, starting fresh from it (recenter the whole page on W, then focus the
-  // requested aspect of W). No reuse of the previously-entered word's data.
-  const W = q || L;
-  return [
-    { t: "🎯 この語を地図の中心に据え直す（グラフを再構成）", fn: () => originRecenter(W) },
-    { t: "📖 この語の詳細へ（下の意味・原点カードへ移動）", fn: () => originRecenter(W, { scrollTo: "card-origin" }) },
+  // ── 普遍コア（全ての実在語ノードに必ず付く） ──
+  const CORE_HEAD = [
+    { t: "🎯 これを地図の中心に据え直す（グラフを再構成）", fn: () => originRecenter(W) },
     { t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", fn: () => gCombinePanel(W) },
-    { t: "⚠ 埋没した原語を見る", fn: () => originRecenter(W, { scrollTo: "card-collapse" }) },
-    { t: "🌍 多言語での言い方を見る", fn: () => originRecenter(W, { scrollTo: "card-breadth" }) },
+  ];
+  const CORE_TAIL = [
+    { t: "🌐 外部の専門情報で調べる（各サイトの言語で・新タブ）", fn: () => gExtPanel(W) },
     { t: "✍ 深掘り探索プロンプトを作る", fn: () => ds(W) },
-    { t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(W) },
-    { t: "🌐 外部の専門情報で調べる（多言語・新タブ）", fn: () => gExtPanel(W) },
     { t: "🔗 新しいタブでこの語を開く", fn: nt },
   ];
+  // ── kind 固有の追加（コアの間に挟む） ──
+  let extra;
+  if (n.kind === "author" || n.kind === "work") {
+    const who = n.kind === "author" ? "この人物" : "この著作", sq = n.search || W;
+    extra = [
+      { t: `🔍 ${who}を調べる（経歴・著作・出典を取得）`, fn: () => gAuthorInvestigate(sq, L) },
+      { t: `📖 ${who}の系譜メモ（この語での原語）`, fn: () => gAuthorPanel(n) },
+    ];
+  } else {   // word / original / language / related / application
+    extra = [
+      { t: "📖 この語の詳細へ（下の意味・原点カードへ移動）", fn: () => originRecenter(W, { scrollTo: "card-origin" }) },
+      { t: "⚠ 埋没した原語を見る", fn: () => originRecenter(W, { scrollTo: "card-collapse" }) },
+      { t: "🌍 多言語での言い方を見る", fn: () => originRecenter(W, { scrollTo: "card-breadth" }) },
+      { t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(W) },
+    ];
+  }
+  return [...CORE_HEAD, ...extra, ...CORE_TAIL];
 }
 
 function gMenu(cx, cy, n) {
-  const items = gActions(n);
-  gShowMenu(cx, cy, (LANG === "ja" ? "選択：" : "Selected: ") + n.label, items);
+  G.menuNode = n;
+  gShowMenu(cx, cy, (LANG === "ja" ? "選択：" : "Selected: ") + n.label, gActions(n));
 }
 function gMenuEdge(cx, cy, ei) {
   const e = G.edges[ei];
@@ -1567,23 +1578,11 @@ function gMenuEdge(cx, cy, ei) {
     { t: "↩ 全体に戻す", fn: () => originGraph(G.rootQ) },
   ]);
 }
-function gShowMenu(cx, cy, title, items) {
-  gMenuClose();
-  if (G) { G.lastX = cx; G.lastY = cy; }   // 処理中インジケータを選択付近に出すため記録
-  const m = document.createElement("div");
-  m.id = "graph-menu";
+// メニューの中身（タイトル＋項目）を描画。ホバー追従で差し替えるため関数化・itemsをmに保持。
+function _gmFill(m, title, items) {
+  m._items = items;
   m.innerHTML = `<div class="gm-title" title="ドラッグで移動できます">⠿ ${esc(title)}</div>` + items.map((it, i) =>
     `<div class="gm-item${it.soon ? " gm-soon" : ""}" data-i="${i}">${esc(it.t)}${it.soon ? "（次段）" : ""}</div>`).join("");
-  document.body.appendChild(m);
-  // ノードを覆わないよう、クリック点の右（はみ出す時は左）へずらして配置する
-  const w = m.offsetWidth || 300, h = m.offsetHeight || 200, gap = 24;
-  let x = cx + gap;
-  if (x + w > window.innerWidth - 10) x = cx - w - gap;
-  x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
-  let y = cy + window.scrollY - 12;
-  y = Math.max(window.scrollY + 8, Math.min(y, window.scrollY + window.innerHeight - h - 8));
-  m.style.left = x + "px"; m.style.top = y + "px";
-  // タイトルをドラッグして移動できる（掴んでいる対象を隠さないため）
   const tt = m.querySelector(".gm-title");
   tt.addEventListener("pointerdown", (ev) => {
     ev.stopPropagation(); ev.preventDefault();
@@ -1592,13 +1591,33 @@ function gShowMenu(cx, cy, title, items) {
     const up = () => { document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up); };
     document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up);
   });
-  // BUGFIX: keep the item's pointerdown from reaching the document-level closer,
-  // which previously removed the menu on the SAME pointerdown so the click that
-  // runs the action never landed (→ every item looked dead).
+}
+// ホバー追従: メニューを出したまま別factorにホバーしたら、そのノードへ内容(タイトル+項目)を差し替える
+function gMenuRetarget(n) {
+  const m = $("graph-menu"); if (!m || !n || G.menuNode === n) return;
+  G.menuNode = n;
+  _gmFill(m, (LANG === "ja" ? "選択：" : "Selected: ") + n.label, gActions(n));
+}
+function gShowMenu(cx, cy, title, items) {
+  gMenuClose();
+  if (G) { G.lastX = cx; G.lastY = cy; }   // 処理中インジケータを選択付近に出すため記録
+  const m = document.createElement("div");
+  m.id = "graph-menu";
+  document.body.appendChild(m);
+  _gmFill(m, title, items);
+  // ノードを覆わないよう、クリック点の右（はみ出す時は左）へずらして配置する
+  const w = m.offsetWidth || 300, h = m.offsetHeight || 200, gap = 24;
+  let x = cx + gap;
+  if (x + w > window.innerWidth - 10) x = cx - w - gap;
+  x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+  let y = cy + window.scrollY - 12;
+  y = Math.max(window.scrollY + 8, Math.min(y, window.scrollY + window.innerHeight - h - 8));
+  m.style.left = x + "px"; m.style.top = y + "px";
+  // BUGFIX: keep the item's pointerdown from reaching the document-level closer.
   m.addEventListener("pointerdown", (ev) => ev.stopPropagation());
   m.addEventListener("click", (ev) => {
     const el = ev.target.closest(".gm-item"); if (!el) return;
-    const it = items[Number(el.dataset.i)];
+    const it = m._items[Number(el.dataset.i)];
     gMenuClose();
     if (it && it.fn) it.fn();
   });
@@ -1747,7 +1766,7 @@ function gBind() {
     const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
     if (!G.press) {
       const n = gNodeAt(mx, my);
-      if (n) { G.hover = n; G.hl = gHl(G.nodes.indexOf(n)); cv.style.cursor = "pointer"; }
+      if (n) { G.hover = n; G.hl = gHl(G.nodes.indexOf(n)); cv.style.cursor = "pointer"; gMenuRetarget(n); }
       else {
         const ei = gEdgeAt(mx, my);
         if (ei >= 0) { G.hover = null; const e2 = G.edges[ei]; const child = G.nodes[e2.a].layer >= G.nodes[e2.b].layer ? e2.a : e2.b; G.hl = gHl(child); cv.style.cursor = "pointer"; }

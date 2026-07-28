@@ -211,6 +211,29 @@ async def _fetch_article(title, lang):
     return next(iter(body.get("query", {}).get("pages", {}).values()), {}), ts, cached
 
 
+async def variants(word: str, lang: str = "ja") -> dict:
+    """語の多言語variants（各外部サイトが受け付ける言語形へ）。記事→qid→Wikidata全ラベル。
+    軽量（node()の重い人物/関係取得はしない）。カタカナのニーチェ→英 Friedrich Nietzsche 等。"""
+    try:
+        page, ts, cached = await _fetch_article(word, lang)
+        if "missing" in page:
+            c = await _opensearch(word, lang)
+            pick = next((x for x in c if x and x != word), None)
+            if pick:
+                page, ts, cached = await _fetch_article(pick, lang)
+        if "missing" in page:
+            return ok("concept-variants", ts, cached, {"word": word, "labels": {}})
+        qid = page.get("pageprops", {}).get("wikibase_item")
+        labels = {}
+        if qid:
+            eb, _, _ = await cached_get_json(ENTITY.format(qid=qid), ttl=86400)
+            ent = eb.get("entities", {}).get(qid, {})
+            labels = {lg: v["value"] for lg, v in ent.get("labels", {}).items()}
+        return ok("concept-variants", ts, cached, {"word": word, "qid": qid, "labels": labels})
+    except Exception as e:
+        return err("concept-variants", e)
+
+
 async def node(word: str, lang: str = "ja") -> dict:
     try:
         page, ts, cached = await _fetch_article(word, lang)

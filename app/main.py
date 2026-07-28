@@ -1221,6 +1221,15 @@ async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
     return {"query": a, "nodes": nodes, "edges": edges, "note": note + "クリックでその語へ。", "queried_at": now()}
 
 
+@app.get("/api/variants")
+async def api_variants(q: str, lang: str = "ja"):
+    """語の多言語variants（外部リンクを各サイトが受け付ける言語形で開くため・普遍適用）。"""
+    cn = await concept.variants(q, lang)
+    cd = cn["data"] if not cn["error"] else {}
+    return {"query": q, "labels": cd.get("labels") or {}, "qid": cd.get("qid"),
+            "retrieved_at": cn.get("retrieved_at"), "queried_at": now()}
+
+
 @app.get("/api/dimensions")
 async def api_dimensions(q: str, lang: str = "ja"):
     """概念固有の次元を発見する層（#1・固定分類の先）。その概念自身の Wikipedia 記事の

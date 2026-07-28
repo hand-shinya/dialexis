@@ -1,4 +1,4 @@
-// Graph UX: 著者を中心に据えて展開＝2件でなく豊かに再中心し、中心（root）がその著者になる。
+// Graph UX: 著者を中心に据え直す＝2件でなく豊かに再中心し、中心（root）がその著者になる。
 // メニューはノードを覆わず横にずれて出る。半田様指摘(視認性・普遍性)の是正。
 const { chromium } = require("playwright-core");
 const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
@@ -31,10 +31,10 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
     const box = await canvasBox();
     const ml = await page.$eval("#graph-menu", el => el.getBoundingClientRect().x);
     ok("メニューがノード中心を覆わずに横へずれて出る", Math.abs(ml - (box.x + pt.x)) > 12, `menuLeft=${Math.round(ml)} node=${Math.round(box.x + pt.x)}`);
-    // 「中心に据えて展開」を実クリック（bounding box経由でメニュー委譲ハンドラを確実に発火）
+    // 「中心に据え直す」を実クリック（bounding box経由でメニュー委譲ハンドラを確実に発火）
     const before = await page.evaluate(() => G.rootQ);
     const ib = await page.evaluate(() => {
-      const el = [...document.querySelectorAll("#graph-menu .gm-item")].find(e => /中心に据えて展開/.test(e.textContent));
+      const el = [...document.querySelectorAll("#graph-menu .gm-item")].find(e => /中心に据え直す/.test(e.textContent));
       if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     });
     if (ib) await page.mouse.click(ib.x, ib.y);
