@@ -143,6 +143,9 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .shelf-item a { text-decoration: none; }
 .shelf-go, .path-go, .lens-use { color: var(--accent); }
 .shelf-x, .path-x, .lens-x { color: var(--muted); font-weight: 700; }
+/* 普遍: 画面に出した語はクリックでサイト内探索へ（行き止まりにしない） */
+.ext-term { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); cursor: pointer; }
+.ext-term:hover { background: var(--accent); color: var(--paper); border-radius: 3px; }
 /* 並置比較カード（訳語 vs 原語の意味空間） */
 .contrast { display: flex; gap: .8rem; flex-wrap: wrap; }
 .ct-col { flex: 1 1 260px; border: 1px solid var(--line); border-radius: 8px; padding: .3rem .7rem .6rem; background: var(--paper); }

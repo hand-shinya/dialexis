@@ -916,6 +916,18 @@ function originInit(q) {
   if (pl) pl.addEventListener("click", () => gPlayPanel());
   const sh = $("graph-shelf");
   if (sh) sh.addEventListener("click", () => gShelfPanel());
+  // 普遍原則: 画面に出した語(.ext-term)はどこでもクリックでサイト内探索へ（行き止まりにしない・
+  // copy&pasteを強いない）。パネル/カードのどの語からも第2・第3階層へ自由に広がる。
+  if (!document._extTermBound) {
+    document._extTermBound = 1;
+    document.addEventListener("click", (e) => {
+      const t = e.target.closest(".ext-term");
+      if (!t) return;
+      e.preventDefault();
+      const w = t.dataset.w; const pan = $("graph-panel"); if (pan) pan.remove();
+      if (w) originRecenter(w);
+    });
+  }
   if (q) { NAV.stack = [q]; NAV.idx = 0; navUpdate(); }   // 初期の語を履歴に
   const res = $("origin-results");
   if (res && !res._dimBound) {
@@ -1508,13 +1520,13 @@ async function gAnatomyPanel(word) {
   if (!d.term) { body.innerHTML = `<p class="muted">${jp ? "この語の語源を辿れる原語が特定できませんでした（原語がLatin/Greek系でない語など）。" : "no etymology."}</p>`; return; }
   let h = `<p class="muted">${jp ? "日本語の字面には現れにくい、原語の構成要素と意味の連鎖です。翻訳で削ぎ落とされた原義を、原語の実文書（Wiktionary）に接地して復元します。" : ""}</p>`;
   if (d.components.length) {
-    h += `<h4 class="gp-h">${jp ? "構成要素（この語は元々このパーツの組み合わせ）" : "Components"}</h4><div class="anat-comp">`
-      + d.components.map(c => `<span class="anat-part"><b lang="grc">${esc(c.part)}</b>＝${esc(c.meaning)}</span>`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
+    h += `<h4 class="gp-h">${jp ? "構成要素（この語は元々このパーツの組み合わせ・クリックで探索）" : "Components"}</h4><div class="anat-comp">`
+      + d.components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}</span>`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
   }
   if (d.chain.length) {
-    h += `<h4 class="gp-h">${jp ? "変容の連鎖（原語へさかのぼる）" : "Chain"}</h4><div class="chain">`
+    h += `<h4 class="gp-h">${jp ? "変容の連鎖（原語へさかのぼる・クリックで探索）" : "Chain"}</h4><div class="chain">`
       + `<span class="chain-now">「${esc(word)}」</span>`
-      + d.chain.map(c => `<span class="chain-arrow">←</span><span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span><span class="chain-form">${esc(c.term)}</span>${c.gloss ? `<span class="anat-gloss">「${esc(c.gloss)}」</span>` : ""}</span>`).join("") + `</div>`;
+      + d.chain.map(c => `<span class="chain-arrow">←</span><span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span><a href="#" class="ext-term chain-form" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `<span class="anat-gloss">「${esc(c.gloss)}」</span>` : ""}</span>`).join("") + `</div>`;
   }
   h += `<p class="srcline"><a href="${esc(d.wiktionary_url)}" target="_blank">Wiktionary（${esc(d.term)}）</a> · ${jp ? "全語に普遍適用・出所つき（意味drift差分の自動化は埋め込み層＝要RAMで将来）" : "universal"}</p>`;
   body.innerHTML = h;
@@ -1530,9 +1542,9 @@ async function gContrastPanel(word) {
   try { [o, a] = await Promise.all([api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}`), api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`)]); } catch (e) {}
   const jaMean = (o.general_meaning || []).map(s => `<li>${esc(s.length > 200 ? s.slice(0, 200) + "…" : s)}</li>`).join("") || `<li class="muted">${jp ? "（日本語語義を取得できず）" : "—"}</li>`;
   const cw = o.collapse_warning;
-  const jaCollapse = cw && cw.lemmas && cw.lemmas.length ? `<p class="srcline">${jp ? "※この一語に埋没した原語：" : "collapsed: "}${cw.lemmas.map(l => esc(l.lemma)).join("・")}</p>` : "";
-  const comps = (a.components || []).map(c => `<li><b lang="grc">${esc(c.part)}</b>＝${esc(c.meaning)}</li>`).join("");
-  const chain = (a.chain || []).map(c => `<li>${esc(c.lang)}：${esc(c.term)}${c.gloss ? `「${esc(c.gloss)}」` : ""}</li>`).join("");
+  const jaCollapse = cw && cw.lemmas && cw.lemmas.length ? `<p class="srcline">${jp ? "※この一語に埋没した原語（クリックで探索）：" : "collapsed: "}${cw.lemmas.map(l => `<a href="#" class="ext-term" data-w="${esc(l.lemma)}">${esc(l.lemma)}</a>`).join("・")}</p>` : "";
+  const comps = (a.components || []).map(c => `<li><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}</li>`).join("");
+  const chain = (a.chain || []).map(c => `<li>${esc(c.lang)}：<a href="#" class="ext-term" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `「${esc(c.gloss)}」` : ""}</li>`).join("");
   const origHtml = (comps || chain)
     ? `${comps ? `<p class="srcline">${jp ? "構成要素（元のパーツと意味）" : "components"}</p><ul class="ct-ul">${comps}</ul>` : ""}${chain ? `<p class="srcline">${jp ? "変容の連鎖（原語へ）" : "chain"}</p><ul class="ct-ul">${chain}</ul>` : ""}`
     : `<p class="muted">${jp ? "（原語の語源を辿れませんでした）" : "—"}</p>`;
