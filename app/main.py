@@ -633,6 +633,7 @@ async def api_origin(q: str, lang: str = "ja"):
         "concept_origin": concept_origin,        # 概念-翻訳-原点（疎外→独 Entfremdung）
         "originators": cd.get("originators") or [],  # 立てた/著した人（P50/P61/P112・決定論）
         "associated": cd.get("associated") or [],    # 関連する思想家（記事言及・重要度順・再現向上）
+        "relations": cd.get("relations") or {"near": [], "opposite": []},  # 類語・対義（クイズ等で利用）
         "named_after": cd.get("named_after") or [],  # 語形の由来（P138・語源・概念の原点でない）
         "word_origin": word_origin,              # 語源原点（空→梵・推定）
         "chain": td.get("origin_chain", []),     # 変容の連鎖（言語＋語形・全表示）

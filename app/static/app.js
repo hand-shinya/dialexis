@@ -912,6 +912,8 @@ function originInit(q) {
   const nb = $("nav-back"), nf = $("nav-fwd");
   if (nb) nb.addEventListener("click", () => navGo(-1));
   if (nf) nf.addEventListener("click", () => navGo(1));
+  const pl = $("graph-play");
+  if (pl) pl.addEventListener("click", () => gPlayPanel());
   if (q) { NAV.stack = [q]; NAV.idx = 0; navUpdate(); }   // 初期の語を履歴に
   const res = $("origin-results");
   if (res && !res._dimBound) {
@@ -1687,6 +1689,51 @@ const PERSPECTIVES = {
 };
 const PURPOSES = { "知りたい": "", "レポート": "レポートに使える構成（主張・根拠・引用）で。", "議論の材料": "議論のための論点・賛否・具体例を。", "授業で使う": "授業で使える説明・問い・活動案を。", "面白がる": "意外な関係やセレンディピティ、驚きのある切り口を。" };
 const LEVELS = { "やさしい": "小学生〜中学生にも分かる平易さで。", "ふつう": "高校〜一般の水準で。", "専門的": "専門・研究水準で厳密に。" };
+
+// E: 遊び・セレンディピティ＝つなぐ・おみくじ・クイズ。思いがけない出会いと学びを、子どもから
+// 大人まで。おみくじは面白い概念の種list（無料・鍵不要）、つなぐは組み合わせ(AND)、クイズは
+// その語のWikidata(対義/発見者/由来)から機械生成。
+const OMIKUJI = ["リゾーム", "疎外", "縁起", "間主観性", "自由", "正義", "時間", "無", "気", "道",
+  "イデア", "弁証法", "実存", "現象学", "権力", "贈与", "身体", "他者", "記憶", "崇高",
+  "アイロニー", "ミメーシス", "カタルシス", "エントロピー", "創発", "アフォーダンス", "脱構築",
+  "パノプティコン", "シミュラークル", "ノマド", "永遠回帰", "ルサンチマン", "アンガージュマン",
+  "純粋経験", "物自体", "アウラ", "散種", "差延", "リヴァイアサン", "モナド"];
+
+function gPlayPanel() {
+  const jp = LANG === "ja";
+  const cur = (G_raw && G_raw.query) || ((document.querySelector('.searchbox input[name=q]') || {}).value) || "";
+  const html = `<p class="muted">${jp ? "思いがけない出会い（セレンディピティ）と、ちょっとした学びの遊びです。子どもから大人まで。" : "Serendipity games."}</p>
+    <h4 class="gp-h">🔮 ${jp ? "おみくじ（今日の概念）" : "Random concept"}</h4>
+    <p><button type="button" id="play-omi" class="cmb-op">${jp ? "ランダムな概念を引く" : "draw"}</button></p>
+    <h4 class="gp-h">🔗 ${jp ? "2語をつなぐ" : "Bridge two words"}</h4>
+    <div class="psp-g"><input id="play-a" class="cmb-in" style="width:44%" placeholder="${jp ? `1つ目（既定=${esc(cur)}）` : "word A"}"/><input id="play-b" class="cmb-in" style="width:44%" placeholder="${jp ? "2つ目（例：音楽）" : "word B"}"/></div>
+    <p><button type="button" id="play-bridge" class="cmb-op">${jp ? "どうつながる？" : "connect"}</button></p>
+    <h4 class="gp-h">❓ ${jp ? "クイズ" : "Quiz"}</h4>
+    <p><button type="button" id="play-quiz" class="cmb-op">${esc(cur || "—")} ${jp ? "で出題" : "quiz"}</button></p>
+    <div id="play-out"></div>`;
+  const p = gPanel(jp ? "遊ぶ：つなぐ・おみくじ・クイズ" : "Play", html);
+  p.querySelector("#play-omi").addEventListener("click", () => { const w = OMIKUJI[Math.floor(Math.random() * OMIKUJI.length)]; p.remove(); originRecenter(w); });
+  p.querySelector("#play-bridge").addEventListener("click", () => {
+    const a = (p.querySelector("#play-a").value || cur).trim(), b = (p.querySelector("#play-b").value || "").trim();
+    if (!a || !b) { p.querySelector("#play-b").focus(); return; }
+    p.remove(); gCombineRun(a, b, "and");
+  });
+  p.querySelector("#play-quiz").addEventListener("click", async () => {
+    const out = p.querySelector("#play-out"); if (!cur) { out.innerHTML = `<p class="muted">${jp ? "先に語を選んでください。" : "pick a word first."}</p>`; return; }
+    out.innerHTML = `<p class="muted">${jp ? "出題準備中…" : "…"}</p>`;
+    let d; try { d = await api(`/api/origin?q=${encodeURIComponent(cur)}&lang=${LANG}`); } catch (e) { out.innerHTML = `<p class="muted">${jp ? "出題できません。" : "failed."}</p>`; return; }
+    const opp = ((d.relations && d.relations.opposite) || [])[0], org = (d.originators || [])[0],
+          assoc = (d.associated || [])[0], na = (d.named_after || [])[0];
+    let qtext, ans;
+    if (org) { qtext = `「${cur}」を立てた（発見・考案した）思想家は？`; ans = org.label; }
+    else if (opp) { qtext = `「${cur}」と対立・区別される概念は？`; ans = opp.label; }
+    else if (assoc) { qtext = `「${cur}」に最も深く関わる思想家は？`; ans = assoc.label; }
+    else if (na) { qtext = `「${cur}」の語形の由来（語源）は？`; ans = na.label; }
+    else { out.innerHTML = `<p class="muted">${jp ? "この語では出題できるデータがありませんでした。別の語でどうぞ。" : "no quiz data."}</p>`; return; }
+    out.innerHTML = `<p><b>${esc(qtext)}</b></p><p><button type="button" id="quiz-rev" class="cmb-op">${jp ? "答えを見る" : "reveal"}</button> <span id="quiz-ans"></span></p>`;
+    p.querySelector("#quiz-rev").addEventListener("click", () => { p.querySelector("#quiz-ans").innerHTML = `→ <b>${esc(ans)}</b>`; });
+  });
+}
 
 async function gPerspectivePanel(word) {
   const jp = LANG === "ja", sel = { p: "一般向け", u: "知りたい", l: "ふつう" };
