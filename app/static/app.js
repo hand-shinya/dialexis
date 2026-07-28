@@ -1539,6 +1539,7 @@ function gActions(n) {
   return [
     { t: "🎯 この語を地図の中心に据え直す（グラフを再構成）", fn: () => originRecenter(W) },
     { t: "📖 この語の詳細へ（下の意味・原点カードへ移動）", fn: () => originRecenter(W, { scrollTo: "card-origin" }) },
+    { t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", fn: () => gCombinePanel(W) },
     { t: "⚠ 埋没した原語を見る", fn: () => originRecenter(W, { scrollTo: "card-collapse" }) },
     { t: "🌍 多言語での言い方を見る", fn: () => originRecenter(W, { scrollTo: "card-breadth" }) },
     { t: "✍ 深掘り探索プロンプトを作る", fn: () => ds(W) },
@@ -1618,6 +1619,40 @@ function gPanel(title, bodyHtml) {
   document.body.appendChild(p);
   p.querySelector(".gp-x").addEventListener("click", () => p.remove());
   return p;
+}
+
+// A: ユーザー主導の組み合わせ探索（半田様のAND案）。語を入れて操作を選ぶ。
+function gCombinePanel(a) {
+  const jp = LANG === "ja";
+  const ops = [["and", "絞り込み（AND）"], ["semand", "意味で絞る"], ["not", "除外（NOT）"],
+               ["or", "合わせる（OR）"], ["compare", "比較（vs）"]];
+  const html = `<p class="muted">${jp ? `「${esc(a)}」に別の語を組み合わせて探索します。語を入れて操作を選んでください。` : `Combine “${esc(a)}” with another word.`}</p>
+    <input id="cmb-b" class="cmb-in" placeholder="${jp ? "組み合わせる語（例：教育／労働／音楽）" : "second word"}" autocomplete="off" />
+    <div class="cmb-ops">${ops.map(([k, l]) => `<button type="button" class="cmb-op" data-op="${k}">${esc(l)}</button>`).join("")}</div>
+    <p class="srcline muted">${jp ? "AND=両方に関わる／意味で絞る=意味の近縁をその観点で／NOT=除外／OR=合わせる／比較=共有と差分。ORと比較は空でも可。" : ""}</p>`;
+  const p = gPanel((jp ? "別の語と組み合わせる：" : "Combine: ") + a, html);
+  const inp = p.querySelector("#cmb-b");
+  setTimeout(() => inp && inp.focus(), 30);
+  p.querySelectorAll(".cmb-op").forEach(btn => btn.addEventListener("click", () => {
+    const b = (inp.value || "").trim();
+    if (!b && btn.dataset.op !== "or") { inp.focus(); return; }
+    p.remove(); gCombineRun(a, b, btn.dataset.op);
+  }));
+  if (inp) inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { const b = inp.value.trim(); if (b) { p.remove(); gCombineRun(a, b, "and"); } } });
+}
+async function gCombineRun(a, b, op) {
+  const jp = LANG === "ja";
+  gBusy(true, jp ? "組み合わせ探索中…" : "combining…", G && G.lastX, G && G.lastY);
+  let d;
+  try { d = await api(`/api/combine?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&op=${op}&lang=${LANG}`); }
+  catch (e) { gBusy(false); gPanel(jp ? "組み合わせ探索" : "Combine", `<p class="badge err">${esc(String(e.message || e))}</p>`); return; }
+  gBusy(false);
+  if (!d.nodes || d.nodes.length <= 1) { gPanel(jp ? "組み合わせ探索" : "Combine", `<p class="muted">${esc(d.note || (jp ? "結果が得られませんでした。" : "no result."))}</p>`); return; }
+  showCanvas();
+  G_raw = d; G_lens = "all";                    // 組み合わせ結果を今のグラフに描く
+  const note = $("graph-note"); if (note) note.textContent = d.note || "";
+  gBuild(d);
+  const w = $("origin-graph-wrap"); if (w) w.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 // 原語空間の共起（DWDS）— the benchmark's『関連概念群』dimension, made real.
 // BUGFIX (Codex): a non-Latin node label (Japanese 疎外) can't be sent to DWDS
