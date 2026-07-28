@@ -665,6 +665,8 @@ async def api_origin_graph(q: str, lang: str = "ja"):
         raise HTTPException(400, "empty query")
     cn = await concept.node(q, lang)
     cd = cn["data"] if not cn["error"] else {}
+    tr = await wiktionary.trace(q, lang)          # 語源trace＝ja.wikipediaに無い原語(διά等)でも辿れる
+    td = tr["data"] if not tr["error"] else {}
     gen = await wiktionary.ja_senses(q) if lang == "ja" else None
     senses = (gen["data"]["senses"] if gen and not gen["error"] and gen.get("data") else [])
     cluster = _orig_cluster(q, None)
@@ -774,15 +776,39 @@ async def api_origin_graph(q: str, lang: str = "ja"):
         add(rid, r["label"], "opposite", 3, 1.1, r["label"], {"qid": r.get("qid")})
         link("root", rid, 0.7)
 
-    # 第2階層: 世界の言語の広がり（breadth）＋ 第3: 各言語での語（一部）
-    labels = cd.get("breadth_labels") or {}
-    if labels:
-        add("dom:breadth", f"世界の言語 {len(labels)}", "domain", 2, 1.9)
+    # 第2階層: 世界の言語の広がり（breadth）＋ 第3: 各言語での語（一部）。
+    # 一次源＝Wikidata多言語ラベル（各言語の実語）。それが薄い語（διά のようにja記事が無く
+    # Wikidataに載らない原語）では Wiktionary の言語節（td.sections）で補い、言語マップを普遍的に出す。
+    breadth = []
+    for code, label in (cd.get("breadth_labels") or {}).items():
+        breadth.append((f"lang:{code}", f"{wiktionary.langname(code)}：{label}", label))
+    seen_lang = {b[1] for b in breadth}
+    for s in td.get("sections", []):
+        if s == "Translingual" or s in seen_lang:
+            continue
+        breadth.append((f"lang:sec:{s}", s, s))     # Wiktionary言語節（各言語の実語形はWiktへ委譲）
+    if breadth:
+        add("dom:breadth", f"世界の言語 {len(breadth)}", "domain", 2, 1.9)
         link("root", "dom:breadth", 1.0)
-        for code, label in list(labels.items())[:14]:
-            nid = f"lang:{code}"
-            add(nid, f"{wiktionary.langname(code)}：{label}", "language", 3, 0.85, label)
+        for nid, lbl, qq in breadth[:14]:
+            add(nid, lbl, "language", 3, 0.85, qq)
             link("dom:breadth", nid, 0.4)
+
+    # 第2/3階層: 語源の連鎖（td.origin_chain）を原語ノードに＝ja記事に無い原語でも辿れる。
+    # 各層は選べば site内で再中心（.ext-term と同じ普遍ルール／P11）＝クリックで探索が続く。
+    chain = td.get("origin_chain") or []
+    if chain and not (cluster or origin_terms):    # 既に概念原語が濃い語では重複させない
+        add("dom:etym", "語源の連鎖", "domain", 2, 1.7)
+        link("root", "dom:etym", 1.0)
+        for i, c in enumerate(chain[:6]):
+            form = (c.get("form") or "").strip()
+            name = (c.get("name") or "").strip()
+            if not (form or name):
+                continue
+            nid = f"etym:{i}"
+            lbl = f"{name}：{form}" if (name and form) else (form or name)
+            add(nid, lbl, "original", 3, 1.4, form or name, {"lang_name": name})
+            link("dom:etym", nid, 0.5)
 
     return {"query": q, "queried_at": now(), "qid": cd.get("qid"), "nodes": nodes, "edges": edges,
             "note": "重力(nodeの大きさ)・関係(edge)は密度の代理指標＝推定。データのある枝は"
