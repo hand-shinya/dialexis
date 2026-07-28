@@ -986,7 +986,7 @@ const LENSES = [
   { key: "era", label: "時代・変遷", en: "Over time", mode: "timeline", endpoint: "/api/timeline",
     cap: "原語がいつ現れ・広まり・衰退し・再評価されたか（Google Books Ngram・書物コーパス）。" },
   { key: "gravity", label: "重力探索", en: "Gravity (web)", mode: "lazy-graph", endpoint: "/api/gravity",
-    cap: "一般ウェブ検索で意味の重力分布を測り、重い領域（例 リゾーム→哲学/植物）を語とAND検索して次階層へ連続展開。頻度＝重力・重い枝ほど大きい。" },
+    cap: "一般ウェブの頻度×意味（Wikidataの思想家・関連概念）のハイブリッド重力。重い領域（例 リゾーム→哲学/植物）をAND検索で次階層へ展開。意味一致は大きく・先に。件数だけでない。" },
   { key: "websearch", label: "一般ウェブ", en: "Web search", mode: "cards", endpoint: "/api/websearch",
     cap: "一般ウェブ検索（SearXNG＝Google等を束ねる自前メタ検索・鍵不要）。Wikipedia系の背骨に対し一般の広さ。順位はエンジン由来・新タブ。" },
 ];

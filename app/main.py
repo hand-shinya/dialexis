@@ -1066,38 +1066,68 @@ async def api_gravity(q: str, lang: str = "ja"):
     if not res:
         return {"query": q, "nodes": [root], "edges": [],
                 "note": "一般ウェブ検索（SearXNG）が利用できないため重力分布を測れませんでした。"}
+    # 意味アンカー（Wikidataの思想家・関連概念＝件数でなく"意味"の重み。ハイブリッド重力）
+    cn = await concept.node(q, lang)
+    cd = cn["data"] if not cn["error"] else {}
+    anchors = set()
+    for p in (cd.get("originators") or []) + (cd.get("associated") or []):
+        if p.get("label"):
+            anchors.add(p["label"])
+    for r in ((cd.get("relations") or {}).get("near") or []) + ((cd.get("relations") or {}).get("opposite") or []):
+        if r.get("label"):
+            anchors.add(r["label"])
+
+    def _sem(e):   # 意味一致（Wikidataの関係集合と一致/包含）
+        return any(a == e or (len(a) > 2 and a in e) or (len(e) > 2 and e in a) for a in anchors)
+
     # Pass 1: 一般検索の結果テキストで各領域語の出現頻度＝重力分布を測る
     blob = " ".join((r["title"] + " " + r["content"]) for r in res)
     grav = {d: sum(blob.count(k) for k in kws) for d, kws in _GRAV_DOMAINS.items()}
     top = [(d, g) for d, g in sorted(grav.items(), key=lambda x: -x[1]) if g > 0][:5]
-    nodes, edges = [root], []
+    nodes, edges, used = [root], [], set()
     maxg = top[0][1] if top else 1
-    # Pass 2: 重い領域ごとに『語 AND 領域』検索→次階層の実体（Wikipedia項目/上位結果）を展開
+    # Pass 2: 重い領域ごとに『語 AND 領域』検索→次階層の実体を、意味一致(Wikidata)で優先・加重
     for d, g in top:
-        did = f"gdom:{d}"
-        nodes.append({"id": did, "label": f"{d}（{g}）", "kind": "appdomain", "layer": 2,
-                      "weight": round(1.6 + 2.6 * g / maxg, 2)})
-        edges.append({"from": "root", "to": did, "strength": 0.8 + 0.6 * g / maxg})
         sub = await searxng.search(q, lang, extra=_GRAV_DOMAINS[d][0], n=12, drop_commercial=True)
         ents, seene = [], set()
-        for r in sub:                       # まずWikipedia項目（きれいな実体名）
+        for r in sub:
             t = _wiki_title_from_url(r["url"])
             if t and t != q and t not in seene:
                 seene.add(t); ents.append(t)
-        for r in sub:                       # 不足時は上位結果の題で補完
-            if len(ents) >= 5:
+        for r in sub:
+            if len(ents) >= 8:
                 break
             t = (r["title"] or "").split(" - ")[0].split("｜")[0].strip()
             if t and t != q and t not in seene and len(t) <= 40:
                 seene.add(t); ents.append(t)
-        for e in ents[:5]:
+        ents = [e for e in ents if _sem(e)] + [e for e in ents if not _sem(e)]   # 意味一致を先に
+        picked = ents[:5]
+        semc = sum(1 for e in picked if _sem(e))
+        did = f"gdom:{d}"
+        # ドメイン重力＝ウェブ頻度 ＋ 意味一致数（件数だけでなく意味で重みづけ）
+        nodes.append({"id": did, "label": f"{d}（{g}{'＋意味'+str(semc) if semc else ''}）",
+                      "kind": "appdomain", "layer": 2, "weight": round(1.6 + 2.0 * g / maxg + 0.5 * semc, 2)})
+        edges.append({"from": "root", "to": did, "strength": 0.8 + 0.6 * g / maxg})
+        for e in picked:
             eid = f"gent:{d}:{e}"
-            nodes.append({"id": eid, "label": e, "kind": "application", "layer": 3, "weight": 1.0, "q": e})
-            edges.append({"from": did, "to": eid, "strength": 0.6})
-    note = ("一般ウェブ検索の重力分布（重い順: " + "・".join(d for d, _ in top) +
-            "）。頻度＝重力。重い領域を語とAND検索し、次階層に実体を展開。クリックでその語へ。")
+            nodes.append({"id": eid, "label": e, "kind": "application", "layer": 3,
+                          "weight": 1.8 if _sem(e) else 1.0, "q": e})   # 意味一致は大きく
+            edges.append({"from": did, "to": eid, "strength": 0.7 if _sem(e) else 0.5})
+            used.add(e)
+    # 意味的に近い（Wikidata）が、ウェブ結果に現れなかったもの＝意味が拾う分を明示的に追加
+    orphan = [a for a in anchors if a not in used and not any(a in u or u in a for u in used)][:5]
+    if orphan:
+        did = "gdom:意味的に近い（Wikidata）"
+        nodes.append({"id": did, "label": "意味的に近い（Wikidata）", "kind": "appdomain", "layer": 2, "weight": 2.6})
+        edges.append({"from": "root", "to": did, "strength": 1.1})
+        for a in orphan:
+            eid = f"gsem:{a}"
+            nodes.append({"id": eid, "label": a, "kind": "related", "layer": 3, "weight": 1.6, "q": a})
+            edges.append({"from": did, "to": eid, "strength": 0.7})
+    note = ("重力分布＝一般ウェブの頻度 × 意味（Wikidataの思想家・関連概念）のハイブリッド。"
+            "重い順: " + "・".join(d for d, _ in top) + "。意味一致は大きく・先に。クリックでその語へ。")
     return {"query": q, "queried_at": now(), "nodes": nodes, "edges": edges, "note": note,
-            "sources": [{"source": "SearXNG(一般ウェブ)", "retrieved_at": now(), "error": None}]}
+            "sources": [{"source": "SearXNG(一般ウェブ) + Wikidata(意味)", "retrieved_at": now(), "error": None}]}
 
 
 @app.get("/api/dimensions")
