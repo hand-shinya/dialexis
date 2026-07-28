@@ -169,6 +169,23 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .lens-chip.empty { opacity: .4; cursor: default; }
 .lens-n { font-size: .72rem; opacity: .7; margin-left: .15rem; }
 .lens-chip.on .lens-n { opacity: .85; }
+/* 上部の帯＝中心語の共通メニュー パッケージ（案C・全ノード共通・常時表示） */
+.tm-label { font-family: Georgia, "Times New Roman", serif; font-weight: 600; font-size: .95rem;
+  color: var(--ink); margin-right: .3rem; padding-right: .5rem; border-right: 1px solid var(--line); }
+.tm-chip { font-size: .82rem; padding: .28rem .62rem; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.tm-chip:hover { border-color: var(--accent); background: #f2eee4; }
+/* 👓 見方を選ぶ（この地図の切り口）パネルのレンズ一覧 */
+.lens-list { display: flex; flex-direction: column; gap: .4rem; margin-top: .5rem; }
+.lens-row { text-align: left; border: 1px solid var(--line); border-radius: 8px; background: var(--paper);
+  padding: .5rem .7rem; cursor: pointer; display: flex; flex-direction: column; gap: .15rem; font-family: system-ui, sans-serif; }
+.lens-row:hover { border-color: var(--accent); background: #f2eee4; }
+.lens-row b { font-size: .9rem; color: var(--ink); }
+.lens-cap { font-size: .76rem; color: var(--muted); line-height: 1.4; }
+/* パネル左上「←メニュー」＝別のメニュー項目を選び直す戻る導線 */
+.gp-back { background: none; border: 1px solid var(--line); border-radius: 6px; color: var(--accent2);
+  font-family: system-ui, sans-serif; font-size: .8rem; padding: .2rem .5rem; cursor: pointer; }
+.gp-back:hover { border-color: var(--accent); }
 /* 専用描画レンズ（使用例カード・時代変遷チャート） */
 #graph-alt { padding: .6rem .8rem 1rem; min-height: 300px; }
 .usage-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .6rem; }

@@ -1096,20 +1096,24 @@ function lensLeafCount(d, L) {
   return L.kinds ? d.nodes.filter(n => L.kinds.includes(n.kind)).length : d.nodes.length;
 }
 
-function renderLensChips(d) {
+// 上部の帯 ＝ 中心語の「共通メニュー パッケージ」を常時表示（案C・普遍性）。中心語も他ノードと
+// 全く同じ gActions を使う＝どの語でも同じUI。0だらけのレンズ帯は廃止（レンズは👓見方の中）。
+function renderTopMenu(d) {
   const el = $("graph-lens"); if (!el) return;
   const jp = LANG === "ja";
-  el.innerHTML = LENSES.map(L => {
-    const n = lensLeafCount(d, L), empty = L.kinds && n === 0;
-    return `<button type="button" class="lens-chip${L.key === G_lens ? " on" : ""}${empty ? " empty" : ""}" data-k="${L.key}"${empty ? " disabled" : ""}>${esc(jp ? L.label : L.en)}${L.kinds ? ` <span class="lens-n">${n}</span>` : ""}</button>`;
-  }).join("");
-  el.querySelectorAll(".lens-chip:not(.empty)").forEach(c =>
-    c.addEventListener("click", () => applyLensBuild(c.dataset.k)));
+  const rootNode = { kind: "word", label: d.query, q: d.query };
+  const items = gActions(rootNode);
+  el._items = items;
+  el.innerHTML = `<span class="tm-label" title="${jp ? "この中心語のメニュー。どのノードをクリックしても同じ操作が出ます（普遍）。" : "menu of the centre word; every node offers the same"}">◉ ${esc(d.query)}</span>`
+    + items.map((it, i) => `<button type="button" class="tm-chip" data-i="${i}" title="${esc(it.t)}">${esc(it.s || it.t)}</button>`).join("");
+  el.querySelectorAll(".tm-chip").forEach(b => b.addEventListener("click", () => {
+    const it = el._items[+b.dataset.i]; if (it && it.fn) it.fn();
+  }));
 }
 
-function setActiveChip(key) {
-  const el = $("graph-lens");
-  if (el) el.querySelectorAll(".lens-chip").forEach(c => c.classList.toggle("on", c.dataset.k === key));
+function setActiveChip(key) {   // 現在の見方（レンズ）を graph-note に一行表示（旧レンズ帯は廃止）
+  const Lz = LENSES.find(x => x.key === key), note = $("graph-note");
+  if (Lz && note) note.textContent = (LANG === "ja" ? "見方：" : "view: ") + (LANG === "ja" ? Lz.label : Lz.en) + " — " + (Lz.cap || "");
 }
 // グラフ描画（canvas）と専用描画（#graph-alt: カード/チャート）の切替。altに入る時は描画ループを止める。
 function showCanvas() { const c = $("origin-graph"), a = $("graph-alt"); if (c) c.style.display = "block"; if (a) { a.style.display = "none"; a.innerHTML = ""; } }
@@ -1120,7 +1124,8 @@ async function applyLensBuild(key) {
   G_lens = key; setActiveChip(key);
   const L = LENSES.find(x => x.key === key) || LENSES[0];
   const jp = LANG === "ja", note = $("graph-note");
-  const setNote = t => { if (note) note.textContent = t; };
+  const vlabel = (jp ? "見方：" : "view: ") + (jp ? L.label : L.en);   // アクティブな見方を常に明示（旧レンズchipのon表示の代替）
+  const setNote = t => { if (note) note.textContent = vlabel + (t ? " — " + t : ""); };
   const mode = L.mode || "filter";
   if (mode === "filter") { showCanvas(); const pd = applyLens(G_raw, key); setNote(pd.note || G_raw.note || ""); gBuild(pd); return; }
   if (mode === "region") { showCanvas(); const pd = applyRegion(G_raw); setNote(pd.note); gBuild(pd); return; }
@@ -1251,7 +1256,7 @@ async function originGraph(q, tok) {
   // 選んでいたレンズをこの語でも保つ（見方の連続性）。ただし新しい語でそのフィルタが空なら俯瞰へ。
   const cur = LENSES.find(x => x.key === G_lens) || LENSES[0];
   if (cur.kinds && lensLeafCount(d, cur) === 0) G_lens = "all";
-  renderLensChips(d);
+  renderTopMenu(d);
   const cur2 = LENSES.find(x => x.key === G_lens) || LENSES[0];
   if ((cur2.mode || "filter") === "filter") {
     showCanvas();
@@ -1575,7 +1580,7 @@ function gAuthorPanel(n) {
   if (n.term_de) rows.push([jp ? "この語での原語" : "term", `<b lang="de">${esc(n.term_de)}</b>`]);
   const body = `<p class="muted">${jp ? "思想家の系譜（検証済シード）から。著者は語とは別の次元なので、語源エンジンでなく著者情報として示します。" : "From the curated lineage; authors are a different dimension than words."}</p>
     ${rows.length ? `<table class="plain">${rows.map(r => `<tr><th>${esc(r[0])}</th><td>${r[1]}</td></tr>`).join("")}</table>` : ""}
-    <p class="srcline"><a href="${wp}" target="_blank">${jp ? "Wikipediaで開く" : "Wikipedia"}</a> · <a href="/deepsearch?q=${encodeURIComponent(n.label)}&lang=${LANG}">${jp ? "深掘り探索プロンプト" : "deep-search"}</a></p>
+    <p class="srcline"><a href="${wp}" target="_blank">${jp ? "Wikipediaで開く" : "Wikipedia"}</a> · <a href="/deepsearch?q=${encodeURIComponent(n.label)}&lang=${LANG}"${originLinkAttr()}>${jp ? "深掘り探索プロンプト" : "deep-search"}</a></p>
     <p class="srcline muted">${jp ? "著者固有の用法（その著作でこの語がどう使われたか）・時代性・年表は整備中です。" : "Author-specific usage / timeline are being built."}</p>`;
   gPanel((jp ? "著者：" : "Author: ") + n.label, body);
 }
@@ -1586,56 +1591,86 @@ function gAuthorPanel(n) {
 // 普遍原則（原理原則）: どの factor（ノード）にも "共通コア" の操作が必ず付く。ここに1つ
 // 足せば全場面へ普遍適用される（個別menuへの付け忘れが構造的に起きない）。domain は語でなく
 // 構造ラベルなので語操作を出さない（＝概念/人物/著作/言語など"実在の語"にのみ普遍コアを適用）。
+// 全ノード共通の「メニュー パッケージ」。中心語も言語マップの語も第2/3階層のノードも、
+// これ一つを接続する（普遍性・P11）。t=完全ラベル（ポップアップ用）・s=短縮ラベル（上部の帯用）。
+// 上部の帯（renderTopMenu）とクリックのポップアップ（gMenu）は同じ本関数を使う＝どこでも同一UI。
 function gActions(n) {
   const jp = LANG === "ja", q = n.q, L = n.label, W = q || L;
   const nt = () => window.open(`/origin?q=${encodeURIComponent(W)}&lang=${LANG}`, "_blank");
-  const ds = (t) => { location.href = `/deepsearch?q=${encodeURIComponent(t || W)}&lang=${LANG}`; };
+  // 深掘り＝視点・目的・難易度で探索プロンプトを作る（新タブ設定を尊重）
+  const ds = () => gPerspectivePanel(W);
 
   if (n.kind === "domain") {   // 構造の分岐＝語操作でなく分岐操作
     return [
-      { t: "🎯 この分岐を中心に（下層を最大表示）", fn: () => gFocusSubtree(G.nodes.indexOf(n)) },
-      { t: "↩ 全体の重力分布に戻す", fn: () => originGraph(G.rootQ) },
-      { t: "🔦 この分岐の経路を強調（ホバーでも可）", fn: () => { G.hl = gHl(G.nodes.indexOf(n)); gDraw(); } },
-      { t: "✍ 深掘り探索プロンプトを作る", fn: () => ds(W) },
+      { s: "🎯 この分岐を中心", t: "🎯 この分岐を中心に（下層を最大表示）", fn: () => gFocusSubtree(G.nodes.indexOf(n)) },
+      { s: "↩ 全体に戻す", t: "↩ 全体の重力分布に戻す", fn: () => originGraph(G.rootQ) },
+      { s: "🔦 経路を強調", t: "🔦 この分岐の経路を強調（ホバーでも可）", fn: () => { G.hl = gHl(G.nodes.indexOf(n)); gDraw(); } },
+      { s: "✍ 深掘り", t: "✍ 深掘り探索プロンプトを作る（視点・目的・難易度）", fn: ds },
     ];
   }
   // ── 普遍コア（全ての実在語ノードに必ず付く） ──
   const CORE_HEAD = [
-    { t: "🎯 これを地図の中心に据え直す（グラフを再構成）", fn: () => originRecenter(W) },
-    { t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", fn: () => gCombinePanel(W) },
-    { t: "👓 見方を選ぶ（視点・目的・難易度）", fn: () => gPerspectivePanel(W) },
+    { s: "🎯 中心に据える", t: "🎯 これを地図の中心に据え直す（グラフを再構成）", fn: () => originRecenter(W) },
+    { s: "🔗 組み合わせ", t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", fn: () => gCombinePanel(W) },
+    { s: "👓 見方", t: "👓 見方を選ぶ（この地図の切り口）", fn: () => gLensMenu(W) },
   ];
   const CORE_TAIL = [
-    { t: "🌐 外部の専門情報で調べる（各サイトの言語で・新タブ）", fn: () => gExtPanel(W) },
-    { t: "⭐ 棚に追加（あとで見る）", fn: () => shelfAdd(W) },
-    { t: "✍ 深掘り探索プロンプトを作る", fn: () => ds(W) },
-    { t: "🔗 新しいタブでこの語を開く", fn: nt },
+    { s: "🌐 外部で調べる", t: "🌐 外部の専門情報で調べる（各サイトの言語で・新タブ）", fn: () => gExtPanel(W) },
+    { s: "⭐ 棚", t: "⭐ 棚に追加（あとで見る）", fn: () => shelfAdd(W) },
+    { s: "✍ 深掘り", t: "✍ 深掘り探索プロンプトを作る（視点・目的・難易度）", fn: ds },
+    { s: "↗ 新タブ", t: "🔗 新しいタブでこの語を開く", fn: nt },
   ];
   // ── kind 固有の追加（コアの間に挟む） ──
   let extra;
   if (n.kind === "author" || n.kind === "work") {
     const who = n.kind === "author" ? "この人物" : "この著作", sq = n.search || W;
     extra = [
-      { t: `🔍 ${who}を調べる（経歴・著作・出典を取得）`, fn: () => gAuthorInvestigate(sq, L) },
-      { t: `📖 ${who}の系譜メモ（この語での原語）`, fn: () => gAuthorPanel(n) },
+      { s: `🔍 ${who}を調べる`, t: `🔍 ${who}を調べる（経歴・著作・出典を取得）`, fn: () => gAuthorInvestigate(sq, L) },
+      { s: "📖 系譜メモ", t: `📖 ${who}の系譜メモ（この語での原語）`, fn: () => gAuthorPanel(n) },
     ];
   } else {   // word / original / language / related / application
     extra = [
-      { t: "📖 この語の詳細へ（下の意味・原点カードへ移動）", fn: () => originRecenter(W, { scrollTo: "card-origin" }) },
-      { t: "🔬 語源と構成要素を解剖する（原義を復元）", fn: () => gAnatomyPanel(W) },
-      { t: "⚖ 訳語と原語の意味を並べて比べる（何が隠れたか）", fn: () => gContrastPanel(W) },
-      { t: "⚠ 埋没した原語を見る", fn: () => originRecenter(W, { scrollTo: "card-collapse" }) },
-      { t: "🌍 多言語での言い方を見る", fn: () => originRecenter(W, { scrollTo: "card-breadth" }) },
-      { t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(W) },
+      { s: "📖 詳細へ", t: "📖 この語の詳細へ（下の意味・原点カードへ移動）", fn: () => originRecenter(W, { scrollTo: "card-origin" }) },
+      { s: "🔬 解剖", t: "🔬 語源と構成要素を解剖する（原義を復元）", fn: () => gAnatomyPanel(W) },
+      { s: "⚖ 並置", t: "⚖ 訳語と原語の意味を並べて比べる（何が隠れたか）", fn: () => gContrastPanel(W) },
+      { s: "⚠ 埋没", t: "⚠ 埋没した原語を見る", fn: () => originRecenter(W, { scrollTo: "card-collapse" }) },
+      { s: "🌍 多言語", t: "🌍 多言語での言い方を見る", fn: () => originRecenter(W, { scrollTo: "card-breadth" }) },
+      { s: "🕮 共起", t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(W) },
     ];
   }
   return [...CORE_HEAD, ...extra, ...CORE_TAIL];
 }
 
+// 👓 見方を選ぶ ＝ この地図（重力場）の切り口。全ノードのメニューから普遍に開ける。
+// レンズは中心語のグラフを絞る操作ゆえ、W が中心でなければ先に再中心してから適用（P11一貫性）。
+function gLensMenu(W) {
+  const jp = LANG === "ja";
+  const items = LENSES.map(Lz => ({ key: Lz.key, label: jp ? Lz.label : Lz.en, cap: jp ? Lz.cap : "" }));
+  gPanel((jp ? "見方を選ぶ（この地図の切り口）：" : "Views: ") + W,
+    `<p class="muted">${jp ? "同じ言葉を、いくつもの見方で。どれもこの地図（重力場）の切り口です。選ぶとこの語を中心にその見方で描き直します。" : "Views of this map; each re-draws around this word."}</p>`
+    + `<div class="lens-list">` + items.map((it, i) =>
+        `<button type="button" class="lens-row" data-i="${i}" data-k="${esc(it.key)}"><b>${esc(it.label)}</b><span class="lens-cap">${esc(it.cap)}</span></button>`).join("") + `</div>`);
+  const p = $("graph-panel"); if (!p) return;
+  p._lensItems = items;
+  p.querySelectorAll(".lens-row").forEach(b => b.addEventListener("click", () => {
+    const it = p._lensItems[+b.dataset.i]; p.remove(); applyLensFor(W, it.key);
+  }));
+}
+// W を中心にした上でレンズを適用（他ノードの「見方」も、その語を中心に据えてから効く＝普遍）
+async function applyLensFor(W, key) {
+  if (G && G.rootQ === W && G_raw) { applyLensBuild(key); return; }
+  await originRecenter(W);
+  if (G && G.rootQ === W) applyLensBuild(key);
+}
+
 function gMenu(cx, cy, n) {
   G.menuNode = n;
+  MENUCTX = { cx, cy, n };   // このノードのメニューを、パネル閲覧後に開き直すための文脈（戻る導線）
   gShowMenu(cx, cy, (LANG === "ja" ? "選択：" : "Selected: ") + n.label, gActions(n));
 }
+// ノードのポップアップ メニュー→パネルを見た後に「別のメニューを選ぶ」ために元メニューへ戻る文脈
+let MENUCTX = null, _panelFromMenu = false;
+function gReopenMenu() { if (MENUCTX) gMenu(MENUCTX.cx, MENUCTX.cy, MENUCTX.n); }
 function gMenuEdge(cx, cy, ei) {
   const e = G.edges[ei];
   const child = G.nodes[e.a].layer >= G.nodes[e.b].layer ? e.a : e.b;
@@ -1691,7 +1726,9 @@ function gShowMenu(cx, cy, title, items) {
     const el = ev.target.closest(".gm-item"); if (!el) return;
     const it = m._items[Number(el.dataset.i)];
     gMenuClose();
+    _panelFromMenu = true;   // この直後に開くパネルへ「←メニューに戻る」を付ける（戻る導線）
     if (it && it.fn) it.fn();
+    setTimeout(() => { _panelFromMenu = false; }, 0);
   });
   G.menuCloser = (ev) => { if (!ev.target.closest("#graph-menu")) gMenuClose(); };
   setTimeout(() => document.addEventListener("pointerdown", G.menuCloser), 0);
@@ -1703,12 +1740,16 @@ function gMenuClose() {
 // dismissible overlay panel (for menu actions that show their own content)
 function gPanel(title, bodyHtml) {
   const old = $("graph-panel"); if (old) old.remove();
+  const jp = LANG === "ja";
+  const back = (_panelFromMenu && MENUCTX);   // ノードのメニューから開いた＝別メニューへ戻れるようにする
   const p = document.createElement("div");
   p.id = "graph-panel";
-  p.innerHTML = `<div class="gp-head"><b>${esc(title)}</b><button type="button" class="gp-x">×</button></div>
+  p.innerHTML = `<div class="gp-head">${back ? `<button type="button" class="gp-back" title="${jp ? "このノードのメニューに戻って別の項目を選ぶ" : "back to menu"}">← ${jp ? "メニュー" : "menu"}</button>` : ""}<b>${esc(title)}</b><button type="button" class="gp-x">×</button></div>
     <div class="gp-body">${bodyHtml}</div>`;
   document.body.appendChild(p);
   p.querySelector(".gp-x").addEventListener("click", () => p.remove());
+  const bb = p.querySelector(".gp-back");
+  if (bb) bb.addEventListener("click", () => { p.remove(); gReopenMenu(); });
   return p;
 }
 

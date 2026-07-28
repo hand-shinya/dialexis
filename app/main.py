@@ -665,7 +665,8 @@ async def api_origin_graph(q: str, lang: str = "ja"):
         raise HTTPException(400, "empty query")
     cn = await concept.node(q, lang)
     cd = cn["data"] if not cn["error"] else {}
-    tr = await wiktionary.trace(q, lang)          # 語源trace＝ja.wikipediaに無い原語(διά等)でも辿れる
+    _sec = {"ja": "Japanese", "en": "English", "de": "German", "zh": "Chinese"}.get(lang, "Japanese")
+    tr = await wiktionary.trace(q, _sec)   # 語源trace＝ja記事に無い原語(διά等)でも辿れる（section名で渡す）
     td = tr["data"] if not tr["error"] else {}
     gen = await wiktionary.ja_senses(q) if lang == "ja" else None
     senses = (gen["data"]["senses"] if gen and not gen["error"] and gen.get("data") else [])

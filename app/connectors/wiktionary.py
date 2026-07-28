@@ -126,14 +126,24 @@ async def trace(word: str, section_lang: str = "") -> dict:
                        "url": f"https://en.wiktionary.org/wiki/{word}"})
         sections = re.findall(r"(?m)^==[ ]*([^=\n]+?)[ ]*==[ ]*$", wt)
         # narrow to the requested language section for etymology/senses if given
-        seg, self_code = wt, ""
+        seg, self_code, chosen = wt, "", ""
+        def _seg_of(name):
+            return re.search(r"(?m)^==[ ]*" + re.escape(name)
+                             + r"[ ]*==[ ]*$\n(.*?)(?=^==[ ]*[^=\n]+[ ]*==[ ]*$|\Z)",
+                             wt, re.S)
         if section_lang:
-            m = re.search(r"(?m)^==[ ]*" + re.escape(section_lang)
-                          + r"[ ]*==[ ]*$\n(.*?)(?=^==[ ]*[^=\n]+[ ]*==[ ]*$|\Z)",
-                          wt, re.S)
+            m = _seg_of(section_lang)
             if m:
-                seg = m.group(1)
-            self_code = _SECTION_CODE.get(section_lang, "")
+                seg = m.group(1); chosen = section_lang
+        # 要求言語（例: lang=ja→Japanese）の節がこの語に無い場合（διαλεκτική を日本語で問う等）、
+        # 要求言語を self とみなすと「日本語生まれ」と誤判定する（バグ）。語が実際に記載された
+        # 最初の言語節（Translingual以外）に切り替え、その言語の語源・語義を読む＝無中心で正しい。
+        if not chosen and sections:
+            pick = next((s for s in sections if s != "Translingual"), sections[0])
+            m2 = _seg_of(pick)
+            if m2:
+                seg = m2.group(1); chosen = pick
+        self_code = _SECTION_CODE.get(chosen, "")
         # source-language codes AND the actual word-form at each step the etymology
         # reaches back through — so the chain shows real words (空 ← サンスクリット
         # शून्यता), not just language names. Excludes self-reference / undetermined.

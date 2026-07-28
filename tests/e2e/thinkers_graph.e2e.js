@@ -12,7 +12,7 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
 
   await page.goto(`${BASE}/origin?q=%E8%B3%87%E6%9C%AC%E8%AB%96&lang=ja`, { waitUntil: "networkidle" });
   await page.waitForTimeout(1600);
-  await page.click('#graph-lens .lens-chip[data-k="thinkers"]');
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();}); await page.waitForTimeout(350); await page.click('.lens-row[data-k="thinkers"]');
   await page.waitForTimeout(1200);
 
   const info = await page.evaluate(() => {

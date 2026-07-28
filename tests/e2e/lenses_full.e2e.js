@@ -13,18 +13,21 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
   await page.goto(`${BASE}/origin?q=%E7%96%8E%E5%A4%96&lang=ja`, { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
 
-  const chipKeys = await page.$$eval("#graph-lens .lens-chip", els => els.map(e => e.dataset.k));
-  ok("メニューに全レンズが並ぶ（10枚: 俯瞰/思想家/原語/言語/意味/星座/文化圏/応用/使用例/時代）",
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();});
+  await page.waitForTimeout(350);
+  const chipKeys = await page.$$eval(".lens-row", els => els.map(e => e.dataset.k));
+  ok("👓見方に全レンズが並ぶ（俯瞰/思想家/原語/言語/意味/星座/文化圏/応用/使用例/時代）",
      ["all","thinkers","original","languages","domains","relations","spheres","applications","usage","era"].every(k => chipKeys.includes(k)),
      `keys=${JSON.stringify(chipKeys)}`);
+  await page.evaluate(()=>{const p=document.getElementById("graph-panel");if(p)p.remove();});
 
   // 文化圏（region・グラフ再投影）
-  await page.click('#graph-lens .lens-chip[data-k="spheres"]'); await page.waitForTimeout(3500);
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();}); await page.waitForTimeout(350); await page.click('.lens-row[data-k="spheres"]'); await page.waitForTimeout(3500);
   const regs = await page.evaluate(() => G.nodes.filter(n => n.kind === "appdomain").map(n => n.label));
   ok("文化圏レンズ: 言語が圏（欧/漢字圏/日本/その他）で束ねられる", regs.some(r => ["欧", "漢字圏", "日本", "その他"].includes(r)), `regs=${JSON.stringify(regs)}`);
 
   // 応用・波及（lazy-graph）
-  await page.click('#graph-lens .lens-chip[data-k="applications"]'); await page.waitForTimeout(3000);
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();}); await page.waitForTimeout(350); await page.click('.lens-row[data-k="applications"]'); await page.waitForTimeout(3000);
   const appInfo = await page.evaluate(() => ({
     doms: (G && G.nodes ? G.nodes.filter(n => n.kind === "appdomain").map(n => n.label) : []),
     works: (G && G.nodes ? G.nodes.filter(n => n.kind === "application").length : 0),
@@ -32,7 +35,7 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
   ok("応用レンズ: 分野別の枝＋作品の点が出る", appInfo.works >= 2 && appInfo.doms.length >= 1, `doms=${JSON.stringify(appInfo.doms)} works=${appInfo.works}`);
 
   // 使用例・引用（cards）
-  await page.click('#graph-lens .lens-chip[data-k="usage"]'); await page.waitForTimeout(3500);
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();}); await page.waitForTimeout(350); await page.click('.lens-row[data-k="usage"]'); await page.waitForTimeout(3500);
   const altVisible = await page.$eval("#graph-alt", el => el.style.display !== "none");
   const nCards = await page.$$eval("#graph-alt .ucard", els => els.length);
   ok("使用例レンズ: 引用カードが専用領域に出る（canvasでなくカード）", altVisible && nCards >= 3, `cards=${nCards}`);
@@ -40,13 +43,13 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
   ok("引用カードに出典リンク（新タブ）がある", cardHasSource);
 
   // 時代・変遷（timeline chart）
-  await page.click('#graph-lens .lens-chip[data-k="era"]'); await page.waitForTimeout(3500);
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();}); await page.waitForTimeout(350); await page.click('.lens-row[data-k="era"]'); await page.waitForTimeout(3500);
   const tl = await page.$("#tl-canvas");
   const legend = await page.$$eval("#graph-alt .tl-legend span", els => els.map(e => e.textContent));
   ok("時代・変遷レンズ: 時間軸チャート＋凡例（原語・最盛年）が出る", !!tl && legend.length >= 1, `legend=${JSON.stringify(legend.slice(0,2))}`);
 
   // 俯瞰に戻すとグラフ（canvas）復帰
-  await page.click('#graph-lens .lens-chip[data-k="all"]'); await page.waitForTimeout(800);
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();}); await page.waitForTimeout(350); await page.click('.lens-row[data-k="all"]'); await page.waitForTimeout(800);
   const canvasBack = await page.$eval("#origin-graph", el => el.style.display !== "none");
   const altHidden = await page.$eval("#graph-alt", el => el.style.display === "none");
   ok("俯瞰に戻すとグラフ（canvas）が復帰し専用領域は隠れる", canvasBack && altHidden);

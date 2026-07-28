@@ -18,9 +18,11 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
     const authors = await page.evaluate(() => (G && G.nodes ? G.nodes.filter(n => n.kind === "author").length : 0));
     ok(`${q}: 思想家ノードが0でない（思想家レンズがグレーアウトしない）`, authors >= 1, `authors=${authors}`);
     // 思想家レンズが選べる（グレーアウトしない）
-    const thinkersChip = await page.$('#graph-lens .lens-chip[data-k="thinkers"]');
-    const disabled = thinkersChip ? await page.evaluate(el => el.classList.contains("empty"), thinkersChip) : true;
-    ok(`${q}: 思想家と著作レンズが選択可能（empty/グレーアウトでない）`, !disabled);
+    await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();});
+    await page.waitForTimeout(350);
+    const thinkersRow = await page.$('.lens-row[data-k="thinkers"]');
+    ok(`${q}: 思想家と著作レンズが選択可能（見方に列挙）`, !!thinkersRow);
+    await page.evaluate(()=>{const p=document.getElementById("graph-panel");if(p)p.remove();});
   }
 
   const pass = R.filter(Boolean).length;

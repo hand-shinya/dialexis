@@ -16,16 +16,18 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
   await page.goto(`${BASE}/origin?q=%E3%83%AA%E3%82%BE%E3%83%BC%E3%83%A0&lang=ja`, { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
 
-  const chips = await page.$$eval("#graph-lens .lens-chip", els => els.map(e => e.textContent.trim()));
-  ok("レンズ選択チップが複数出る（見方を選べる）", chips.length >= 4, `chips=${JSON.stringify(chips)}`);
-  ok("既定は俯瞰（すべて）がonで、全種別が見える",
-     await page.$eval("#graph-lens .lens-chip.on", e => e.dataset.k) === "all");
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();});
+  await page.waitForTimeout(350);
+  const rows = await page.$$eval(".lens-row", els => els.map(e => e.dataset.k));
+  ok("👓見方に複数のレンズが出る（見方を選べる）", rows.length >= 4, `rows=${JSON.stringify(rows)}`);
+  ok("全レンズ（俯瞰/思想家/世界の言語）が列挙される", rows.includes("all") && rows.includes("thinkers") && rows.includes("languages"));
+  await page.evaluate(()=>{const p=document.getElementById("graph-panel");if(p)p.remove();});
 
   // 思想家と著作レンズ
   let reqDuring = 0;
   page.on("request", r => { if (/\/api\/origin\/graph/.test(r.url())) reqDuring++; });
   const before = reqDuring;
-  await page.click('#graph-lens .lens-chip[data-k="thinkers"]');
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();}); await page.waitForTimeout(350); await page.click('.lens-row[data-k="thinkers"]');
   await page.waitForTimeout(900);
   const tk = await kinds(), tl = await labels();
   ok("思想家レンズ: ノードが語＋思想家/著作だけに絞られる",
@@ -34,14 +36,14 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
   ok("レンズ切替は再取得しない（同じデータを再投影）", reqDuring === before, `graph reqs during switch=${reqDuring - before}`);
 
   // 世界の言語レンズ
-  await page.click('#graph-lens .lens-chip[data-k="languages"]');
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();}); await page.waitForTimeout(350); await page.click('.lens-row[data-k="languages"]');
   await page.waitForTimeout(900);
   const lk = await kinds();
   ok("言語レンズ: ノードが語＋言語だけに絞られる",
      lk.every(k => ["word", "language"].includes(k)) && lk.includes("language"), `kinds=${JSON.stringify([...new Set(lk)])}`);
 
   // 俯瞰に戻す
-  await page.click('#graph-lens .lens-chip[data-k="all"]');
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();}); await page.waitForTimeout(350); await page.click('.lens-row[data-k="all"]');
   await page.waitForTimeout(700);
   const ak = await kinds();
   ok("俯瞰に戻すと全種別が復活する", new Set(ak).size >= 3, `kinds=${JSON.stringify([...new Set(ak)])}`);

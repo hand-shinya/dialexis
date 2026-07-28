@@ -13,9 +13,12 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
   await page.goto(`${BASE}/origin?q=%E7%96%8E%E5%A4%96&lang=ja`, { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
 
-  const chip = await page.$('#graph-lens .lens-chip[data-k="relations"]');
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();});
+  await page.waitForTimeout(350);
+  const chip = await page.$('.lens-row[data-k="relations"]');
   ok("『類語・対義（星座）』レンズが選べる", !!chip);
-  await page.click('#graph-lens .lens-chip[data-k="relations"]');
+  await page.evaluate(()=>{const p=document.getElementById("graph-panel");if(p)p.remove();});
+  await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();}); await page.waitForTimeout(350); await page.click('.lens-row[data-k="relations"]');
   await page.waitForTimeout(900);
 
   const info = await page.evaluate(() => ({
