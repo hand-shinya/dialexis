@@ -1220,18 +1220,19 @@ function originCurrent(q) { return OZ.q === q; }
 function gDimAct(dm) {
   if (!dm) return;
   const jp = LANG === "ja", act = dm.act || "";
+  const w = (G && G.rootQ) || (($("origin-results") || {}).dataset || {}).q || "";   // この探索の中心語＝続行フッター用term
   if (dm.status === "soon") {
-    gPanel(dm.label, `<p class="muted">${jp ? "この次元は整備中です。路（構造）は用意されており、データ源が接続され次第ここに現れます。内容はベンチマークと違ってよく、広さ・深さ・次元の多様性の路を保証します。" : "This dimension is being built; the path exists and fills in as its source connects."}</p>`);
+    gPanel(dm.label, `<p class="muted">${jp ? "この次元は整備中です。路（構造）は用意されており、データ源が接続され次第ここに現れます。内容はベンチマークと違ってよく、広さ・深さ・次元の多様性の路を保証します。" : "This dimension is being built; the path exists and fills in as its source connects."}</p>`, w);
     return;
   }
   if (act.startsWith("scroll:")) {
     const el = $(act.slice(7));
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-    else gPanel(dm.label, `<p class="muted">${jp ? "この探索ではこの次元の内容が見つかりませんでした。" : "Not available for this word."}</p>`);
+    else gPanel(dm.label, `<p class="muted">${jp ? "この探索ではこの次元の内容が見つかりませんでした。" : "Not available for this word."}</p>`, w);
   } else if (act.startsWith("colloc:")) gColloc(act.slice(7), "de");
   else if (act.startsWith("counter:")) gCounter(act.slice(8));
-  else if (act === "graph") { const w = $("origin-graph-wrap"); if (w) w.scrollIntoView({ behavior: "smooth", block: "start" }); }
-  else gPanel(dm.label, `<p class="muted">${jp ? "準備中" : "coming"}</p>`);
+  else if (act === "graph") { const gw = $("origin-graph-wrap"); if (gw) gw.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  else gPanel(dm.label, `<p class="muted">${jp ? "準備中" : "coming"}</p>`, w);
 }
 
 // 批判・異論の次元 — reuse the existing counterargument engine (steelman
