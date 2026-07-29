@@ -122,6 +122,27 @@ async def _resolve_form(term):
 # 語の文字（ラテン拡張＋ギリシャ基本/拡張＝アクセント付き含む）
 _WORDCHAR = r"A-Za-zÀ-ÿͰ-Ͽἀ-῿"
 
+# 言語名（語源散文の「from Latin …」等で現れる修飾子）。これ自体は語源"語"でなく言語の名前なので、
+# 連鎖の追跡対象にしてはならない（追うと言語名ページの語源＝別語の語源を誤接続する。止揚→Aufhebung で
+# 言語名 Latin を辿り Latium＋-īnus＝ローマを構成要素と誤表示した事案の是正・Task B到達効果検証で発見・P6）。
+_LANG_NAMES = {
+    "Latin", "Greek", "German", "French", "English", "Sanskrit", "Dutch", "Italian",
+    "Spanish", "Portuguese", "Persian", "Arabic", "Hebrew", "Aramaic", "Chinese",
+    "Japanese", "Korean", "Gothic", "Frankish", "Norse", "Slavic", "Germanic", "Celtic",
+    "Ancient", "Old", "Middle", "Late", "Vulgar", "Medieval", "Classical", "Modern",
+    "Proto", "Koine", "Attic", "Byzantine", "Hellenistic", "Church", "Norman",
+    "Anglo", "Saxon", "Indo", "European", "Romance", "Iranian", "Turkic",
+}
+
+
+def _is_langname(t):
+    """語源"語"でなく言語名かどうか（単独 or 複合語名の各語が言語名）。空/記号は言語名扱いしない。"""
+    t = (t or "").strip(" .,-")
+    if not t:
+        return False
+    parts = re.split(r"[\s\-]+", t)
+    return all(p in _LANG_NAMES for p in parts if p)
+
 
 def _prose_from(text):
     """語源散文の最初の『From <語>』の語を返す（der/inh テンプレで取れない派生・語尾変化を補う）。
@@ -151,11 +172,11 @@ async def _deepen_chain(r, max_hops=6):
         nxt = None
         for c in sub.get("chain", []):                 # 清潔な der/inh 連鎖を優先
             t = _strip_len_marks(c.get("term") or "")  # 表示・クリックとも計量記号を外した実在形へ
-            if t and t not in seen:
+            if t and t not in seen and not _is_langname(t):   # 言語名は語源語でない＝辿らない（誤接続防止・P6）
                 seen.add(t); r["chain"].append({**c, "term": t}); nxt = t
         if not nxt:                                     # 無ければ散文 From X（実在ページで裏取りしてから追加）
             pf = _strip_len_marks(_prose_from(text))
-            if pf and pf not in seen:
+            if pf and pf not in seen and not _is_langname(pf):   # 言語名（Latin/German…）を語源として辿らない
                 vcand, vtext = await _resolve_form(pf)
                 if vtext:
                     seen.add(pf); r["chain"].append({"lang": "", "term": pf, "gloss": ""}); nxt = pf
