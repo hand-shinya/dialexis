@@ -42,5 +42,11 @@ for t in tests/e2e/*.e2e.js; do
   fi
 done
 
-[ "$fail" = "0" ] && echo "══ 検証すべて成功（この commit はデプロイ可）══" || echo "══ 検証に失敗あり（デプロイ不可）══"
+if [ "$fail" = "0" ]; then
+  # 検証済みマーカー: このHEADのコードで全検証が通ったことを記録。デプロイgate(vps_update.sh)が参照する。
+  git rev-parse HEAD > deploy/verified_sha.txt
+  echo "══ 検証すべて成功（verified_sha=$(cat deploy/verified_sha.txt) をコミットしてデプロイ可）══"
+else
+  echo "══ 検証に失敗あり（デプロイ不可）══"
+fi
 exit "$fail"

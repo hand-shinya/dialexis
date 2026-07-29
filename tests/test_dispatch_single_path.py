@@ -52,3 +52,18 @@ def test_actions_registry_covers_core_ids():
     for aid in ["center", "meaning", "anatomy", "contrast", "multilingual", "combine",
                 "external", "shelf", "deepsearch", "newtab", "focus", "resetFocus", "lens"]:
         assert re.search(r"\b" + aid + r":\s*\{", JS), f"ACTIONS registry に {aid} が無い"
+
+
+def test_no_noop_menu_items():
+    # 条件6: gActions / gMenuEdge の menu item に無作用placeholder(soon:)や直接fnが無く、必ず action: を持つ。
+    # クリック可能な無作用項目(選ぶとメニューが閉じるだけ)を静的に0件保証する（Codex E2で発覚した回帰の再発防止）。
+    for fn_name in ["function gActions", "function gMenuEdge"]:
+        i = JS.find(fn_name)
+        assert i >= 0, f"{fn_name} not found"
+        end = JS.find("\nfunction ", i + 10)
+        block = JS[i:end if end > i else i + 2000]
+        assert "soon:" not in block, f"{fn_name} に無作用placeholder(soon:)が残存"
+        assert re.search(r"\bfn:\s*(\(|function)", block) is None, f"{fn_name} に直接fnのmenu item(無作用/Dispatcher迂回)が残存"
+        # 各 menu item literal( { t: ... } )に action: がある（gShowMenu/renderTopMenuはit.actionをdispatchするため）
+        assert re.search(r"\{\s*[st]:\s*[`\"'][^`\"']*[`\"'][^}]*\}", block), f"{fn_name} に menu item が無い?"
+

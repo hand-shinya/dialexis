@@ -55,7 +55,7 @@ function llmConfig() {
 
 function freshBadge(res) {
   if (!res) return "";
-  if (res.error) return `<span class="badge err" title="${esc(res.error)}">${T.error}</span>`;
+  if (res.error) { try { console.error(res.error); } catch (e) {} return `<span class="badge err" title="${esc((LANG === "ja" ? "取得を見送りました" : "skipped"))}">${T.error}</span>`; }
   const mode = res.cached ? T.cached : T.live;
   return `<span class="badge ${res.cached ? "" : "live"}">${esc(res.source)} · ${mode} · ${T.retrieved} ${esc(res.retrieved_at)}</span>`;
 }
@@ -307,7 +307,7 @@ async function exploreRun(q) {
 
     $("explore-results").innerHTML = html;
   } catch (e) {
-    $("explore-status").innerHTML = `<p class="badge err">${esc(e.message)}</p>`;
+    console.error(e); $("explore-status").innerHTML = `<p class="badge err">${esc((LANG==="ja"?"取得を見送りました":"skipped"))}</p>`;
   }
 }
 
@@ -349,7 +349,7 @@ async function counterRun() {
   let html = "";
   if (d.level2) {
     html += d.level2.error
-      ? `<p class="badge err">${esc(d.level2.error)}</p>`
+      ? `<p class="badge err">${esc((LANG==="ja"?"Level 2 は今回見送りました（Level 0 を表示）":"Level 2 skipped; showing Level 0"))}</p>`
       : `<div class="notice-ai"><span class="badge ai">AI · ${esc(d.level2.provider)}</span>
          ${T.aiNotice}</div><pre class="llm">${esc(d.level2.text)}</pre>`;
   } else {
@@ -681,11 +681,11 @@ async function argSuggestHidden(aid) {
   try {
     const d = await api(`/api/arguments/${aid}/suggest_hidden`, { method: "POST",
       body: { lang: LANG, llm: cfg } });
-    if (d.level2 && d.level2.error) { out.innerHTML = `<p class="badge err">${esc(d.level2.error)}</p>`; return; }
+    if (d.level2 && d.level2.error) { out.innerHTML = `<p class="badge err">${esc((LANG==="ja"?"Level 2 は今回見送りました（Level 0 を表示）":"Level 2 skipped; showing Level 0"))}</p>`; return; }
     out.innerHTML = `<div class="notice-ai"><span class="badge ai">AI · ${esc(d.level2.provider)}</span>
       ${T.aiNotice}</div><pre class="llm">${esc(d.level2.text)}</pre>`;
   } catch (e) {
-    out.innerHTML = `<p class="badge err">${esc(e.message)}</p>`;
+    console.error(e); out.innerHTML = `<p class="badge err">${esc((LANG==="ja"?"取得を見送りました":"skipped"))}</p>`;
   }
 }
 
@@ -719,7 +719,7 @@ async function watchRun(id) {
   el.innerHTML = `<p class="muted">${T.loading}</p>`;
   const r = await api(`/api/watches/${id}/run`, { method: "POST" });
   el.innerHTML = `<p class="srcline">${T.checked}: +${r.new_count} ${T.newHits}
-    ${r.errors.length ? `<span class="badge err">${esc(r.errors.join("; "))}</span>` : ""}</p>`;
+    ${r.errors.length ? `<span class="badge err">${esc((LANG==="ja"?"一部の情報源は今回見送りました":"some sources skipped"))}</span>` : ""}</p>`;
   watchesInit();
 }
 
@@ -769,7 +769,7 @@ async function levelsShow() {
         <pre class="llm">${esc(d.levels[level] || "—")}</pre>`;
     }
   } catch (e) {
-    out.innerHTML = `<p class="badge err">${esc(e.message)}</p>`;
+    console.error(e); out.innerHTML = `<p class="badge err">${esc((LANG==="ja"?"取得を見送りました":"skipped"))}</p>`;
   }
 }
 
@@ -814,7 +814,7 @@ async function deepsearchRun() {
     html += block(LANG === "ja" ? "生成プロンプト（AI精緻化）" : "Prompt (AI-refined)",
       d.level2.text, `<span class="badge ai">AI · ${esc(d.level2.provider)}</span>`);
   } else if (d.level2 && d.level2.error) {
-    html += `<p class="badge err">${esc(d.level2.error)}</p>`;
+    html += `<p class="badge err">${esc((LANG==="ja"?"Level 2 は今回見送りました（Level 0 を表示）":"Level 2 skipped; showing Level 0"))}</p>`;
   }
   html += block(LANG === "ja" ? "生成プロンプト（そのまま使用可）" : "Prompt (ready to use)", d.level0);
   html += `<p class="muted">${LANG === "ja"
@@ -1118,7 +1118,7 @@ const ACTIONS = {
   colloc:       { label: "共起", opensPanel: true, run: (t) => gColloc(t.term) },
   lens:         { label: "見方", opensPanel: true, run: (t) => gLensMenu(t.term) },
   applyLens:    { label: "見方を適用", run: (t, ctx) => applyLensFor(t.term, ctx.lensKey) },
-  combine:      { label: "組み合わせ", opensPanel: true, run: (t) => gCombinePanel(t.term) },
+  combine:      { label: "組み合わせ", opensPanel: true, run: (t, ctx) => (ctx && ctx.b) ? gCombineRun(t.term, ctx.b, ctx.op || "and") : gCombinePanel(t.term) },
   external:     { label: "外部で調べる", opensPanel: true, run: (t) => gExtPanel(t.term) },
   shelf:        { label: "棚に追加", run: (t) => shelfAdd(t.term) },
   deepsearch:   { label: "深掘り", opensPanel: true, run: (t) => gPerspectivePanel(t.term) },
@@ -1885,15 +1885,19 @@ function gReopenMenu() { if (MENUCTX) gMenu(MENUCTX.cx, MENUCTX.cy, MENUCTX.n); 
 function gMenuEdge(cx, cy, ei) {
   const e = G.edges[ei];
   const child = G.nodes[e.a].layer >= G.nodes[e.b].layer ? e.a : e.b;
-  const a = G.nodes[e.a].label, b = G.nodes[e.b].label;
+  const other = child === e.a ? e.b : e.a;
+  const cn = G.nodes[child], a = G.nodes[e.a].label, b = G.nodes[e.b].label;
+  const ct = { term: cn.q || cn.label, label: cn.label, kind: cn.kind, id: cn.id, lang: cn.lang, layer: cn.layer };
+  const otherTerm = G.nodes[other].q || G.nodes[other].label;
+  // エッジメニューも Action ID＋正規target で（無作用0・全項目が dispatch 経由・比較/説明も実アクション）
   gShowMenu(cx, cy, `${a} — ${b}`, [
-    { t: "🔦 この関係の経路を根まで強調", fn: () => { G.hl = gHl(child); gDraw(); } },
-    { t: "🎯 子側を中心に展開", fn: () => gFocusSubtree(child) },
-    { t: "⚖ 両端の語を比較する", soon: 1 },
-    { t: "📖 この関係（なぜ結ばれるか）の説明", soon: 1 },
-    { t: "🔍 子側の語を深く調べる", fn: () => { const q = G.nodes[child].q || G.nodes[child].label; originRecenter(q); } },
-    { t: "🌿 この枝だけを残して整理", fn: () => gFocusSubtree(child) },
-    { t: "↩ 全体に戻す", fn: () => originGraph(G.rootQ) },
+    { t: "🔦 この関係の経路を根まで強調", action: "hl", ctx: { nodeIdx: child }, target: ct },
+    { t: "🎯 子側を中心に展開", action: "focus", ctx: { nodeIdx: child }, target: ct },
+    { t: "⚖ 両端の語を比較する", action: "combine", ctx: { b: otherTerm, op: "compare" }, target: ct },
+    { t: "📖 この関係（なぜ結ばれるか）を深掘り", action: "deepsearch", target: ct },
+    { t: "🔍 子側の語を中心に据える", action: "center", target: ct },
+    { t: "🌿 この枝だけを残して整理", action: "focus", ctx: { nodeIdx: child }, target: ct },
+    { t: "↩ 全体に戻す", action: "resetFocus", target: ct },
   ]);
 }
 // メニューの中身（タイトル＋項目）を描画。ホバー追従で差し替えるため関数化・itemsをmに保持。
@@ -2105,14 +2109,14 @@ function gShelfPanel() {
     <div class="shelf-list">${lenses.length ? lenses.map((l, i) => `<span class="shelf-item"><a href="#" class="lens-use" data-i="${i}">${esc(l.name)}</a><a href="#" class="lens-x" data-i="${i}">×</a></span>`).join("") : empty}</div>`;
   const p = gPanel(jp ? "棚：集める・道を保存・自分のレンズ" : "Shelf", html);
   const refresh = () => { p.remove(); gShelfPanel(); };
-  p.querySelector("#shelf-add").addEventListener("click", () => { if (cur) { shelfAdd(cur); refresh(); } });
-  p.querySelectorAll(".shelf-go").forEach(a => a.addEventListener("click", e => { e.preventDefault(); p.remove(); originRecenter(a.dataset.w); }));
+  p.querySelector("#shelf-add").addEventListener("click", () => { if (cur) { dispatchAction("shelf", { term: cur }, currentViewState(), { surface: "shelf-panel" }); refresh(); } });
+  p.querySelectorAll(".shelf-go").forEach(a => a.addEventListener("click", e => { e.preventDefault(); p.remove(); dispatchAction("center", { term: a.dataset.w }, currentViewState(), { surface: "shelf-panel" }); }));
   p.querySelectorAll(".shelf-x").forEach(a => a.addEventListener("click", e => { e.preventDefault(); _lsSet("dx_shelf", _lsGet("dx_shelf", []).filter(w => w !== a.dataset.w)); refresh(); }));
   p.querySelector("#path-save").addEventListener("click", () => { if (NAV.stack.length > 1) { const ps = _lsGet("dx_paths", []); ps.push(NAV.stack.slice()); _lsSet("dx_paths", ps); refresh(); } else gToast(jp ? "道がまだ1歩です" : "path too short"); });
-  p.querySelectorAll(".path-go").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const pt = _lsGet("dx_paths", [])[+a.dataset.i]; if (pt) { NAV.stack = pt.slice(); NAV.idx = pt.length - 1; navUpdate(); p.remove(); originRecenter(pt[pt.length - 1], { nav: true }); } }));
+  p.querySelectorAll(".path-go").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const pt = _lsGet("dx_paths", [])[+a.dataset.i]; if (pt) { const last = pt[pt.length - 1]; const lastQ = typeof last === "string" ? last : (last && last.q); NAV.stack = pt.slice(); NAV.idx = pt.length - 1; navUpdate(); p.remove(); if (lastQ) originRecenter(lastQ, { nav: true }); } }));
   p.querySelectorAll(".path-x").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const ps = _lsGet("dx_paths", []); ps.splice(+a.dataset.i, 1); _lsSet("dx_paths", ps); refresh(); }));
   p.querySelector("#lens-save").addEventListener("click", () => { const name = p.querySelector("#lens-name").value.trim(), words = p.querySelector("#lens-words").value.trim(); if (name && words) { const ls = _lsGet("dx_lenses", []); ls.push({ name, words }); _lsSet("dx_lenses", ls); refresh(); } });
-  p.querySelectorAll(".lens-use").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const l = _lsGet("dx_lenses", [])[+a.dataset.i]; if (l && cur) { p.remove(); gCombineRun(cur, l.words.split(/[,、\s]+/).filter(Boolean).join(" "), "and"); } else gToast(jp ? "先に語を選んでください" : "pick a word"); }));
+  p.querySelectorAll(".lens-use").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const l = _lsGet("dx_lenses", [])[+a.dataset.i]; if (l && cur) { p.remove(); dispatchAction("combine", { term: cur }, currentViewState(), { surface: "shelf-panel", b: l.words.split(/[,、\s]+/).filter(Boolean).join(" "), op: "and" }); } else gToast(jp ? "先に語を選んでください" : "pick a word"); }));
   p.querySelectorAll(".lens-x").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const ls = _lsGet("dx_lenses", []); ls.splice(+a.dataset.i, 1); _lsSet("dx_lenses", ls); refresh(); }));
 }
 
@@ -2188,7 +2192,7 @@ async function gColloc(term) {
 function gScrollCard(id, q) {
   const el = $(id);
   if (el && (!G || q === G.rootQ)) { el.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
-  originRecenter(q);
+  dispatchAction("center", { term: q }, currentViewState(), { surface: "scroll-card" });   // 単一Dispatcher経由
   setTimeout(() => { const e2 = $(id); if (e2) e2.scrollIntoView({ behavior: "smooth", block: "center" }); }, 900);
 }
 
@@ -2450,7 +2454,7 @@ async function originRun(q, tok) {
 
   // ── 出所・確度・限界 ──
   const badges = (d.sources || []).map(s => s.error
-    ? `<span class="badge err" title="${esc(s.error)}">${esc(s.source)}</span>`
+    ? `<span class="badge err" title="${esc((LANG === "ja" ? "この情報源は今回取得を見送りました（他の情報源で表示）" : "source skipped; shown via others"))}">${esc(s.source)}</span>`
     : `<span class="badge">${esc(s.source)} · ${esc(s.retrieved_at)}</span>`).join(" ");
   const cf = d.confidence || {};
   html += `<p class="srcline">${badges}<br>${jp ? "確度" : "confidence"} — ${jp ? "概念原点" : "concept"}: ${esc(cf.concept_origin||"")} ／ ${jp ? "語源" : "etymology"}: ${esc(cf.word_origin||"")} ／ breadth: ${esc(cf.breadth||"")}</p>`;
@@ -2494,5 +2498,15 @@ try {
     actions() { return Object.keys(ACTIONS); },
     async dispatch(actionId, target, ctx) { return dispatchAction(actionId, target, currentViewState(), ctx || {}); },
     gActions(n) { return gActions(n); },
+    // canvasノードのページ座標（実マウスクリック test 用: page.mouse.click(x,y) で実ノードを押す）
+    nodeClientXY(sel) {
+      if (!G || !G.nodes) return null;
+      const n = (typeof sel === "function") ? G.nodes.find(sel)
+              : G.nodes.find(x => x.id === sel) || G.nodes.find(x => x.layer === sel) || G.nodes.find(x => x.label === sel);
+      if (!n) return null;
+      const cv = $("origin-graph"); if (!cv) return null;
+      const r = cv.getBoundingClientRect(), s = gToScreen(n);
+      return { x: r.left + s.x, y: r.top + s.y, id: n.id, label: n.label, kind: n.kind, layer: n.layer };
+    },
   };
 } catch (e) {}
