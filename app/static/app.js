@@ -212,8 +212,8 @@ async function exploreRun(q) {
       </div>`;
     } else if (d.sep_search && !d.sep_search.error && !(d.sep_search.data || []).length) {
       html += `<p class="muted">${LANG === "ja"
-        ? "この語のSEP項目は見つかりませんでした（下は補助的な情報源です）。"
-        : "No SEP entry for this term (sources below are supplementary)."}</p>`;
+        ? "下の情報源からもこの語を辿れます。"
+        : "Reach this term via the sources below as well."}</p>`;
     }
 
     const jp = LANG === "ja";
@@ -918,6 +918,7 @@ function originInit(q) {
   if (sh) sh.addEventListener("click", () => gShelfPanel());
   // 普遍原則: 画面に出した語(.ext-term)はどこでもクリックでサイト内探索へ（行き止まりにしない・
   // copy&pasteを強いない）。パネル/カードのどの語からも第2・第3階層へ自由に広がる。
+  bindNoMiss();   // 否定表示を建設的代替へ差し替える委譲ハンドラ（逆側logic・一度だけ）
   if (!document._extTermBound) {
     document._extTermBound = 1;
     document.addEventListener("click", (e) => {
@@ -1011,6 +1012,52 @@ async function originRecenter(q, opts) {
 function originLinkAttr() {
   return (localStorage.getItem("origin_newtab") === "1")
     ? ' target="_blank" rel="noopener"' : "";
+}
+
+// ── 逆側logic（半田様2026-07-29）: 「〜できません/見つかりません」の否定表示を絶対に出さない ──
+// 予防で塞ぐのは抜け道が残る。そこで、否定を出す条件(＝コードが既に検出している点)をtriggerに、
+// 否定文の"代わりに"建設的な代替（この語で今できる探索）を差し込む。全場面・全menuで単一ハンドラに集約。
+// これは捏造でない（P6）: 機能の成功を偽らず、実在する別経路へ誘導するだけ。否定語は一切使わない。
+function noMiss(term, opts) {
+  opts = opts || {};
+  const jp = LANG === "ja";
+  const lead = opts.lead || (jp
+    ? `「${esc(term)}」は、次の入り口から探索を続けられます。`
+    : `Continue exploring “${esc(term)}” from these entry points.`);
+  const acts = [
+    ["center", "🎯 " + (jp ? "中心に据えて地図を見る" : "map it")],
+    ["lang", "🌍 " + (jp ? "多言語での言い方を見る" : "languages")],
+    ["ext", "🌐 " + (jp ? "外部の専門情報で調べる" : "external")],
+    ["combine", "🔗 " + (jp ? "別の語と組み合わせる" : "combine")],
+    ["lens", "👓 " + (jp ? "別の見方で見る" : "other views")],
+  ];
+  return `<div class="nomiss"><p class="nomiss-lead">${lead}</p><div class="nomiss-acts">`
+    + acts.map(([a, l]) => `<button type="button" class="nomiss-b" data-a="${a}" data-w="${esc(term)}">${esc(l)}</button>`).join("")
+    + `</div></div>`;
+}
+// パネル内（下部に共通フッターが在る）用: ボタン無しの建設的一文だけ（否定語を使わない）。
+function softLine(term, opts) {
+  opts = opts || {};
+  const jp = LANG === "ja";
+  return `<p class="nomiss-lead">${opts.lead ? esc(opts.lead) : (jp
+    ? `「${esc(term)}」は、下の「この語で続ける」から別の入り口で探索できます。`
+    : `Continue with “${esc(term)}” via the options below.`)}</p>`;
+}
+// nomiss ボタンの委譲ハンドラ（一度だけbind）。どのパネル/グラフ領域に現れても同じ作用（普遍）。
+function bindNoMiss() {
+  if (document._noMissBound) return;
+  document._noMissBound = 1;
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".nomiss-b"); if (!btn) return;
+    e.preventDefault();
+    const a = btn.dataset.a, w = btn.dataset.w; if (!w) return;
+    const pan = $("graph-panel");
+    if (a === "center") { if (pan) pan.remove(); originRecenter(w); }
+    else if (a === "lang") { if (pan) pan.remove(); originRecenter(w, { scrollTo: "card-breadth" }); }
+    else if (a === "ext") gExtPanel(w);
+    else if (a === "combine") gCombinePanel(w);
+    else if (a === "lens") { if (pan) pan.remove(); gLensMenu(w); }
+  });
 }
 
 /* ---------- 言語空間の重力グラフ（canvas force-directed・階層/展開/俯瞰） ---------- */
@@ -1147,12 +1194,12 @@ async function applyLensBuild(key) {
     setNote((jp ? "読み込み中… " : "loading… ") + L.cap);
     if (mode === "cards" || mode === "timeline") { showAlt(); $("graph-alt").innerHTML = `<p class="lens-empty">${jp ? "読み込み中…" : "loading…"}</p>`; }
     try { data = await api(`${L.endpoint}?q=${encodeURIComponent(G_raw.query)}&lang=${LANG}`); G_lenscache[ck] = data; }
-    catch (e) { if (G_lens === key) { setNote((jp ? "取得に失敗: " : "failed: ") + esc(String(e.message || e))); if (mode !== "lazy-graph") { showAlt(); $("graph-alt").innerHTML = `<p class="lens-empty">${jp ? "取得に失敗しました。" : "failed."}</p>`; } } return; }
+    catch (e) { if (G_lens === key) { setNote(vlabel); if (mode !== "lazy-graph") { showAlt(); $("graph-alt").innerHTML = noMiss(G_raw.query); } } return; }   // 否定表示を出さず建設的代替へ
     if (G_lens !== key) return;   // 読み込み中に別レンズへ切替＝古い結果を捨てる（状態一貫性）
   }
   setNote(data.note || L.cap);
   if (mode === "lazy-graph") {
-    if (!data.nodes || data.nodes.length <= 1) { showAlt(); $("graph-alt").innerHTML = `<p class="lens-empty">${esc(data.note || (jp ? "この語ではこのレンズのデータがありません。" : "no data."))}</p>`; return; }
+    if (!data.nodes || data.nodes.length <= 1) { showAlt(); $("graph-alt").innerHTML = noMiss(G_raw.query); return; }   // 否定表示を出さず建設的代替へ
     showCanvas(); gBuild(data);
   } else if (mode === "cards") { showAlt(); renderUsageCards(data); }
   else if (mode === "timeline") { showAlt(); renderTimeline(data); }
@@ -1162,7 +1209,7 @@ async function applyLensBuild(key) {
 function renderUsageCards(data) {
   const a = $("graph-alt"); if (!a) return; const jp = LANG === "ja";
   const cards = data.cards || [], scholars = data.scholars || [];
-  if (!cards.length && !scholars.length) { a.innerHTML = `<p class="lens-empty">${esc(data.note || (jp ? "用例が見つかりませんでした。" : "no usage."))}</p>`; return; }
+  if (!cards.length && !scholars.length) { a.innerHTML = noMiss((data && data.query) || (G_raw && G_raw.query) || ""); return; }   // 否定表示を出さず建設的代替へ
   // 現代の研究者（OpenAlex著者集計・被研究度順）＝いま最もこの概念を論じている人（歴史的正典と区別）
   const schHtml = scholars.length ? `<p class="dim-disc-h">${jp ? "この概念を今、最も論じている研究者（OpenAlex・被研究度順／歴史的思想家は「思想家」レンズ）" : "Most-publishing scholars now (OpenAlex)"}</p>
     <div class="dim-disc-list">${scholars.map(s => `<a class="dim-disc-l" href="/origin?q=${encodeURIComponent(s.name)}&lang=${LANG}"${originLinkAttr()}>${esc(s.name)} <span class="lens-n">${s.count}</span></a>`).join("")}</div>` : "";
@@ -1177,7 +1224,7 @@ function renderUsageCards(data) {
 function renderTimeline(data) {
   const a = $("graph-alt"); if (!a) return; const jp = LANG === "ja";
   const series = data.series || [];
-  if (!series.length) { a.innerHTML = `<p class="lens-empty">${esc(data.note || (jp ? "通時頻度が取得できませんでした。" : "no series."))}</p>`; return; }
+  if (!series.length) { a.innerHTML = noMiss((data && data.query) || (G_raw && G_raw.query) || ""); return; }   // 否定表示を出さず建設的代替へ
   const cols = ["#b45309", "#2e5c7a", "#3a7d44", "#a03b3b"];
   a.innerHTML = `<div class="tl-wrap"><div class="tl-legend">${series.map((s, i) =>
     `<span><i class="tl-sw" style="background:${cols[i % cols.length]}"></i>${esc(s.lang)}：${esc(s.term)}（${jp ? "最盛" : "peak"} ${s.peak_year}）</span>`).join("")}</div><canvas id="tl-canvas"></canvas></div>`;
@@ -1228,7 +1275,7 @@ function gDimAct(dm) {
   if (act.startsWith("scroll:")) {
     const el = $(act.slice(7));
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-    else gPanel(dm.label, `<p class="muted">${jp ? "この探索ではこの次元の内容が見つかりませんでした。" : "Not available for this word."}</p>`, w);
+    else gPanel(dm.label, softLine(w), w);   // 否定表示を出さず続行フッターへ（逆側logic）
   } else if (act.startsWith("colloc:")) gColloc(act.slice(7), "de");
   else if (act.startsWith("counter:")) gCounter(act.slice(8));
   else if (act === "graph") { const gw = $("origin-graph-wrap"); if (gw) gw.scrollIntoView({ behavior: "smooth", block: "start" }); }
@@ -1279,10 +1326,10 @@ async function originGraph(q, tok) {
   originShellShow(q);   // 取得の成否に関わらず、まず操作帯（ナビ＋共通メニュー）を出す
   let d;
   try { d = await api(`/api/origin/graph?q=${encodeURIComponent(q)}&lang=${LANG}`); }
-  catch (e) { if (!originStale(tok)) graphThin(jp ? "この語では地図（重力分布）を取得できませんでした。上のメニューから解剖・並置・外部情報・組み合わせ・見方などで、この語のまま探索できます。" : "map unavailable for this word; use the menu above to explore it."); return; }
+  catch (e) { if (!originStale(tok)) graphThin(jp ? `「${q}」は、上のメニューの解剖・並置・外部情報・組み合わせ・見方から、この語のまま探索を続けられます。` : `Explore “${q}” via the menu above (anatomy, contrast, external, combine, views).`); return; }
   if (originStale(tok)) return;            // 古い語の応答＝現在の語のグラフを壊さない（stale破棄）
   if (d.qid) OZ.qid = d.qid;               // 既存qidをノードから単一真実源へ伝播（後段のP11強化用）
-  if (!d.nodes || d.nodes.length <= 1) { graphThin(jp ? "この語では地図が薄い（データが少ない）ですが、上のメニューから解剖・並置・外部情報・組み合わせ・見方などで、この語のまま探索できます。" : "sparse map for this word; the menu above still works."); return; }
+  if (!d.nodes || d.nodes.length <= 1) { graphThin(jp ? `「${q}」は、上のメニューの解剖・並置・外部情報・組み合わせ・見方から、この語のまま探索を続けられます。` : `Explore “${q}” via the menu above (anatomy, contrast, external, combine, views).`); return; }
   graphThin(null);   // グラフ本体を表示（薄い/失敗表示を隠す）
   G_raw = d;
   // 選んでいたレンズをこの語でも保つ（見方の連続性）。ただし新しい語でそのフィルタが空なら俯瞰へ。
@@ -1460,8 +1507,7 @@ async function gAuthorInvestigate(searchName, label) {
   try { d = await api(`/api/author?name=${encodeURIComponent(searchName)}&lang=${LANG}`); }
   catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
   if (!d.found) {
-    p.querySelector(".gp-body").innerHTML = `<p class="muted">${esc(d.note || d.error || (jp ? "取得できませんでした。" : "Not found."))}</p>
-      <p class="srcline">${jp ? "代替：" : "alt:"} <a href="https://ja.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(searchName)}" target="_blank">Wikipedia検索</a></p>`;
+    p.querySelector(".gp-body").innerHTML = softLine(searchName) + `<p class="srcline">${jp ? "入り口：" : "entry:"} <a href="https://ja.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(searchName)}" target="_blank">Wikipedia検索</a></p>`;   // 否定表示を出さず続行フッター＋入口へ
     return;
   }
   const row = (k, v) => v && v.length ? `<tr><th>${esc(k)}</th><td>${esc(Array.isArray(v) ? v.join("、") : v)}</td></tr>` : "";
@@ -1554,7 +1600,7 @@ async function gAnatomyPanel(word) {
   const p = gPanel((jp ? "語源と構成要素を解剖する：" : "Anatomy: ") + word, `<p class="muted">${jp ? "原語へ辿り、構成要素と意味を復元中…" : "…"}</p>`, word);
   let d; try { d = await api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`); } catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
   const body = p.querySelector(".gp-body");
-  if (!d.term) { body.innerHTML = `<p class="muted">${jp ? "この語の語源を辿れる原語が特定できませんでした（原語がLatin/Greek系でない語など）。" : "no etymology."}</p>`; return; }
+  if (!d.term) { body.innerHTML = softLine(word); return; }   // 否定表示を出さず、下の続行フッターへ誘導（逆側logic）
   let h = `<p class="muted">${jp ? "日本語の字面には現れにくい、原語の構成要素と意味の連鎖です。翻訳で削ぎ落とされた原義を、原語の実文書（Wiktionary）に接地して復元します。" : ""}</p>`;
   if (d.components.length) {
     h += `<h4 class="gp-h">${jp ? "構成要素（この語は元々このパーツの組み合わせ・クリックで探索）" : "Components"}</h4><div class="anat-comp">`
@@ -1834,7 +1880,7 @@ async function gCombineRun(a, b, op) {
   try { d = await api(`/api/combine?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&op=${op}&lang=${LANG}`); }
   catch (e) { gBusy(false); gPanel(jp ? "組み合わせ探索" : "Combine", `<p class="badge err">${esc(String(e.message || e))}</p>`, a); return; }
   gBusy(false);
-  if (!d.nodes || d.nodes.length <= 1) { gPanel(jp ? "組み合わせ探索" : "Combine", `<p class="muted">${esc(d.note || (jp ? "結果が得られませんでした。" : "no result."))}</p>`, a); return; }
+  if (!d.nodes || d.nodes.length <= 1) { gPanel(jp ? "組み合わせ探索" : "Combine", softLine(a), a); return; }   // 否定表示を出さず続行フッターへ
   showCanvas();
   G_raw = d; G_lens = "all";                    // 組み合わせ結果を今のグラフに描く
   const note = $("graph-note"); if (note) note.textContent = d.note || "";
@@ -1886,7 +1932,7 @@ function gPlayPanel() {
   p.querySelector("#play-quiz").addEventListener("click", async () => {
     const out = p.querySelector("#play-out"); if (!cur) { out.innerHTML = `<p class="muted">${jp ? "先に語を選んでください。" : "pick a word first."}</p>`; return; }
     out.innerHTML = `<p class="muted">${jp ? "出題準備中…" : "…"}</p>`;
-    let d; try { d = await api(`/api/origin?q=${encodeURIComponent(cur)}&lang=${LANG}`); } catch (e) { out.innerHTML = `<p class="muted">${jp ? "出題できません。" : "failed."}</p>`; return; }
+    let d; try { d = await api(`/api/origin?q=${encodeURIComponent(cur)}&lang=${LANG}`); } catch (e) { out.innerHTML = noMiss(cur); return; }   // 否定表示を出さず建設的代替へ
     const opp = ((d.relations && d.relations.opposite) || [])[0], org = (d.originators || [])[0],
           assoc = (d.associated || [])[0], na = (d.named_after || [])[0];
     let qtext, ans;
@@ -1894,7 +1940,7 @@ function gPlayPanel() {
     else if (opp) { qtext = `「${cur}」と対立・区別される概念は？`; ans = opp.label; }
     else if (assoc) { qtext = `「${cur}」に最も深く関わる思想家は？`; ans = assoc.label; }
     else if (na) { qtext = `「${cur}」の語形の由来（語源）は？`; ans = na.label; }
-    else { out.innerHTML = `<p class="muted">${jp ? "この語では出題できるデータがありませんでした。別の語でどうぞ。" : "no quiz data."}</p>`; return; }
+    else { out.innerHTML = noMiss(cur); return; }   // 否定表示を出さず建設的代替へ
     out.innerHTML = `<p><b>${esc(qtext)}</b></p><p><button type="button" id="quiz-rev" class="cmb-op">${jp ? "答えを見る" : "reveal"}</button> <span id="quiz-ans"></span></p>`;
     p.querySelector("#quiz-rev").addEventListener("click", () => { p.querySelector("#quiz-ans").innerHTML = `→ <b>${esc(ans)}</b>`; });
   });
@@ -1965,7 +2011,7 @@ async function gPerspectivePanel(word) {
     out.innerHTML = `<h4 class="gp-h">${jp ? "この見方に合う入口（各サイトの言語で・新タブ）" : "Entry points"}</h4><div class="ext-cat">${curated || "—"}</div>
       <h4 class="gp-h">${jp ? `この見方（${esc(sel.p)}／${esc(sel.u)}／${esc(sel.l)}）で深掘りするAI用プロンプト` : "Tailored deep-search prompt"}</h4>
       ${prompt ? `<textarea class="psp-prompt" readonly>${esc(prompt)}</textarea>
-      <p class="srcline"><button type="button" id="psp-copy" class="cmb-op">コピー</button> ${jp ? "→ お使いのAI（ChatGPT/Gemini/Claude等）に貼って実行してください" : "→ paste into your AI"}</p>` : `<p class="muted">${jp ? "プロンプト生成に失敗しました。" : "failed."}</p>`}`;
+      <p class="srcline"><button type="button" id="psp-copy" class="cmb-op">コピー</button> ${jp ? "→ お使いのAI（ChatGPT/Gemini/Claude等）に貼って実行してください" : "→ paste into your AI"}</p>` : softLine(word)}`;   // 否定表示を出さず続行フッターへ
     const cp = p.querySelector("#psp-copy");
     if (cp) cp.addEventListener("click", () => { const ta = p.querySelector(".psp-prompt"); ta.select(); try { document.execCommand("copy"); } catch (e) {} cp.textContent = jp ? "コピーしました" : "copied"; });
   });
@@ -2157,10 +2203,10 @@ async function originRun(q, tok) {
     // 行き止まりにしない: 候補（通常検索が見つける記事）をクリックで辿れる形で示す（第二次戦略）
     const sg = d.suggestions || [];
     if (sg.length) {
-      html += `<div class="card"><p>${jp ? `「${esc(q)}」そのものの項目は見つかりませんでした。通常の検索が見つける、近い項目はこちらです（クリックで辿れます）：` : `No exact entry for “${esc(q)}”. Closest entries normal search finds:`}</p>
+      html += `<div class="card"><p>${jp ? `「${esc(q)}」に近い項目から辿れます（クリックで探索）：` : `Closest entries to “${esc(q)}” (click to explore):`}</p>
         <div class="dim-disc-list">${sg.map(s => `<a class="dim-disc-l" href="/origin?q=${encodeURIComponent(s)}&lang=${LANG}"${linkAttr}>${esc(s)}</a>`).join("")}</div></div>`;
     } else {
-      html += `<div class="card"><p>${jp ? "この語の項目が見つかりませんでした（語幹・別表記・ローマ字で再試行してみてください）。" : "No entry for this form (try a lemma / alternative spelling / romanization)."}</p></div>`;
+      html += `<div class="card">${noMiss(q, { lead: jp ? `「${q}」は、次の入り口から探索できます（別表記・語幹・ローマ字でも辿れます）。` : `Explore “${q}” from these entry points.` })}</div>`;
     }
     $("origin-results").innerHTML = html; return;
   }
@@ -2242,7 +2288,7 @@ async function originRun(q, tok) {
       ${o.multi ? `<span class="badge warn2">${jp ? "複数の語源" : "multiple"}</span>` : ""}</p>`;
   }
   if (!orig.length && !co.length && !na.length && !o) {
-    html += `<p class="muted">${jp ? "この概念の原点を単一に断定できる決定論的手がかりがありませんでした（貧弱な記事や、一人に帰さない概念）。断定は避けます——下の外部の専門情報源や『思想家の系譜』から、実際の言説（誰が・どの著作で・どう使ったか）へ辿ってください。" : "No deterministic single origin found; we do not assert one. Reach the actual discourse via the external sources / thinkers below."}</p>`;
+    html += `<p class="muted">${jp ? "この概念の原点は一つに断定しません（無中心・P1）。下の外部の専門情報源や『思想家の系譜』から、実際の言説（誰が・どの著作で・どう使ったか）へ辿れます。" : "We do not assert a single origin (P1). Reach the actual discourse via the external sources / thinkers below."}</p>`;
   }
   // 常に：単一断定の禁止を明示し、言説へ広く辿る入口（普通の検索が届く所へ確実に届く・P4/P1）
   html += `<p class="srcline"><a href="#" class="origin-discourse" data-q="${esc((d.word || {}).query || q)}">${jp ? "▶ この概念の言説を広く調べる（多言語の専門情報源・新タブ）" : "▶ Explore this concept's discourse (multilingual sources, new tab)"}</a> · ${jp ? "原点は一つに断定しません（無中心・P1）" : "we never assert a single center (P1)"}</p>`;
@@ -2291,7 +2337,7 @@ async function gDiscoverDims(q, tok) {
   catch (e) { if (tok == null || !originStale(tok)) el.innerHTML = ""; return; }
   if (tok != null && originStale(tok)) return;   // 古い語の固有次元を現在の語に混ぜない（stale破棄）
   if (!d.found || !d.dimensions || !d.dimensions.length) {
-    el.innerHTML = `<p class="srcline muted">${esc(d.note || (jp ? "この概念に固有の切り口は取得できませんでした。" : "No concept-specific facets found."))}</p>`;
+    el.innerHTML = `<p class="srcline muted">${jp ? "この語は、上の共通次元とメニューから探索できます（固有の切り口はデータが増えるほど現れます）。" : "Explore this word via the common dimensions and menu above."}</p>`;   // 否定表示を出さない
     return;
   }
   const link = (x) => `<a class="dim-disc-l" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.heading)}</a>`;

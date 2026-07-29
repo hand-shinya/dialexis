@@ -332,3 +332,10 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
   text-decoration: none; border: 1px solid var(--accent); border-radius: 6px; padding: .2rem .55rem; }
 .dim-disc-l:hover { background: var(--accent); color: var(--paper); }
 .anat-summary { font-family: system-ui, sans-serif; font-size: .88rem; line-height: 1.6; color: var(--ink); margin: .3rem 0 .6rem; }
+/* 逆側logic: 否定表示の代わりに差し込む建設的代替（この語で続ける） */
+.nomiss { padding: .4rem 0; }
+.nomiss-lead { font-family: system-ui, sans-serif; font-size: .9rem; color: var(--ink); margin: .2rem 0 .6rem; line-height: 1.6; }
+.nomiss-acts { display: flex; flex-wrap: wrap; gap: .4rem; }
+.nomiss-b { font-family: system-ui, sans-serif; font-size: .82rem; padding: .3rem .7rem; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.nomiss-b:hover { border-color: var(--accent); background: #f2eee4; }
