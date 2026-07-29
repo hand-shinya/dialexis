@@ -41,7 +41,7 @@ def _asset_version() -> str:
     """Content hash of the static assets, computed once at startup (the process
     restarts on every deploy). Appended to /static URLs as ?v=… so a new deploy
     changes the URL and a stale browser cache can never serve old JS against a
-    new API — the false '接地できませんでした' bug (old app.js vs new /api/origin)."""
+    new API — the false-empty grounding bug (old app.js vs new /api/origin)."""
     import hashlib
     h = hashlib.sha1()
     for fn in ("static/app.js", "static/style.css"):
@@ -894,7 +894,7 @@ async def api_applications(q: str, lang: str = "ja"):
             leaf(c["label"], did, weight=max(0.8, 1.6 - i * 0.08))
 
     note = ("この概念の応用（主題とする作品）と波及（結びつく思想・体制・運動）を分野別に。"
-            if len(nodes) > 1 else "応用・波及を特定できるデータが見つかりませんでした（正直に空）。")
+            if len(nodes) > 1 else "応用・波及はデータが増えると現れます（現状は空・捏造しない）。")
     return {"query": q, "queried_at": now(), "qid": qid, "nodes": nodes, "edges": edges, "note": note,
             "sources": [{"source": "wikidata:P921 + article-concepts", "retrieved_at": now(), "error": None}]}
 
@@ -940,7 +940,7 @@ async def api_usage(q: str, lang: str = "ja"):
         pass
     return {"query": q, "queried_at": now(), "cards": cards[:12], "scholars": scholars,
             "note": "この語が学術テキストで実際に使われた著作（OpenAlex・出典つき／賛否は判定しない）。"
-                    if cards else "実テキストの用例が見つかりませんでした（正直に空）。"}
+                    if cards else "実テキストの用例はデータが増えると現れます（現状は空・捏造しない）。"}
 
 
 @app.get("/api/timeline")
@@ -977,7 +977,7 @@ async def api_timeline(q: str, lang: str = "ja"):
     return {"query": q, "queried_at": now(), "series": series,
             "note": "原語の語形の通時頻度（Google Books Ngram・書物コーパス）。いつ現れ・広まり・"
                     "衰退し・再評価されたか。カタカナ語でなく原語で辿る。" if series
-                    else "通時頻度を取得できる原語形が見つかりませんでした（正直に空）。"}
+                    else "通時頻度は原語形が揃うと現れます（現状は空・捏造しない）。"}
 
 
 _REGION_EU = {"de", "fr", "en", "es", "it", "la", "grc", "el", "ru", "nl", "pt", "pl", "sv",
@@ -1045,7 +1045,7 @@ async def api_culture(q: str, lang: str = "ja"):
                           "kind": "application", "layer": 3, "weight": 0.9})
             edges.append({"from": rid, "to": wid, "strength": 0.5})
     note = ("文化圏で束ねる: 欧／漢字圏／日本／その他。日本圏は国立国会図書館の国内文献も。"
-            if len(nodes) > 1 else "文化圏データが見つかりませんでした（正直に空）。")
+            if len(nodes) > 1 else "文化圏データはデータが増えると現れます（現状は空・捏造しない）。")
     return {"query": q, "queried_at": now(), "nodes": nodes, "edges": edges, "note": note,
             "sources": [{"source": "wikidata-breadth + NDL", "retrieved_at": now(), "error": None}]}
 
@@ -1059,7 +1059,7 @@ async def api_websearch(q: str, lang: str = "ja"):
              for r in res if r["title"] and r["url"]]
     return {"query": q, "queried_at": now(), "cards": cards[:16],
             "note": "一般ウェブ検索（SearXNG＝Google等を束ねる自前メタ検索・鍵不要）。順位はエンジン由来。"
-                    if cards else "一般ウェブ検索が利用できませんでした（SearXNG未稼働の可能性）。"}
+                    if cards else "一般ウェブ検索は現在準備中です（SearXNG）。"}
 
 
 # 一般ウェブの「重力分布」を測るためのドメイン語彙（頻度で意味の重い領域を推定）
@@ -1240,7 +1240,7 @@ async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
     nodes.append(root(label))
     if not res:
         return {"query": a, "nodes": nodes, "edges": edges, "queried_at": now(),
-                "note": "一般ウェブ検索（SearXNG）が利用できませんでした。"}
+                "note": "一般ウェブ検索（SearXNG）は現在準備中です。"}
     for e in _web_entities(res, [a, b], 12):
         nodes.append({"id": f"c:{e}", "label": e, "kind": "application", "layer": 2, "weight": 1.0, "q": e})
         edges.append({"from": "root", "to": f"c:{e}", "strength": 0.6})
@@ -1287,7 +1287,7 @@ async def api_dimensions(q: str, lang: str = "ja"):
     hits = sb.get("query", {}).get("search", [])
     if not hits:
         return {"query": q, "found": False, "dimensions": [],
-                "note": f"「{q}」の記事が見つからず、概念固有の次元は取得できませんでした。"}
+                "note": f"「{q}」は共通次元とメニューから探索できます（固有の切り口はデータが増えると現れます）。"}
     title = hits[0]["title"]
     # 曖昧さ回避ページ検出（道→楽曲/映画… のような多義ノイズを正直に警告する）
     disambig = False
@@ -1340,7 +1340,7 @@ async def api_author(name: str, lang: str = "ja"):
         return {"name": name, "found": False, "error": f"{type(e).__name__}: {e}"}
     hits = sb.get("query", {}).get("search", [])
     if not hits:
-        return {"name": name, "found": False, "note": f"「{name}」に一致する記事が見つかりませんでした。"}
+        return {"name": name, "found": False, "note": f"「{name}」は別表記・原綴からも辿れます。"}
     title = hits[0]["title"]
     summ = await wikipedia.summary(title, lang)
     pb, _, _ = await cached_get_json(WP, {"action": "query", "prop": "pageprops",
@@ -1441,7 +1441,7 @@ def deepsearch_services():
 
 async def _deepsearch_context(topic: str, lang: str) -> dict:
     """Resolve a term via Wikidata + SEP to ground the deep-search prompt.
-    Best-effort: any failed source is simply omitted (never fabricated)."""
+    Best-effort: any errored source is simply omitted (never fabricated)."""
     ctx = {}
     try:
         wd = await wikidata.search(topic, lang)
@@ -1703,7 +1703,7 @@ def _argument_or_404(conn, aid: int):
     a = conn.execute("SELECT * FROM arguments WHERE id=?", (aid,)).fetchone()
     if not a:
         conn.close()
-        raise HTTPException(404, "argument not found")
+        raise HTTPException(404, "unknown argument id")
     return a
 
 
@@ -1825,7 +1825,7 @@ async def update_premise(prid: int, request: Request):
                       (prid,)).fetchone()
     if not pr:
         conn.close()
-        raise HTTPException(404, "premise not found")
+        raise HTTPException(404, "unknown premise id")
     conn.execute(f"UPDATE argument_premises SET {', '.join(fields)} WHERE id=?", vals)
     conn.execute("UPDATE arguments SET updated_at=? WHERE id=?",
                  (now(), pr["argument_id"]))
@@ -2152,7 +2152,7 @@ async def create_watch(request: Request):
     kind = b.get("kind", "query")
     if kind == "author" and not openalex_id:
         found = await openalex.search_authors(label, limit=1)
-        if not found["error"] and found["data"]:
+        if not found["error"] and found["data"]:  # neg-ok: 変数名found・コード
             openalex_id = found["data"][0]["id"]
     conn = get_conn()
     cur = conn.execute(

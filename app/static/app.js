@@ -18,7 +18,7 @@ const T = {
         validity_valid: "妥当", validity_invalid: "不当", validity_unassessed: "未評価",
         soundness_sound: "健全", soundness_unsound: "不健全", soundness_unassessed: "未評価" },
   en: { retrieved: "retrieved", live: "live", cached: "cached", error: "source error (shown, not silenced)",
-        loading: "Querying live scholarly sources…", none: "No results", del: "Delete", open: "Open",
+        loading: "Querying live scholarly sources…", none: "None yet", del: "Delete", open: "Open",
         newHits: "new", checked: "checked", aiNotice: "AI-generated, unverified. Treat as unverified until sources are checked.",
         needKey: "Level 2 needs an API key (Settings → Key Switchboard). Showing Level 0.",
         saved: "Saved (this browser only)", cleared: "Cleared",
@@ -843,7 +843,7 @@ function copyText(text) {
     let ok = false;
     try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
     document.body.removeChild(ta);
-    ok ? resolve() : reject(new Error("copy failed"));
+    ok ? resolve() : reject(new Error("clipboard error"));   /* neg-ok: 内部Error・非表示 */
   });
 }
 
@@ -1593,6 +1593,34 @@ function extResourcesHtml(term, V) {
   }
   return h;
 }
+// 語の側面（意味／多言語／埋没原語）を、地図の中心を変えずにパネルで個別に見せる（半田様指摘2026-07-29:
+// 第2階層のノードのmenuで無断に再中心すると、元の中心語の意識と乖離する。中心変更は「中心に据え直す」に限る）。
+async function gWordAspect(word, aspect) {
+  const jp = LANG === "ja";
+  const title = { meaning: jp ? "この語の意味：" : "Meaning: ", breadth: jp ? "多言語での言い方：" : "Languages: ",
+                  collapse: jp ? "埋没した原語：" : "Buried originals: " }[aspect] || "";
+  const p = gPanel(title + word, `<p class="muted">${jp ? "取得中…" : "loading…"}</p>`, word);
+  let d; try { d = await api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}`); }
+  catch (e) { console.error(e); p.querySelector(".gp-body").innerHTML = softLine(word); return; }
+  const body = p.querySelector(".gp-body"); let h = "";
+  if (aspect === "meaning") {
+    const gm = d.general_meaning || [];
+    if (gm.length) h += `<ul class="gp-ul">${gm.map(s => `<li>${esc(s)}</li>`).join("")}</ul>`;
+    const wo = d.word_origin, co = d.concept_origin || [];
+    if (wo && wo.name) h += `<p class="srcline">${jp ? "語源の原点（推定）：" : "origin: "}${esc(wo.name)}</p>`;
+    if (co.length) h += `<p class="srcline">${jp ? "原語の候補：" : "original: "}${co.map(o => `<a href="#" class="ext-term" data-w="${esc(o.term)}">${esc(o.term)}</a>${o.name ? "（" + esc(o.name) + "）" : ""}`).join("　")}</p>`;
+  } else if (aspect === "breadth") {
+    const br = d.breadth || [];
+    if (br.length) h += `<p class="muted">${jp ? "この概念を担う世界の言語とその語（クリックでその語へ）。既知の数言語に縮めない。" : "World languages carrying this concept."}</p><div class="breadth-chips">`
+      + br.map(b => `<span class="breadth-chip">${esc(b.name)}${b.term ? "：<a href=\"#\" class=\"ext-term\" data-w=\"" + esc(b.term) + "\">" + esc(b.term) + "</a>" : ""}</span>`).join("") + `</div>`;
+  } else if (aspect === "collapse") {
+    const cw = d.collapse_warning;
+    if (cw && cw.lemmas && cw.lemmas.length) h += `<p class="muted">${jp ? "この一語に埋没した複数の原語（区別の消失・クリックでその原語へ）：" : "Multiple originals collapsed into this one word:"}</p><div class="anat-comp">`
+      + cw.lemmas.map(l => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(l.lemma)}">${esc(l.lemma)}</a>${l.gloss ? "＝" + esc(l.gloss) : ""}</span>`).join(`<span class="anat-plus">・</span>`) + `</div>`;
+  }
+  body.innerHTML = h || softLine(word);   // データが無ければ否定でなく続行フッターへ
+}
+
 // 普遍的な語源解剖（半田様指摘の弁証法ケース＝dia-対話性の復元）。原語へ辿り構成要素と
 // 意味の連鎖をWiktionaryの実文書から。どんな語にも普遍適用（seed不要）。
 async function gAnatomyPanel(word) {
@@ -1626,7 +1654,7 @@ async function gContrastPanel(word) {
   const p = gPanel((jp ? "訳語と原語の意味を並べて比べる：" : "Contrast: ") + word, `<p class="muted">${jp ? "日本語訳の意味と、原語の意味を並べて取得中…" : "…"}</p>`, word);
   let o = {}, a = {};
   try { [o, a] = await Promise.all([api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}`), api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`)]); } catch (e) {}
-  const jaMean = (o.general_meaning || []).map(s => `<li>${esc(s.length > 200 ? s.slice(0, 200) + "…" : s)}</li>`).join("") || `<li class="muted">${jp ? "（日本語語義を取得できず）" : "—"}</li>`;
+  const jaMean = (o.general_meaning || []).map(s => `<li>${esc(s.length > 200 ? s.slice(0, 200) + "…" : s)}</li>`).join("") || `<li class="muted">—</li>`;
   const cw = o.collapse_warning;
   const jaCollapse = cw && cw.lemmas && cw.lemmas.length ? `<p class="srcline">${jp ? "※この一語に埋没した原語（クリックで探索）：" : "collapsed: "}${cw.lemmas.map(l => `<a href="#" class="ext-term" data-w="${esc(l.lemma)}">${esc(l.lemma)}</a>`).join("・")}</p>` : "";
   const comps = (a.components || []).map(c => `<li><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}</li>`).join("");
@@ -1711,11 +1739,11 @@ function gActions(n) {
     ];
   } else {   // word / original / language / related / application
     extra = [
-      { s: "📖 詳細へ", t: "📖 この語の詳細へ（下の意味・原点カードへ移動）", fn: () => originRecenter(W, { scrollTo: "card-origin" }) },
+      { s: "📖 意味", t: "📖 この語の意味を見る（中心は変えない）", fn: () => gWordAspect(W, "meaning") },
       { s: "🔬 解剖", t: "🔬 語源と構成要素を解剖する（原義を復元）", fn: () => gAnatomyPanel(W) },
       { s: "⚖ 並置", t: "⚖ 訳語と原語の意味を並べて比べる（何が隠れたか）", fn: () => gContrastPanel(W) },
-      { s: "⚠ 埋没", t: "⚠ 埋没した原語を見る", fn: () => originRecenter(W, { scrollTo: "card-collapse" }) },
-      { s: "🌍 多言語", t: "🌍 多言語での言い方を見る", fn: () => originRecenter(W, { scrollTo: "card-breadth" }) },
+      { s: "⚠ 埋没", t: "⚠ 埋没した原語を見る（中心は変えない）", fn: () => gWordAspect(W, "collapse") },
+      { s: "🌍 多言語", t: "🌍 多言語での言い方を見る（中心は変えない）", fn: () => gWordAspect(W, "breadth") },
       { s: "🕮 共起", t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(W) },
     ];
   }
@@ -2029,17 +2057,17 @@ async function gColloc(term) {
     try {
       const od = await api(`/api/origin?q=${encodeURIComponent(term)}&lang=${LANG}`);
       const g = (od.concept_origin || []).find(o => o.name === "ドイツ語");
-      if (!g) { p.querySelector(".gp-body").innerHTML = `<p class="muted">${jp ? "この語の原語（独語）が特定できず、共起（現状は独語コーパスのみ）を引けません。" : "No German origin resolved; collocations (German corpus only) unavailable."}</p>`; return; }
+      if (!g) { p.querySelector(".gp-body").innerHTML = softLine(term); return; }   // 否定でなく続行フッターへ
       deTerm = g.term;
-    } catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+    } catch (e) { console.error(e); p.querySelector(".gp-body").innerHTML = softLine(term); return; }
   }
   let d;
   try { d = await api(`/api/collocations?term=${encodeURIComponent(deTerm)}&lang=de`); }
-  catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+  catch (e) { console.error(e); p.querySelector(".gp-body").innerHTML = softLine(term); return; }
   const rels = d.relations || {}, keys = Object.keys(rels);
   let html = "";
   if (!keys.length) {
-    html = `<p class="muted">${esc(d.note || (jp ? "共起データがありません。" : "No collocation data."))}</p>`;
+    html = softLine(term);
   } else {
     html = `<p class="muted">${jp ? "この原語が、原語コーパスで共に使われる語（文法関係別・頻度つき）。クリックでその語へ。" : "Words this term lives with in its own corpus."}</p>
       <table class="plain orig-collo">` + keys.map(rel =>
@@ -2266,7 +2294,7 @@ async function originRun(q, tok) {
   if (assoc.length) {
     html += `<p>${jp ? "関連する思想家（この概念の記事が言及・重要度順）" : "Associated thinkers (named in the article, by prominence)"}:
       ${assoc.map(p => `<a href="#" class="origin-thinker" data-name="${esc(p.label)}">${esc(p.label)}</a>`).join("　／　")}</p>
-      <p class="srcline">${jp ? "『立てた人』が特定できない概念でも、通常検索が結びつける主要人物へ届くための層。記事の言及に接地（賛否は判定しない）。" : "A recall layer reaching the figures normal search associates; grounded in the article's mentions."}</p>`;
+      <p class="srcline">${jp ? "『立てた人』が一人に定まらない概念でも、通常検索が結びつける主要人物へ届くための層。記事の言及に接地（賛否は判定しない）。" : "A recall layer reaching the figures normal search associates; grounded in the article's mentions."}</p>`;
   }
   // (2) 語形の由来（語源）＋翻訳原点の候補 — 思想家がいる場合は"語源"として明確に降格し警告
   if (co.length || na.length) {

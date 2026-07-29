@@ -339,3 +339,7 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .nomiss-b { font-family: system-ui, sans-serif; font-size: .82rem; padding: .3rem .7rem; border: 1px solid var(--line);
   border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; white-space: nowrap; }
 .nomiss-b:hover { border-color: var(--accent); background: #f2eee4; }
+.breadth-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .4rem; }
+.breadth-chip { font-family: system-ui, sans-serif; font-size: .82rem; padding: .2rem .55rem;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
+.breadth-chip a { color: var(--accent2); text-decoration: none; }
