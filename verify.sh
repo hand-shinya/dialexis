@@ -29,17 +29,24 @@ for i in $(seq 1 15); do
 done
 [ "$code" = "200" ] || { echo "server not ready"; exit 1; }
 
-echo "══ 3) 全 Playwright E2E（各テストの終了コードで判定）══"
+# 統合(network依存)スイート＝外部サービス(SearXNG/DWDS/Wikidata works)や乱数×取得に依存し、ローカルで
+# 決定論的にできないもの。デプロイgateには使わない（情報表示）。それ以外は不変条件スイート＝gate対象。
+INTEGRATION="combine_ui play origin thinkers_graph thinkers_recall"
+echo "══ 3a) 不変条件スイート（決定論・デプロイgate対象）══"
 for t in tests/e2e/*.e2e.js; do
-  name=$(basename "$t")
+  name=$(basename "$t"); stem="${name%.e2e.js}"
+  case " $INTEGRATION " in *" $stem "*) continue;; esac
   out=$(node "$t" "${BASE}" 2>&1); rc=$?
   line=$(echo "$out" | grep -E "/[0-9]+ PASS" | tail -1)
-  if [ "$rc" = "0" ]; then
-    echo "PASS  ${name}  (${line})"
-  else
-    echo "FAIL  ${name}  (rc=${rc} ${line:-no-summary})"; echo "$out" | grep -E "FAIL|ERR" | head -3
-    fail=1
-  fi
+  if [ "$rc" = "0" ]; then echo "PASS  ${name}  (${line})"
+  else echo "FAIL  ${name}  (rc=${rc} ${line:-no-summary})"; echo "$out" | grep -E "FAIL|ERR" | head -3; fail=1; fi
+done
+echo "══ 3b) 統合スイート（network依存・情報表示・gate非対象）══"
+for stem in $INTEGRATION; do
+  t="tests/e2e/${stem}.e2e.js"; [ -f "$t" ] || continue
+  out=$(node "$t" "${BASE}" 2>&1); rc=$?
+  line=$(echo "$out" | grep -E "/[0-9]+ PASS" | tail -1)
+  [ "$rc" = "0" ] && echo "PASS  ${stem}  (${line})" || echo "info  ${stem}  (${line:-no-summary}・network依存/本番で再確認)"
 done
 
 if [ "$fail" = "0" ]; then
