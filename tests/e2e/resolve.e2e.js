@@ -1,7 +1,7 @@
 // Coverage-parity E2E: a term normal search finds (間主観→間主観性) must NEVER return 0.
 // The portal resolves variants/suffixes and, if truly absent, offers clickable candidates.
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
 
 (async () => {

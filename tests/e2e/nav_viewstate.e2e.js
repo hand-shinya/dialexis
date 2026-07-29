@@ -1,6 +1,6 @@
 // D: ビュー遷移(見方切替・この分岐を中心に)も戻る/進むで辿れる（半田様指摘）＋Aの文言＋C言語名。
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const B = process.argv[2] || "http://127.0.0.1:8020";
 (async () => {
   const b = await chromium.launch({ executablePath: EXE, headless: true }); const p = await b.newPage();

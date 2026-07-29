@@ -1,7 +1,7 @@
 // 思想家と著作レンズの表現力: 影響度で大きさに差（マルクス最大）／著作が思想家から分岐
 // （第5階層）／思想家どうしが関係線で結ばれ距離が関係を反映する。
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
 
 (async () => {

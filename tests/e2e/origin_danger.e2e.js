@@ -3,7 +3,7 @@
 // demote the Greek ῥίζωμα to word-form ETYMOLOGY with a warning, and offer a
 // discourse link — instead of the old misleading "概念の原点: ギリシャ語" assertion.
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
 
 (async () => {

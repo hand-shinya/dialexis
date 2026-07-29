@@ -1,6 +1,6 @@
 // 案C: 上部帯＝中心語の共通メニューパッケージを常時表示。全語・全ノードで同一UI（普遍性・P11）。
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
 const CORE = ["中心に据える","組み合わせ","見方","外部で調べる","棚","深掘り"]; // 帯に必ず在る普遍コア(短縮)
 (async () => {

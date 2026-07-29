@@ -1,6 +1,6 @@
 // E: 遊び＝おみくじ(ランダム概念へ再中心)・2語をつなぐ(AND)・クイズ(Wikidataから機械生成)。
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
 
 (async () => {

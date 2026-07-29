@@ -1,7 +1,7 @@
 // 普遍性の境界: graph取得失敗・root-only・人物ノード・ホバー帰路でも、操作帯(共通メニュー)と
 // 戻る/進むが消えず同じmenuが使える（Codex対審E2の是正＋半田様の新バグ指摘の検査）。
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
 (async () => {
   const b = await chromium.launch({ executablePath: EXE, headless: true });

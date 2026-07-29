@@ -2,7 +2,7 @@
 // どのパネルにも「この語で続ける」普遍フッターが在り、どの階層でも同じ共通メニューが出ることを機械検査。
 // 半田様の問い「全ワード・全階層・全menu展開に普遍化したか」への実証。
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8015";
 const TERMS = ["弁証法", "矛盾", "διαλεκτική", "カール・マルクス", "自由"]; // 概念/CJK/希語/人物/CJK概念
 const PANELS = ["gAnatomyPanel", "gContrastPanel", "gExtPanel", "gColloc", "gCombinePanel", "gPerspectivePanel"];
@@ -30,34 +30,36 @@ const PANELS = ["gAnatomyPanel", "gContrastPanel", "gExtPanel", "gColloc", "gCom
   }
   ok(`全パネル(${PANELS.length})×全語型(${TERMS.length})=${PANELS.length*TERMS.length}通りに続行フッター(行き止まりゼロ)`, allFooter, misses.length ? "欠落:" + misses.join(",") : "");
 
-  // PART 2: 階層 2→3→4 を実際に潜り、各階層で共通メニュー(帯13)＋見方バッジ＋ノードpopup(13)が普遍に出る
+  // PART 2: 決定論 fixture graph（layer 1..4 の実ノード）で、各階層の"実ノードを明示選択"し、
+  // 選択ノードの layer を assert した上で、その階層のノードでも共通メニュー(popup)が同一に出ることを検証。
+  await p.route("**/api/origin/graph**", r => r.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify({ query: "弁証法", note: "fixture", nodes: [
+      { id: "n1", label: "弁証法", kind: "word", layer: 1, q: "弁証法" },
+      { id: "n2", label: "dialectic", kind: "original", layer: 2, q: "dialectic" },
+      { id: "n3", label: "ドイツ語：Dialektik", kind: "language", layer: 3, q: "Dialektik" },
+      { id: "n4", label: "カール・マルクス", kind: "author", layer: 4, q: "カール・マルクス" }],
+      edges: [{ from: "n1", to: "n2", strength: 1 }, { from: "n2", to: "n3", strength: 1 }, { from: "n3", to: "n4", strength: 1 }] }) }));
   await p.goto(`${BASE}/origin?q=%E5%BC%81%E8%A8%BC%E6%B3%95&lang=ja`, { waitUntil: "networkidle" });
   await waitGraph();
-  const menuState = async () => await p.evaluate(() => ({
-    chips: document.querySelectorAll("#graph-lens .tm-chip").length,
-    badge: /今の見方/.test((document.getElementById("tm-view") || {}).textContent || ""),
-  }));
-  const popupCount = async () => await p.evaluate(() => {
-    const n = (window.__dx && __dx.G && __dx.G.nodes || []).find(x => x.kind !== "domain" && x.id !== "root") || { kind: "word", label: "X", q: "X" };
-    gMenu(200, 200, n); const c = document.querySelectorAll("#graph-menu .gm-item").length; const m = document.getElementById("graph-menu"); if (m) m.remove(); return c;
-  });
-  // 潜る対象ノード（layer>=2: original/language/author/related）をたどって再中心を3回
+  const CORE_S = ["中心に据える", "組み合わせ", "見方", "外部で調べる"];
   let depthOk = true, depthLog = [];
   for (let d = 2; d <= 4; d++) {
-    const target = await p.evaluate((d) => {
+    const res = await p.evaluate((d) => {
       const ns = (window.__dx && __dx.G && __dx.G.nodes) || [];
-      const cand = ns.find(x => (x.layer >= 2) && x.kind !== "domain" && x.q) || ns.find(x => x.kind !== "word" && x.q);
-      return cand ? (cand.q || cand.label) : null;
+      const node = ns.find(x => x.layer === d);          // ← ループ変数dで"その階層の実ノード"を明示選択
+      if (!node) return { ok: false, why: "no-node@" + d };
+      gMenu(200, 200, node);
+      const items = [...document.querySelectorAll("#graph-menu .gm-item")].map(e => e.textContent);
+      const m = document.getElementById("graph-menu"); if (m) m.remove();
+      return { ok: true, layer: node.layer, label: node.label, count: items.length,
+               core: ["中心に据え直す", "組み合わせ", "見方", "外部"].every(k => items.some(t => t.includes(k))) };
     }, d);
-    if (!target) { depthLog.push(`L${d}:no-node`); depthOk = false; break; }
-    await p.evaluate(async (t) => { await originRecenter(t); }, target);
-    await p.waitForTimeout(2200); await waitGraph();
-    const ms = await menuState(); const pc = await popupCount();
-    const okd = ms.chips >= 6 && ms.badge && pc >= 6;
-    depthLog.push(`L${d}:${target.slice(0,6)}(chips${ms.chips}/badge${ms.badge?1:0}/popup${pc})`);
+    const okd = res.ok && res.layer === d && res.count >= 8 && res.core;   // 選択ノードのlayerが d であることをassert
+    depthLog.push(`L${d}:${res.ok ? res.label.slice(0, 8) + "(layer" + res.layer + "/popup" + res.count + "/core" + (res.core ? 1 : 0) + ")" : res.why}`);
     if (!okd) depthOk = false;
   }
-  ok("階層2→3→4に潜っても各階層で共通メニュー+見方バッジ+ノードpopupが普遍に出る", depthOk, depthLog.join(" "));
+  await p.unroute("**/api/origin/graph**").catch(() => {});
+  ok("階層2/3/4の実ノードを明示選択し layer を確認、各階層で共通メニューが同一に出る", depthOk, depthLog.join(" "));
 
   // PART 3: 解剖の普遍(CJK含む)。多様な語で「特定できません」の行き止まりが出ない
   let anatOk = true, anatLog = [];

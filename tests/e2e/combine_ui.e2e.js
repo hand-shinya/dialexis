@@ -1,7 +1,7 @@
 // A: 組み合わせ探索のUI導線＝ノードmenu→『別の語と組み合わせる』→語入力→AND→グラフ再描画。
 // SearXNG依存のため本番(219.94.244.239)で検証する。
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://219.94.244.239:8000";
 
 (async () => {

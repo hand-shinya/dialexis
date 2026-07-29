@@ -1,6 +1,6 @@
 // D: 収集・経路保存・自分のレンズ（localStorage）。棚に集める・道を保存・観点を作る。
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
 
 (async () => {

@@ -1,7 +1,7 @@
 // Thinkers-recall E2E: for concepts with no P50/P61 (資本主義) the obvious figures
 // normal search surfaces (Marx…) must still appear, and the 思想家 lens must not be 0.
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
 
 (async () => {

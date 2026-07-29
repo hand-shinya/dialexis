@@ -3,7 +3,7 @@
 // then assert the screen shows the LAST-selected word — never the stale one.
 // Without the request-token guard, the late first response overwrites the second (the bug).
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8011";
 const W1 = "Entfremdung", W2 = "Freiheit";
 

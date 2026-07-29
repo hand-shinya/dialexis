@@ -926,10 +926,10 @@ function originInit(q) {
       if (!t) return;
       e.preventDefault();
       const w = t.dataset.w; const pan = $("graph-panel"); if (pan) pan.remove();
-      if (w) originRecenter(w);
+      if (w) dispatchAction("center", { term: w, kind: t.getAttribute("lang") ? "original" : "word", lang: t.getAttribute("lang") }, currentViewState(), { surface: "text-link" });
     });
   }
-  if (q) { NAV.stack = [{ q, lens: "all", focus: null }]; NAV.idx = 0; navUpdate(); }   // 初期の語を履歴に（view状態）
+  if (q) { NAV.stack = [{ q, lens: "all", focus: null, panel: null, combine: null }]; NAV.idx = 0; navUpdate(); }   // 初期ViewState
   const res = $("origin-results");
   if (res && !res._dimBound) {
     res._dimBound = 1;
@@ -950,19 +950,23 @@ function originInit(q) {
   }
 }
 
-// 探索の履歴（戻る/進む）＝ビュー状態 {q:中心語, lens:見方, focus:分岐focusのラベル} の履歴。
-// 語の再中心だけでなく、見方の切替・「この分岐を中心に」などの画面遷移も全て辿れる（普遍・半田様指摘2026-07-29）。
-const NAV = { stack: [], idx: -1, restoring: false };
-function navState() { return { q: (G && G.rootQ) || null, lens: G_lens || "all", focus: (G && G.focusLabel) || null }; }
-function navSame(a, b) { return a && b && a.q === b.q && a.lens === b.lens && a.focus === b.focus; }
-function navPush(s) {
-  if (typeof s === "string") s = { q: s, lens: "all", focus: null };   // 後方互換（語だけの push）
-  if (NAV.restoring) return;
+// 探索の履歴（戻る/進む）＝正規 ViewState {q,lens,focus,panel,combine} の履歴。
+// 1ユーザー操作＝1 commit（dispatchAction が settle 後に navCommit）。stale/途中失敗/hover は積まない。
+const NAV = { stack: [], idx: -1, restoring: false, txn: false };
+function navSame(a, b) {
+  if (!a || !b) return false;
+  return a.q === b.q && a.lens === b.lens && a.focus === b.focus
+    && JSON.stringify(a.panel || null) === JSON.stringify(b.panel || null)
+    && JSON.stringify(a.combine || null) === JSON.stringify(b.combine || null);
+}
+function navCommit(s) {   // 確定した ViewState を履歴に積む（復元中・トランザクション中は積まない）
+  if (typeof s === "string") s = { q: s, lens: "all", focus: null, panel: null, combine: null };
+  if (NAV.restoring || NAV.txn) return;
+  if (!s || !s.q) return;
   if (navSame(NAV.stack[NAV.idx], s)) return;
   NAV.stack = NAV.stack.slice(0, NAV.idx + 1); NAV.stack.push(s); NAV.idx = NAV.stack.length - 1;
   navUpdate();
 }
-function navPushCurrent() { navPush(navState()); }   // 今のビュー状態を履歴に積む（見方/focus変更後に呼ぶ）
 function navUpdate() {
   const b = $("nav-back"), f = $("nav-fwd");
   if (b) b.disabled = NAV.idx <= 0;
@@ -973,15 +977,21 @@ async function navGo(d) {
   if (i < 0 || i >= NAV.stack.length) return;
   NAV.idx = i; navUpdate();
   const s = NAV.stack[i];
-  NAV.restoring = true;
+  NAV.restoring = true; NAV.txn = true;
   try {
-    if (!G || G.rootQ !== s.q) { await originRecenter(s.q, { nav: true }); }   // 中心語を復元
-    await applyLensBuild(s.lens || "all");   // 常に基底ビューを描き直す（見方の復元＝focusも一旦解除される）
-    if (s.focus) {                            // 分岐focusを復元（あれば）
+    const pan = $("graph-panel"); if (pan) pan.remove(); PANEL_CTX = null;   // 一旦パネルを閉じる（stateが言えば開き直す）
+    if (!G || G.rootQ !== s.q) { await originRecenter(s.q, { nav: true }); } // 中心語を復元
+    if (s.combine) { COMBINE_CTX = null; await gCombineRun(s.combine.a, s.combine.b, s.combine.op); }  // 組合せ結果を復元
+    else { COMBINE_CTX = null; await applyLensBuild(s.lens || "all"); }      // 見方を復元（focusも一旦解除）
+    if (s.focus) {                                                          // 分岐focusを復元
       const idx = (G.nodes || []).findIndex(n => n.kind === "domain" && n.label === s.focus);
       if (idx >= 0) gFocusSubtree(idx, { nav: true });
     }
-  } finally { NAV.restoring = false; }
+    if (s.panel && ACTIONS[s.panel.action]) {                               // パネルを復元（開き直す）
+      PANEL_CTX = { action: s.panel.action, term: s.panel.term };
+      await ACTIONS[s.panel.action].run(normTarget(s.panel.term), {});
+    }
+  } finally { NAV.restoring = false; NAV.txn = false; }
 }
 // 処理中インジケータ（選んだ付近に出す・止まって見えないように）
 function gBusy(on, text, x, y) {
@@ -1010,7 +1020,9 @@ async function originRecenter(q, opts) {
   // graph と cards を同じトークンで並行再構築。両方 settle して初めて再中心「完了」。
   await Promise.all([originGraph(q, tok), originRun(q, tok)]);
   if (originStale(tok)) return;          // 別の語に上書きされた＝この古い語のためにスクロール/確定しない
-  if (!opts.nav) navPush({ q, lens: G_lens || "all", focus: null });   // 構築後の実ビューを履歴に積む（戻る/進む可）
+  // 中心語の変更はパネル/組合せを閉じる文脈。dispatch経由は txn で抑止され、dispatcher が確定commit。
+  // dispatch外の直接呼出し（本文リンク以外の内部再中心等）はここで確実にcommitされる（1操作1commit）。
+  if (!opts.nav) { PANEL_CTX = null; COMBINE_CTX = null; navCommit(currentViewState()); }
   gBusy(false);                          // 完了＝インジケータを消す
   const id = opts && opts.scrollTo;
   const el = id && $(id);
@@ -1063,17 +1075,86 @@ function softLine(term, opts) {
 function bindNoMiss() {
   if (document._noMissBound) return;
   document._noMissBound = 1;
+  const MAP = { center: "center", lang: "multilingual", ext: "external", combine: "combine", lens: "lens" };
   document.addEventListener("click", (e) => {
     const btn = e.target.closest(".nomiss-b"); if (!btn) return;
     e.preventDefault();
-    const a = btn.dataset.a, w = btn.dataset.w; if (!w) return;
-    const pan = $("graph-panel");
-    if (a === "center") { if (pan) pan.remove(); originRecenter(w); }
-    else if (a === "lang") { if (pan) pan.remove(); originRecenter(w, { scrollTo: "card-breadth" }); }
-    else if (a === "ext") gExtPanel(w);
-    else if (a === "combine") gCombinePanel(w);
-    else if (a === "lens") { if (pan) pan.remove(); gLensMenu(w); }
+    const a = MAP[btn.dataset.a], w = btn.dataset.w; if (!w || !a) return;
+    dispatchAction(a, { term: w }, currentViewState(), { surface: "nomiss" });   // 単一Dispatcher経由（作用を再実装しない）
   });
+}
+
+/* ═══════════ 共通操作基盤（半田様2026-07-29: 操作/状態遷移/失敗継続の単一基盤）═══════════
+   全ての選択可能項目を ExplorationTarget へ正規化し、全ての普遍操作を ACTIONS registry に集約し、
+   全ての表示面（上部帯・ノードpopup・パネルフッター・noMiss・本文語リンク）を dispatchAction の
+   単一経路に通す。表示面ごとに作用を再実装しない。状態変更関数の直接呼び出しは ACTIONS.run に閉じる。 */
+
+// すべての選択可能項目を1つの正規化対象へ（語/原語/関連語/言語/人物名を同じ基盤へ渡せる形）
+function normTarget(t) {
+  if (t == null) t = {};
+  if (typeof t === "string") t = { term: t };
+  const term = String(t.term || t.q || t.label || "").trim();
+  return {
+    term, label: t.label || term, kind: t.kind || "word", lang: t.lang || null,
+    id: t.id || ((t.kind ? t.kind : "t") + ":" + term),
+    surface: t.surface || null, layer: (t.layer != null ? t.layer : null),
+  };
+}
+
+// 現在開いているパネル/組合せ（ViewStateに含める確定状態＝戻る/進むで復元）
+let PANEL_CTX = null;    // { action, term }
+let COMBINE_CTX = null;  // { a, b, op }
+let _lastDispatch = null; // 最後に dispatch した {actionId, target, surface}（操作同値性テスト用）
+
+// Action ID → 正規作用。run は状態変更関数（originRecenter/gWordAspect/…）を呼ぶ唯一の場所。
+// changesCenter=中心語を変える／opensPanel=パネルを開く（それ以外はパネルを閉じるグラフ操作）。
+const ACTIONS = {
+  center:       { label: "中心に据える", changesCenter: true, run: (t) => originRecenter(t.term) },
+  meaning:      { label: "意味", opensPanel: true, run: (t) => gWordAspect(t.term, "meaning") },
+  multilingual: { label: "多言語", opensPanel: true, run: (t) => gWordAspect(t.term, "breadth") },   // 中心を変えない（Aの是正・全入口統一）
+  collapse:     { label: "埋没原語", opensPanel: true, run: (t) => gWordAspect(t.term, "collapse") },
+  anatomy:      { label: "解剖", opensPanel: true, run: (t) => gAnatomyPanel(t.term) },
+  contrast:     { label: "並置", opensPanel: true, run: (t) => gContrastPanel(t.term) },
+  colloc:       { label: "共起", opensPanel: true, run: (t) => gColloc(t.term) },
+  lens:         { label: "見方", opensPanel: true, run: (t) => gLensMenu(t.term) },
+  applyLens:    { label: "見方を適用", run: (t, ctx) => applyLensFor(t.term, ctx.lensKey) },
+  combine:      { label: "組み合わせ", opensPanel: true, run: (t) => gCombinePanel(t.term) },
+  external:     { label: "外部で調べる", opensPanel: true, run: (t) => gExtPanel(t.term) },
+  shelf:        { label: "棚に追加", run: (t) => shelfAdd(t.term) },
+  deepsearch:   { label: "深掘り", opensPanel: true, run: (t) => gPerspectivePanel(t.term) },
+  newtab:       { label: "新タブ", run: (t) => window.open(`/origin?q=${encodeURIComponent(t.term)}&lang=${LANG}`, "_blank") },
+  author:       { label: "著者を調べる", opensPanel: true, run: (t, ctx) => gAuthorInvestigate((ctx && ctx.search) || t.term, t.label) },
+  authorNote:   { label: "系譜メモ", opensPanel: true, run: (t, ctx) => gAuthorPanel(ctx.node || { label: t.label }) },
+  focus:        { label: "この分岐を中心に", run: (t, ctx) => gFocusSubtree(ctx.nodeIdx) },
+  hl:           { label: "経路を強調", run: (t, ctx) => { G.hl = gHl(ctx.nodeIdx); gDraw(); } },
+  resetFocus:   { label: "全体に戻す", run: () => { if (G) originGraph(G.rootQ); } },
+};
+
+// 単一Dispatcher: どの表示面も (actionId, target) だけを渡す。中間push抑止→settle後に一度だけcommit。
+async function dispatchAction(actionId, target, currentState, surfaceContext) {
+  const a = ACTIONS[actionId];
+  if (!a) { console.error("unknown action", actionId); return; }
+  const t = normTarget(target); t.surface = (surfaceContext && surfaceContext.surface) || t.surface;
+  _lastDispatch = { actionId, target: t, surface: t.surface };
+  if (a.opensPanel) PANEL_CTX = { action: actionId, term: t.term };
+  else if (actionId !== "shelf" && actionId !== "newtab") PANEL_CTX = null;   // グラフ操作はパネルを閉じる
+  NAV.txn = true;
+  try { await a.run(t, surfaceContext || {}); }
+  catch (e) { console.error("action error", actionId, e); }
+  finally { NAV.txn = false; }
+  if (actionId === "newtab") return;               // 新タブは状態遷移でない
+  navCommit(currentViewState());                   // 1ユーザー操作＝1回のcommit（確定状態）
+}
+
+// 正規 ViewState（復元に必要な確定状態のみ。hover/loading等の一時状態は含めない）
+function currentViewState() {
+  return {
+    q: (G && G.rootQ) || null,
+    lens: G_lens || "all",
+    focus: (G && G.focusLabel) || null,
+    panel: PANEL_CTX ? { action: PANEL_CTX.action, term: PANEL_CTX.term } : null,
+    combine: COMBINE_CTX ? { a: COMBINE_CTX.a, b: COMBINE_CTX.b, op: COMBINE_CTX.op } : null,
+  };
 }
 
 /* ---------- 言語空間の重力グラフ（canvas force-directed・階層/展開/俯瞰） ---------- */
@@ -1171,9 +1252,10 @@ function renderTopMenu(d) {
     + `<button type="button" class="tm-view" id="tm-view" title="${jp ? "今この地図を描いている見方（menu）。クリックで別の見方に切り替え。" : "the view this map is drawn from; click to switch"}"></button>`
     + items.map((it, i) => `<button type="button" class="tm-chip" data-i="${i}" title="${esc(it.t)}">${esc(it.s || it.t)}</button>`).join("");
   el.querySelectorAll(".tm-chip").forEach(b => b.addEventListener("click", () => {
-    const it = el._items[+b.dataset.i]; if (it && it.fn) it.fn();
+    const it = el._items[+b.dataset.i]; if (!it) return;
+    dispatchAction(it.action, it.target, currentViewState(), { surface: "topbar", ...(it.ctx || {}) });
   }));
-  const vb = $("tm-view"); if (vb) vb.addEventListener("click", () => gLensMenu(el._word));
+  const vb = $("tm-view"); if (vb) vb.addEventListener("click", () => dispatchAction("lens", { term: el._word }, currentViewState(), { surface: "topbar" }));
   updateViewBadge(G_lens);   // 現在の見方を表示（初期は俯瞰）
 }
 
@@ -1305,7 +1387,7 @@ async function gCounter(claim) {
   const p = gPanel((jp ? "批判・異論：" : "Critique: ") + claim, `<p class="muted">${jp ? "読み込み中…" : "loading…"}</p>`, claim);
   let d;
   try { d = await api("/api/counter", { method: "POST", body: { claim, lang: LANG } }); }
-  catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+  catch (e) { console.error(e); p.querySelector(".gp-body").innerHTML = softLine(claim); return; }   // 生エラーを出さず続行フッターへ
   let html = `<p class="muted">${jp ? "この語・主張を、複数の視点から検証する問い（steelman）。加えて、この主張に関連する実在の文献を示します（賛成か反対かは判定していません）。" : "Counter-questions from multiple perspectives, plus related real literature (stance NOT judged)."}</p>`;
   (d.level0 || []).forEach(pv => { html += `<h4 class="gp-h">${esc(pv.perspective)}</h4><ul class="gp-ul">${(pv.questions || []).map(q => `<li>${esc(q)}</li>`).join("")}</ul>`; });
   const lit = d.opposing_literature_search;
@@ -1513,7 +1595,7 @@ function gFocusSubtree(nodeIdx, opts) {
     .map(e => ({ from: G.nodes[e.a].id, to: G.nodes[e.b].id, strength: e.s }));
   gBuild({ query: rootQ, nodes, edges, note: note });
   if (G) G.focusLabel = label;      // 現在のfocus対象を記録（戻る/進むで復元するため）
-  if (!opts.nav) navPushCurrent();  // 「この分岐を中心に」も履歴に積む＝戻るで解除できる
+  if (!opts.nav) navCommit(currentViewState());  // 「この分岐を中心に」の確定commit（txn中はdispatcherが一括）
 }
 
 // 著者を調べる — REAL in-portal retrieval (bio, dates, occupation, works, source)
@@ -1525,7 +1607,7 @@ async function gAuthorInvestigate(searchName, label) {
     `<p class="muted">${jp ? "取得中…" : "loading…"}</p>`, searchName);
   let d;
   try { d = await api(`/api/author?name=${encodeURIComponent(searchName)}&lang=${LANG}`); }
-  catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+  catch (e) { console.error(e); p.querySelector(".gp-body").innerHTML = softLine(searchName); return; }   // 生エラーを出さず続行フッターへ
   if (!d.found) {
     p.querySelector(".gp-body").innerHTML = softLine(searchName) + `<p class="srcline">${jp ? "入り口：" : "entry:"} <a href="https://ja.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(searchName)}" target="_blank">Wikipedia検索</a></p>`;   // 否定表示を出さず続行フッター＋入口へ
     return;
@@ -1646,7 +1728,7 @@ async function gWordAspect(word, aspect) {
 async function gAnatomyPanel(word) {
   const jp = LANG === "ja";
   const p = gPanel((jp ? "語源と構成要素を解剖する：" : "Anatomy: ") + word, `<p class="muted">${jp ? "原語へ辿り、構成要素と意味を復元中…" : "…"}</p>`, word);
-  let d; try { d = await api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`); } catch (e) { p.querySelector(".gp-body").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+  let d; try { d = await api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`); } catch (e) { console.error(e); p.querySelector(".gp-body").innerHTML = softLine(word); return; }   // 生エラーを出さず続行フッターへ
   const body = p.querySelector(".gp-body");
   if (!d.term) { body.innerHTML = softLine(word); return; }   // 否定表示を出さず、下の続行フッターへ誘導（逆側logic）
   let h = `<p class="muted">${jp ? "日本語の字面には現れにくい、原語の構成要素と意味の連鎖です。翻訳で削ぎ落とされた原義を、原語の実文書（Wiktionary）に接地して復元します。" : ""}</p>`;
@@ -1681,7 +1763,7 @@ async function gContrastPanel(word) {
   const chain = (a.chain || []).map(c => `<li>${esc(c.lang)}：<a href="#" class="ext-term" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `「${esc(c.gloss)}」` : ""}</li>`).join("");
   const origHtml = (comps || chain)
     ? `${comps ? `<p class="srcline">${jp ? "構成要素（元のパーツと意味）" : "components"}</p><ul class="ct-ul">${comps}</ul>` : ""}${chain ? `<p class="srcline">${jp ? "変容の連鎖（原語へ）" : "chain"}</p><ul class="ct-ul">${chain}</ul>` : ""}`
-    : `<p class="muted">${jp ? "（原語の語源を辿れませんでした）" : "—"}</p>`;
+    : `<p class="muted">${jp ? "（原語の意味は下の入り口から辿れます）" : "—"}</p>`;
   p.querySelector(".gp-body").innerHTML = `
     <p class="muted">${jp ? "左の【日本語訳の意味】と右の【原語の意味】を、機械の判定でなく、あなた自身の目で並べて比べてください。字面が何を隠しているか（例：弁証法の「対話性」）が、並べることで見えてきます。" : "Compare the two meaning-spaces yourself."}</p>
     <div class="contrast">
@@ -1723,51 +1805,51 @@ function gAuthorPanel(n) {
 // 全ノード共通の「メニュー パッケージ」。中心語も言語マップの語も第2/3階層のノードも、
 // これ一つを接続する（普遍性・P11）。t=完全ラベル（ポップアップ用）・s=短縮ラベル（上部の帯用）。
 // 上部の帯（renderTopMenu）とクリックのポップアップ（gMenu）は同じ本関数を使う＝どこでも同一UI。
+// 全ノード共通メニュー。項目は「表示名」でなく Action ID を持ち、実行は dispatchAction 単一経路へ。
+// 各表示面（上部帯/popup/フッター/noMiss/本文リンク）はこの item.action と target を渡すだけ（作用を再実装しない）。
 function gActions(n) {
-  const jp = LANG === "ja", q = n.q, L = n.label, W = q || L;
-  const nt = () => window.open(`/origin?q=${encodeURIComponent(W)}&lang=${LANG}`, "_blank");
-  // 深掘り＝視点・目的・難易度で探索プロンプトを作る（新タブ設定を尊重）
-  const ds = () => gPerspectivePanel(W);
-
+  const idx = (G && G.nodes) ? G.nodes.indexOf(n) : -1;
+  const tgt = { term: n.q || n.label, label: n.label, kind: n.kind, id: n.id, lang: n.lang, layer: n.layer };
+  let items;
   if (n.kind === "domain") {   // 構造の分岐＝語操作でなく分岐操作
-    return [
-      { s: "🎯 この分岐を中心", t: "🎯 この分岐を中心に（下層を最大表示）", fn: () => gFocusSubtree(G.nodes.indexOf(n)) },
-      { s: "↩ 全体に戻す", t: "↩ 全体の重力分布に戻す", fn: () => originGraph(G.rootQ) },
-      { s: "🔦 経路を強調", t: "🔦 この分岐の経路を強調（ホバーでも可）", fn: () => { G.hl = gHl(G.nodes.indexOf(n)); gDraw(); } },
-      { s: "✍ 深掘り", t: "✍ 深掘り探索プロンプトを作る（視点・目的・難易度）", fn: ds },
+    items = [
+      { s: "🎯 この分岐を中心", t: "🎯 この分岐を中心に（下層を最大表示）", action: "focus", ctx: { nodeIdx: idx } },
+      { s: "↩ 全体に戻す", t: "↩ 全体の重力分布に戻す", action: "resetFocus" },
+      { s: "🔦 経路を強調", t: "🔦 この分岐の経路を強調（ホバーでも可）", action: "hl", ctx: { nodeIdx: idx } },
+      { s: "✍ 深掘り", t: "✍ 深掘り探索プロンプトを作る（視点・目的・難易度）", action: "deepsearch" },
     ];
+  } else {
+    const CORE_HEAD = [
+      { s: "🎯 中心に据える", t: "🎯 これを地図の中心に据え直す（グラフを再構成）", action: "center" },
+      { s: "🔗 組み合わせ", t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", action: "combine" },
+      { s: "👓 見方", t: "👓 見方を選ぶ（この地図の切り口）", action: "lens" },
+    ];
+    const CORE_TAIL = [
+      { s: "🌐 外部で調べる", t: "🌐 外部の専門情報で調べる（各サイトの言語で・新タブ）", action: "external" },
+      { s: "⭐ 棚", t: "⭐ 棚に追加（あとで見る）", action: "shelf" },
+      { s: "✍ 深掘り", t: "✍ 深掘り探索プロンプトを作る（視点・目的・難易度）", action: "deepsearch" },
+      { s: "↗ 新タブ", t: "🔗 新しいタブでこの語を開く", action: "newtab" },
+    ];
+    let extra;
+    if (n.kind === "author" || n.kind === "work") {
+      const who = n.kind === "author" ? "この人物" : "この著作";
+      extra = [
+        { s: `🔍 ${who}を調べる`, t: `🔍 ${who}を調べる（経歴・著作・出典を取得）`, action: "author", ctx: { search: n.search || tgt.term } },
+        { s: "📖 系譜メモ", t: `📖 ${who}の系譜メモ（この語での原語）`, action: "authorNote", ctx: { node: n } },
+      ];
+    } else {   // word / original / language / related / application
+      extra = [
+        { s: "📖 意味", t: "📖 この語の意味を見る（中心は変えない）", action: "meaning" },
+        { s: "🔬 解剖", t: "🔬 語源と構成要素を解剖する（原義を復元）", action: "anatomy" },
+        { s: "⚖ 並置", t: "⚖ 訳語と原語の意味を並べて比べる（何が隠れたか）", action: "contrast" },
+        { s: "⚠ 埋没", t: "⚠ 埋没した原語を見る（中心は変えない）", action: "collapse" },
+        { s: "🌍 多言語", t: "🌍 多言語での言い方を見る（中心は変えない）", action: "multilingual" },
+        { s: "🕮 共起", t: "🕮 原語空間の共起（共に使われる語）", action: "colloc" },
+      ];
+    }
+    items = [...CORE_HEAD, ...extra, ...CORE_TAIL];
   }
-  // ── 普遍コア（全ての実在語ノードに必ず付く） ──
-  const CORE_HEAD = [
-    { s: "🎯 中心に据える", t: "🎯 これを地図の中心に据え直す（グラフを再構成）", fn: () => originRecenter(W) },
-    { s: "🔗 組み合わせ", t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", fn: () => gCombinePanel(W) },
-    { s: "👓 見方", t: "👓 見方を選ぶ（この地図の切り口）", fn: () => gLensMenu(W) },
-  ];
-  const CORE_TAIL = [
-    { s: "🌐 外部で調べる", t: "🌐 外部の専門情報で調べる（各サイトの言語で・新タブ）", fn: () => gExtPanel(W) },
-    { s: "⭐ 棚", t: "⭐ 棚に追加（あとで見る）", fn: () => shelfAdd(W) },
-    { s: "✍ 深掘り", t: "✍ 深掘り探索プロンプトを作る（視点・目的・難易度）", fn: ds },
-    { s: "↗ 新タブ", t: "🔗 新しいタブでこの語を開く", fn: nt },
-  ];
-  // ── kind 固有の追加（コアの間に挟む） ──
-  let extra;
-  if (n.kind === "author" || n.kind === "work") {
-    const who = n.kind === "author" ? "この人物" : "この著作", sq = n.search || W;
-    extra = [
-      { s: `🔍 ${who}を調べる`, t: `🔍 ${who}を調べる（経歴・著作・出典を取得）`, fn: () => gAuthorInvestigate(sq, L) },
-      { s: "📖 系譜メモ", t: `📖 ${who}の系譜メモ（この語での原語）`, fn: () => gAuthorPanel(n) },
-    ];
-  } else {   // word / original / language / related / application
-    extra = [
-      { s: "📖 意味", t: "📖 この語の意味を見る（中心は変えない）", fn: () => gWordAspect(W, "meaning") },
-      { s: "🔬 解剖", t: "🔬 語源と構成要素を解剖する（原義を復元）", fn: () => gAnatomyPanel(W) },
-      { s: "⚖ 並置", t: "⚖ 訳語と原語の意味を並べて比べる（何が隠れたか）", fn: () => gContrastPanel(W) },
-      { s: "⚠ 埋没", t: "⚠ 埋没した原語を見る（中心は変えない）", fn: () => gWordAspect(W, "collapse") },
-      { s: "🌍 多言語", t: "🌍 多言語での言い方を見る（中心は変えない）", fn: () => gWordAspect(W, "breadth") },
-      { s: "🕮 共起", t: "🕮 原語空間の共起（共に使われる語）", fn: () => gColloc(W) },
-    ];
-  }
-  return [...CORE_HEAD, ...extra, ...CORE_TAIL];
+  return items.map(it => ({ ...it, target: tgt }));   // 全項目に正規化targetを付す
 }
 
 // 👓 見方を選ぶ ＝ この地図（重力場）の切り口。全ノードのメニューから普遍に開ける。
@@ -1782,14 +1864,14 @@ function gLensMenu(W) {
   const p = $("graph-panel"); if (!p) return;
   p._lensItems = items;
   p.querySelectorAll(".lens-row").forEach(b => b.addEventListener("click", () => {
-    const it = p._lensItems[+b.dataset.i]; p.remove(); applyLensFor(W, it.key);
+    const it = p._lensItems[+b.dataset.i]; p.remove(); dispatchAction("applyLens", { term: W }, currentViewState(), { surface: "lens-menu", lensKey: it.key });
   }));
 }
 // W を中心にした上でレンズを適用（他ノードの「見方」も、その語を中心に据えてから効く＝普遍）
 async function applyLensFor(W, key) {
-  if (G && G.rootQ === W && G_raw) { await applyLensBuild(key); navPushCurrent(); return; }
+  if (G && G.rootQ === W && G_raw) { await applyLensBuild(key); navCommit(currentViewState()); return; }
   await originRecenter(W);
-  if (G && G.rootQ === W) { await applyLensBuild(key); navPushCurrent(); }   // 見方の切替も履歴に積む（戻る可）
+  if (G && G.rootQ === W) { await applyLensBuild(key); navCommit(currentViewState()); }   // 見方切替の確定commit（txn中はdispatcherが一括）
 }
 
 function gMenu(cx, cy, n) {
@@ -1856,8 +1938,9 @@ function gShowMenu(cx, cy, title, items) {
     const el = ev.target.closest(".gm-item"); if (!el) return;
     const it = m._items[Number(el.dataset.i)];
     gMenuClose();
+    if (!it) return;
     _panelFromMenu = true;   // この直後に開くパネルへ「←メニューに戻る」を付ける（戻る導線）
-    if (it && it.fn) it.fn();
+    dispatchAction(it.action, it.target, currentViewState(), { surface: "popup", ...(it.ctx || {}) });
     setTimeout(() => { _panelFromMenu = false; }, 0);
   });
   G.menuCloser = (ev) => { if (!ev.target.closest("#graph-menu")) gMenuClose(); };
@@ -1890,14 +1973,10 @@ function gPanel(title, bodyHtml, term) {
   p.querySelector(".gp-x").addEventListener("click", () => p.remove());
   const bb = p.querySelector(".gp-back");
   if (bb) bb.addEventListener("click", () => { p.remove(); gReopenMenu(); });
+  const FMAP = { center: "center", lens: "lens", lang: "multilingual", ext: "external", combine: "combine", new: "newtab" };
   p.querySelectorAll(".gp-cont-b").forEach(btn => btn.addEventListener("click", () => {
-    const a = btn.dataset.a;
-    if (a === "center") { p.remove(); originRecenter(term); }
-    else if (a === "lens") { p.remove(); gLensMenu(term); }
-    else if (a === "lang") { p.remove(); originRecenter(term, { scrollTo: "card-breadth" }); }
-    else if (a === "ext") { gExtPanel(term); }
-    else if (a === "combine") { gCombinePanel(term); }
-    else if (a === "new") { window.open(`/origin?q=${encodeURIComponent(term)}&lang=${LANG}`, "_blank"); }
+    const a = FMAP[btn.dataset.a]; if (!a) return;
+    dispatchAction(a, { term }, currentViewState(), { surface: "panel-footer" });   // 単一Dispatcher経由
   }));
   return p;
 }
@@ -1926,14 +2005,16 @@ async function gCombineRun(a, b, op) {
   gBusy(true, jp ? "組み合わせ探索中…" : "combining…", G && G.lastX, G && G.lastY);
   let d;
   try { d = await api(`/api/combine?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&op=${op}&lang=${LANG}`); }
-  catch (e) { gBusy(false); gPanel(jp ? "組み合わせ探索" : "Combine", `<p class="badge err">${esc(String(e.message || e))}</p>`, a); return; }
+  catch (e) { console.error(e); gBusy(false); PANEL_CTX = { action: "combine", term: a }; gPanel(jp ? "組み合わせ探索" : "Combine", softLine(a), a); return; }   // 生エラーを出さず続行フッターへ
   gBusy(false);
-  if (!d.nodes || d.nodes.length <= 1) { gPanel(jp ? "組み合わせ探索" : "Combine", softLine(a), a); return; }   // 否定表示を出さず続行フッターへ
+  if (!d.nodes || d.nodes.length <= 1) { PANEL_CTX = { action: "combine", term: a }; gPanel(jp ? "組み合わせ探索" : "Combine", softLine(a), a); return; }   // 否定表示を出さず続行フッターへ
   showCanvas();
   G_raw = d; G_lens = "all";                    // 組み合わせ結果を今のグラフに描く
   const note = $("graph-note"); if (note) note.textContent = d.note || "";
   gBuild(d);
+  COMBINE_CTX = { a, b, op }; PANEL_CTX = null;  // 組合せ結果は確定状態（戻る/進むで復元）
   const w = $("origin-graph-wrap"); if (w) w.scrollIntoView({ behavior: "smooth", block: "start" });
+  navCommit(currentViewState());                 // 1操作1commit（restoring/txn中は no-op）
 }
 
 // B: 視点・目的・難易度＝同じ概念を「あなたの見方」で。選ぶと、その見方に合う入口(言語対応の
@@ -1971,7 +2052,11 @@ function gPlayPanel() {
     <p><button type="button" id="play-quiz" class="cmb-op">${esc(cur || "—")} ${jp ? "で出題" : "quiz"}</button></p>
     <div id="play-out"></div>`;
   const p = gPanel(jp ? "遊ぶ：つなぐ・おみくじ・クイズ" : "Play", html);
-  p.querySelector("#play-omi").addEventListener("click", () => { const w = OMIKUJI[Math.floor(Math.random() * OMIKUJI.length)]; p.remove(); originRecenter(w); });
+  p.querySelector("#play-omi").addEventListener("click", () => {
+    const pool = OMIKUJI.filter(x => !G || x !== G.rootQ);   // 現在語を除外＝必ず別概念へ移動（決定論的に移る）
+    const w = pool[Math.floor(Math.random() * pool.length)] || OMIKUJI[0];
+    p.remove(); dispatchAction("center", { term: w }, currentViewState(), { surface: "play" });   // 単一Dispatcher経由
+  });
   p.querySelector("#play-bridge").addEventListener("click", () => {
     const a = (p.querySelector("#play-a").value || cur).trim(), b = (p.querySelector("#play-b").value || "").trim();
     if (!a || !b) { p.querySelector("#play-b").focus(); return; }
@@ -2230,7 +2315,7 @@ async function originRun(q, tok) {
   const linkAttr = originLinkAttr();
   let d;
   try { d = await api(`/api/origin?q=${encodeURIComponent(q)}&lang=${LANG}`); }
-  catch (e) { if (!originStale(tok)) $("origin-status").innerHTML = `<p class="badge err">${esc(String(e.message || e))}</p>`; return; }
+  catch (e) { console.error(e); if (!originStale(tok)) $("origin-status").innerHTML = `<div class="card">${noMiss(q)}</div>`; return; }   // 生エラーを出さず建設的代替へ
   if (originStale(tok)) return;            // 古い語の応答＝現在の語のカードを上書きしない（stale破棄）
   if (d.qid) OZ.qid = d.qid;               // 既存qidを単一真実源へ伝播
   $("origin-status").innerHTML = "";
@@ -2402,5 +2487,12 @@ try {
     get G_raw() { return G_raw; },
     get MENUCTX() { return MENUCTX; },
     setPanelFromMenu(v) { _panelFromMenu = v; },
+    // 操作基盤の検査（操作同値性/履歴/失敗継続テスト用・読み取り専用）
+    viewState() { return currentViewState(); },
+    get nav() { return { idx: NAV.idx, len: NAV.stack.length, stack: NAV.stack }; },
+    get lastDispatch() { return _lastDispatch; },
+    actions() { return Object.keys(ACTIONS); },
+    async dispatch(actionId, target, ctx) { return dispatchAction(actionId, target, currentViewState(), ctx || {}); },
+    gActions(n) { return gActions(n); },
   };
 } catch (e) {}

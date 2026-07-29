@@ -1,7 +1,7 @@
 // Full lens-menu E2E: all user-selectable lenses incl. the special-render ones
 // (応用=graph, 使用例=cards, 時代変遷=timeline, 文化圏=region). Same word, many views.
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
 
 (async () => {

@@ -1,7 +1,7 @@
 // 応用・波及レンズ: 作品への応用に加え、社会体制・思想・運動への波及（資本論→共産主義/
 // マルクス主義…）が出ること。半田様指摘「社会体制のきっかけが表現されていない」の是正。
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
 
 (async () => {

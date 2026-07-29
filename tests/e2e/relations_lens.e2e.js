@@ -1,7 +1,7 @@
 // Relations lens (類語・対義の星座): near/opposite concepts from Wikidata typed
 // relations + 関連項目, persons excluded, each clickable to recenter (universal).
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
 
 (async () => {

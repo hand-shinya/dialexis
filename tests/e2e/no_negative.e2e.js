@@ -1,7 +1,7 @@
 // 逆側logic（半田様2026-07-29）: 「〜できません/見つかりません/失敗」等の否定表示を絶対に出さない。
 // 空/失敗の検出点をtriggerに、建設的な代替（続行フッター or nomiss）へ差し替わることを機械検査。
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8016";
 // 禁止する否定表現（日英）。これらが panel/graph 領域に現れたら FAIL。
 const BAD = ["できませんでした", "できません", "見つかりませんでした", "見つかりません", "特定できません",

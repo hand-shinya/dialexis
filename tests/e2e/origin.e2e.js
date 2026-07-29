@@ -1,7 +1,7 @@
 // Real-browser E2E: reproduce clicking the graph menu and the dimension nav,
 // so we stop guessing whether "it works". Uses cached chromium.
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8820";
 
 const results = [];
@@ -80,13 +80,13 @@ function log(name, ok, detail) { results.push({ name, ok, detail }); console.log
 
   // 2. click ROOT node → menu
   await clickNode("n.kind==='word'", "click root word");
-  // click a menu item: '深く調べる'
+  // click a menu item: '意味を見る'（旧「詳細へ」＝Action IDリネーム後）
   let clicked = false;
   if (await page.locator("#graph-menu").count()) {
-    const item = page.locator(".gm-item", { hasText: "詳細へ" });
+    const item = page.locator(".gm-item", { hasText: "意味を見る" });
     if (await item.count()) { await item.first().click(); await page.waitForTimeout(400); clicked = true; }
   }
-  log("menu item (詳細へ) clickable", clicked);
+  log("menu item (意味を見る) clickable", clicked);
 
   // 3. click an ORIGINAL node (Entfremdung) → menu → 共起
   await page.waitForTimeout(500);

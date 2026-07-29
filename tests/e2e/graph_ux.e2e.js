@@ -1,7 +1,7 @@
 // Graph UX: 著者を中心に据え直す＝2件でなく豊かに再中心し、中心（root）がその著者になる。
 // メニューはノードを覆わず横にずれて出る。半田様指摘(視認性・普遍性)の是正。
 const { chromium } = require("playwright-core");
-const EXE = "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
 
 (async () => {
