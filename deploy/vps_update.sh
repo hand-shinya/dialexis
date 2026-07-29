@@ -13,7 +13,10 @@ git pull --ff-only origin main
 # ── 全検証gate（半田様 Step6）: ブラウザE2EはVPSのRAMで実行できないため、対象コードのSHAで
 #    verify.sh（pytest＋全E2E＋failure injection＋履歴）が通った証跡を必須にする。verify.sh が
 #    deploy/verified_sha.txt にHEADを記録する。検証SHAがHEADの祖先で、それ以降の差分がマーカー
-#    のみ（＝未検証のコード変更が無い）でなければデプロイを止める。手動での検証迂回を不可にする。
+#    のみ（＝未検証のコード変更が無い）でなければデプロイを止める。
+# 【この gate の正確な効力（A5・過剰主張しない）】: 「公式デプロイ経路（vps_update.sh）では、記録された
+#  検証SHA以降のコード差分を拒否する」ことだけを保証する。手動迂回を全面的に不可にするものではなく、
+#  検証の実行自体を完全に保証するものでもない（このスクリプトを介さず直接編集・再起動する経路は対象外）。
 VS="$(cat deploy/verified_sha.txt 2>/dev/null || true)"
 [ -n "$VS" ] || { echo "deploy blocked: verified_sha.txt が無い（ローカルで ./verify.sh を実行せよ）"; exit 3; }
 git merge-base --is-ancestor "$VS" HEAD || { echo "deploy blocked: 検証SHA $VS はHEADの祖先でない"; exit 3; }

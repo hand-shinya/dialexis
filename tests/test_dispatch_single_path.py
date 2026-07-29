@@ -54,6 +54,53 @@ def test_actions_registry_covers_core_ids():
         assert re.search(r"\b" + aid + r":\s*\{", JS), f"ACTIONS registry に {aid} が無い"
 
 
+def _handler_bodies():
+    """全 addEventListener("click"|"keydown"|"submit"|"pointerdown") のコールバックを括弧平衡で抽出。"""
+    bodies = []
+    for m in re.finditer(r'addEventListener\(\s*"(click|keydown|submit|pointerdown)"\s*,', JS):
+        i = m.start()
+        # addEventListener( の開き括弧から平衡を取り、閉じるまでをコールバック領域とする
+        j = JS.find("(", i)
+        depth = 0
+        k = j
+        while k < len(JS):
+            c = JS[k]
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            k += 1
+        bodies.append((i, JS[j:k + 1]))
+    return bodies
+
+
+# ユーザーevent handler内で許される状態遷移呼出しの形（これ以外の状態変更関数の直接呼出しは違反）
+_ALLOWED_LINE = re.compile(r"dispatchAction\(|navGo\(|\{\s*nav:\s*true\s*\}")
+
+
+def test_all_event_handlers_no_direct_state_change():
+    """条件A1: 全ユーザーevent handlerを走査し、状態変更関数の直接呼出しが無いことを保証（既知anchor限定でない）。
+    許容: dispatchAction / navGo / originRecenter(...,{nav:true})（履歴復元）。それ以外は違反。"""
+    problems = []
+    for pos, body in _handler_bodies():
+        for f in FORBIDDEN + ["gCombineRun(", "gDimAct(", "gAuthorInvestigate(", "gAuthorPanel(", "gCounter("]:
+            idx = 0
+            while True:
+                idx = body.find(f, idx)
+                if idx < 0:
+                    break
+                # その呼出しを含む行が許容形（dispatch/navGo/{nav:true}）でなければ違反
+                ls = body.rfind("\n", 0, idx) + 1
+                le = body.find("\n", idx)
+                line = body[ls:(le if le > 0 else len(body))]
+                if not _ALLOWED_LINE.search(line):
+                    problems.append(f"@{pos} 直接状態変更 {f} in: {line.strip()[:90]}")
+                idx += len(f)
+    assert not problems, "ユーザーevent handlerでのDispatcher迂回（直接状態変更）:\n" + "\n".join(problems[:20])
+
+
 def test_no_noop_menu_items():
     # 条件6: gActions / gMenuEdge の menu item に無作用placeholder(soon:)や直接fnが無く、必ず action: を持つ。
     # クリック可能な無作用項目(選ぶとメニューが閉じるだけ)を静的に0件保証する（Codex E2で発覚した回帰の再発防止）。
