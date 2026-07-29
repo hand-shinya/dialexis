@@ -1564,6 +1564,9 @@ async function gAnatomyPanel(word) {
       + `<span class="chain-now">「${esc(word)}」</span>`
       + d.chain.map(c => `<span class="chain-arrow">←</span><span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span><a href="#" class="ext-term chain-form" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `<span class="anat-gloss">「${esc(c.gloss)}」</span>` : ""}</span>`).join("") + `</div>`;
   }
+  if (d.summary) {   // 語自身の語源の散文（矛盾＝韓非子の故事 等）。字ごとの分解に加えて語の由来を示す。
+    h += `<h4 class="gp-h">${jp ? "語源（この語の由来）" : "Etymology"}</h4><p class="anat-summary">${esc(d.summary)}</p>`;
+  }
   h += `<p class="srcline"><a href="${esc(d.wiktionary_url)}" target="_blank">Wiktionary（${esc(d.term)}）</a> · ${jp ? "全語に普遍適用・出所つき（意味drift差分の自動化は埋め込み層＝要RAMで将来）" : "universal"}</p>`;
   body.innerHTML = h;
 }

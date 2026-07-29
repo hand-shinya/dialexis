@@ -48,8 +48,59 @@ def parse_etymology(text):
     return {"summary": re.sub(r"\s+", " ", seg).strip()[:400], "chain": chain[:6], "components": comps[:6]}
 
 
+def _clean_gloss(s):
+    s = re.sub(r"\([^)]*\)", "", s or "")           # 括弧注記を落とす
+    s = re.sub(r"[；;].*$", "", s)                    # 全角/半角セミコロン以降を落とす（第一義だけ）
+    return s.strip(" \t,.:：、。").strip()
+
+
+async def _han_gloss(ch):
+    """CJK 1文字の英語義（构成要素の意味）を en.wiktionary Definitions から拾う。矛→spear／盾→shield。"""
+    text = await _extract(ch)
+    if not text:
+        return ""
+    m = re.search(r"Definitions\s*=*\s*\n+" + re.escape(ch) + r"\s*\n+([^\n]{2,70})", text)
+    if m:
+        g = _clean_gloss(m.group(1))
+        if g:
+            return g
+    for l in text.split("\n"):                        # 退避: Definitions直下が取れない字は最初の短い英語義
+        l = l.strip()
+        if re.match(r"^[a-z][A-Za-z ,;-]{1,50}$", l) and not l.startswith(("from ", "see ", "cognate", "alternative")):
+            return _clean_gloss(l)
+    return ""
+
+
+def _etym_prose(text):
+    """語自身の Etymology 節の散文（例: 矛盾＝韓非子の故事）。アルファベット連鎖が無い語の語源。"""
+    m = re.search(r"===?\s*Etymology[^\n=]*=+\s*(.+?)(?:\n==|\Z)", text or "", re.DOTALL)
+    if not m:
+        return ""
+    seg = re.sub(r"\s+", " ", m.group(1)).strip()
+    return seg[:220]
+
+
+async def _cjk_anatomy(word):
+    """CJK 語の解剖: 構成文字に分解し各字の義を取り（矛盾→矛=spear＋盾=shield）、語自身の散文語源も添える。
+    翻訳（一語の訳語）で見えなくなる、字ごとの原義を復元する＝alphabet語のdia+legeinのCJK版（普遍化）。"""
+    cjk = re.sub(r"[^㐀-鿿豈-﫿]", "", word)
+    if len(cjk) < 2:
+        return None
+    comps = []
+    for ch in list(dict.fromkeys(cjk))[:6]:          # 重複字は1回・最大6字
+        g = await _han_gloss(ch)
+        if g:
+            comps.append({"part": ch, "meaning": g})
+    summary = _etym_prose(await _extract(word))
+    if not comps and not summary:
+        return None
+    return {"term": word, "chain": [], "components": comps, "summary": summary,
+            "wiktionary_url": f"https://en.wiktionary.org/wiki/{word}"}
+
+
 async def anatomy(word, orig_terms, lang="ja"):
-    """候補の原語（英/羅/独/希ラベル、無ければ入力語）を順に試し、語源が取れた最初のものを解剖。"""
+    """候補の原語（英/羅/独/希ラベル、無ければ入力語）を順に試し、語源が取れた最初のものを解剖。
+    アルファベット語で取れない場合は、CJK 語なら構成文字へ分解して解剖する（矛盾＝矛＋盾・普遍化）。"""
     for term in [t for t in orig_terms if t] + [word]:
         if not term or not re.search(r"[A-Za-zΑ-Ωα-ωÀ-ÿ]", term):
             continue
@@ -60,4 +111,7 @@ async def anatomy(word, orig_terms, lang="ja"):
                 r["term"] = term
                 r["wiktionary_url"] = f"https://en.wiktionary.org/wiki/{term}"
                 return r
+    cjk = await _cjk_anatomy(word)                    # CJK 語の構成文字分解（矛盾→矛＋盾）
+    if cjk:
+        return cjk
     return {"term": None, "chain": [], "components": [], "summary": ""}

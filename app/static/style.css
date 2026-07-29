@@ -331,3 +331,4 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .dim-disc-l { font-family: system-ui, sans-serif; font-size: .84rem; color: var(--accent);
   text-decoration: none; border: 1px solid var(--accent); border-radius: 6px; padding: .2rem .55rem; }
 .dim-disc-l:hover { background: var(--accent); color: var(--paper); }
+.anat-summary { font-family: system-ui, sans-serif; font-size: .88rem; line-height: 1.6; color: var(--ink); margin: .3rem 0 .6rem; }
