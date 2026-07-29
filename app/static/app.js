@@ -929,7 +929,7 @@ function originInit(q) {
       if (w) originRecenter(w);
     });
   }
-  if (q) { NAV.stack = [q]; NAV.idx = 0; navUpdate(); }   // 初期の語を履歴に
+  if (q) { NAV.stack = [{ q, lens: "all", focus: null }]; NAV.idx = 0; navUpdate(); }   // 初期の語を履歴に（view状態）
   const res = $("origin-results");
   if (res && !res._dimBound) {
     res._dimBound = 1;
@@ -950,22 +950,38 @@ function originInit(q) {
   }
 }
 
-// 探索の履歴（戻る/進む）。originRecenter で語を辿るたびに積む（nav操作時は積み直さない）。
-const NAV = { stack: [], idx: -1 };
-function navPush(q) {
-  if (NAV.stack[NAV.idx] === q) return;
-  NAV.stack = NAV.stack.slice(0, NAV.idx + 1); NAV.stack.push(q); NAV.idx = NAV.stack.length - 1;
+// 探索の履歴（戻る/進む）＝ビュー状態 {q:中心語, lens:見方, focus:分岐focusのラベル} の履歴。
+// 語の再中心だけでなく、見方の切替・「この分岐を中心に」などの画面遷移も全て辿れる（普遍・半田様指摘2026-07-29）。
+const NAV = { stack: [], idx: -1, restoring: false };
+function navState() { return { q: (G && G.rootQ) || null, lens: G_lens || "all", focus: (G && G.focusLabel) || null }; }
+function navSame(a, b) { return a && b && a.q === b.q && a.lens === b.lens && a.focus === b.focus; }
+function navPush(s) {
+  if (typeof s === "string") s = { q: s, lens: "all", focus: null };   // 後方互換（語だけの push）
+  if (NAV.restoring) return;
+  if (navSame(NAV.stack[NAV.idx], s)) return;
+  NAV.stack = NAV.stack.slice(0, NAV.idx + 1); NAV.stack.push(s); NAV.idx = NAV.stack.length - 1;
   navUpdate();
 }
+function navPushCurrent() { navPush(navState()); }   // 今のビュー状態を履歴に積む（見方/focus変更後に呼ぶ）
 function navUpdate() {
   const b = $("nav-back"), f = $("nav-fwd");
   if (b) b.disabled = NAV.idx <= 0;
   if (f) f.disabled = NAV.idx >= NAV.stack.length - 1;
 }
-function navGo(d) {
+async function navGo(d) {
   const i = NAV.idx + d;
   if (i < 0 || i >= NAV.stack.length) return;
-  NAV.idx = i; navUpdate(); originRecenter(NAV.stack[i], { nav: true });
+  NAV.idx = i; navUpdate();
+  const s = NAV.stack[i];
+  NAV.restoring = true;
+  try {
+    if (!G || G.rootQ !== s.q) { await originRecenter(s.q, { nav: true }); }   // 中心語を復元
+    await applyLensBuild(s.lens || "all");   // 常に基底ビューを描き直す（見方の復元＝focusも一旦解除される）
+    if (s.focus) {                            // 分岐focusを復元（あれば）
+      const idx = (G.nodes || []).findIndex(n => n.kind === "domain" && n.label === s.focus);
+      if (idx >= 0) gFocusSubtree(idx, { nav: true });
+    }
+  } finally { NAV.restoring = false; }
 }
 // 処理中インジケータ（選んだ付近に出す・止まって見えないように）
 function gBusy(on, text, x, y) {
@@ -988,13 +1004,13 @@ function gBusy(on, text, x, y) {
 async function originRecenter(q, opts) {
   opts = opts || {};
   const tok = originClaim(q);            // this selection becomes THE subject (single source of truth)
-  if (!opts.nav) navPush(q);             // 履歴に積む（戻る/進む可）
   const inp = document.querySelector('.searchbox input[name=q]');
   if (inp) inp.value = q;
   gBusy(true, "「" + q + "」を探索中…", G && G.lastX, G && G.lastY);   // 選んだ付近に処理中を表示
   // graph と cards を同じトークンで並行再構築。両方 settle して初めて再中心「完了」。
   await Promise.all([originGraph(q, tok), originRun(q, tok)]);
   if (originStale(tok)) return;          // 別の語に上書きされた＝この古い語のためにスクロール/確定しない
+  if (!opts.nav) navPush({ q, lens: G_lens || "all", focus: null });   // 構築後の実ビューを履歴に積む（戻る/進む可）
   gBusy(false);                          // 完了＝インジケータを消す
   const id = opts && opts.scrollTo;
   const el = id && $(id);
@@ -1040,7 +1056,7 @@ function softLine(term, opts) {
   opts = opts || {};
   const jp = LANG === "ja";
   return `<p class="nomiss-lead">${opts.lead ? esc(opts.lead) : (jp
-    ? `「${esc(term)}」は、下の「この語で続ける」から別の入り口で探索できます。`
+    ? `「${esc(term)}」は、下の入り口から別の見方で探索を続けられます。`
     : `Continue with “${esc(term)}” via the options below.`)}</p>`;
 }
 // nomiss ボタンの委譲ハンドラ（一度だけbind）。どのパネル/グラフ領域に現れても同じ作用（普遍）。
@@ -1374,7 +1390,7 @@ function gBuild(d) {
     (children[lo] = children[lo] || []).push(hi);
     parent[hi] = lo;
   });
-  G = { nodes, edges, children, parent, ctx, cv, W, H, cx, cy, rootQ: d.query, note: d.note,
+  G = { nodes, edges, children, parent, ctx, cv, W, H, cx, cy, rootQ: d.query, note: d.note, focusLabel: null,
         view: { x: 0, y: 0, k: 1 }, drag: null, hover: null, hl: null, alpha: 1, raf: 0, needFit: true };
   gFitInstant();
   gBind();
@@ -1486,14 +1502,18 @@ function gEdgeAt(mx, my) {
 
 // center a node & expand its branch to the limit, without leaving the graph:
 // re-lay-out only that node's subtree with the node as the new layer-1 centre.
-function gFocusSubtree(nodeIdx) {
+function gFocusSubtree(nodeIdx, opts) {
+  opts = opts || {};
+  const label = G.nodes[nodeIdx].label, rootQ = G.rootQ, note = G.note;
   const keep = new Set([nodeIdx]), st = [nodeIdx];
   while (st.length) { const i = st.pop(); (G.children[i] || []).forEach(c => { if (!keep.has(c)) { keep.add(c); st.push(c); } }); }
   const base = G.nodes[nodeIdx].layer;
   const nodes = [...keep].map(i => { const n = G.nodes[i]; return { ...n, layer: n.layer - base + 1 }; });
   const edges = G.edges.filter(e => keep.has(e.a) && keep.has(e.b))
     .map(e => ({ from: G.nodes[e.a].id, to: G.nodes[e.b].id, strength: e.s }));
-  gBuild({ query: G.rootQ, nodes, edges, note: G.note });
+  gBuild({ query: rootQ, nodes, edges, note: note });
+  if (G) G.focusLabel = label;      // 現在のfocus対象を記録（戻る/進むで復元するため）
+  if (!opts.nav) navPushCurrent();  // 「この分岐を中心に」も履歴に積む＝戻るで解除できる
 }
 
 // 著者を調べる — REAL in-portal retrieval (bio, dates, occupation, works, source)
@@ -1767,9 +1787,9 @@ function gLensMenu(W) {
 }
 // W を中心にした上でレンズを適用（他ノードの「見方」も、その語を中心に据えてから効く＝普遍）
 async function applyLensFor(W, key) {
-  if (G && G.rootQ === W && G_raw) { applyLensBuild(key); return; }
+  if (G && G.rootQ === W && G_raw) { await applyLensBuild(key); navPushCurrent(); return; }
   await originRecenter(W);
-  if (G && G.rootQ === W) applyLensBuild(key);
+  if (G && G.rootQ === W) { await applyLensBuild(key); navPushCurrent(); }   // 見方の切替も履歴に積む（戻る可）
 }
 
 function gMenu(cx, cy, n) {

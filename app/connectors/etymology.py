@@ -9,6 +9,7 @@ Wiktionaryの語源記述から、原語への連鎖（from Old French…, from 
 真の意味drift差分は多言語埋め込みが要りVPSのRAMで不可＝将来課題。本モジュールは"動く核"に絞る。
 """
 import re
+import unicodedata
 
 from .base import cached_get_json
 
@@ -98,6 +99,69 @@ async def _cjk_anatomy(word):
             "wiktionary_url": f"https://en.wiktionary.org/wiki/{word}"}
 
 
+def _strip_len_marks(s):
+    """発音の長符号（マクロン U+0304・ブレーヴェ U+0306）だけを外す。アクセント/気息(希語の tonos 等)は
+    保つ＝Wiktionaryが語源で付す計量記号(dialecticē・δῐᾰλεκτῐκή)を、実在するレンマ形へ寄せる。"""
+    d = unicodedata.normalize("NFD", s or "")
+    d = "".join(c for c in d if c not in ("̄", "̆"))
+    return unicodedata.normalize("NFC", d)
+
+
+async def _resolve_form(term):
+    """語源の1形（語尾変化/計量記号つき）を、実在するWiktionaryページの語源テキストへ寄せる。
+    そのまま→長符号除去→散文『From X』の次語、の順に試し、語源が取れたテキストを返す。"""
+    for cand in [term, _strip_len_marks(term)]:
+        if not cand or not re.search(r"[A-Za-zΑ-Ωα-ωÀ-ÿ]", cand):
+            continue
+        text = await _extract(cand)
+        if text and "Etymology" in text:
+            return cand, text
+    return None, None
+
+
+# 語の文字（ラテン拡張＋ギリシャ基本/拡張＝アクセント付き含む）
+_WORDCHAR = r"A-Za-zÀ-ÿͰ-Ͽἀ-῿"
+
+
+def _prose_from(text):
+    """語源散文の最初の『From <語>』の語を返す（der/inh テンプレで取れない派生・語尾変化を補う）。
+    ギリシャ語のアクセント付き（διά 等）も full で取る（切詰め『διαλ』の是正）。"""
+    m = re.search(r"===?\s*Etymology[^\n=]*=+\s*(.+?)(?:\n==|\Z)", text or "", re.DOTALL)
+    seg = (m.group(1) if m else text or "")[:300]
+    fm = re.search(r"[Ff]rom\s+([" + _WORDCHAR + r"][" + _WORDCHAR + r"'’\-]{1,40})", seg)
+    return fm.group(1).strip(" .,") if fm else ""
+
+
+async def _deepen_chain(r, max_hops=6):
+    """連鎖の最古層を再帰的に辿り、根の構成要素（dia+legein 等）まで到達させる。独語 Dialektik のように
+    表層で Latin 止まりの語も、英語 dialectic と同じ深さ（希語の dia+legein）へ統一する（半田様指摘・普遍）。
+    追加する語は必ず実在ページで裏取り（junk 混入・切詰めを防ぐ）。構成要素に到達したら止める。"""
+    seen = {c.get("term") for c in r.get("chain", []) if c.get("term")}
+    cur = (r.get("chain") or [{}])[-1].get("term") if r.get("chain") else None
+    for _ in range(max_hops):
+        if r.get("components") or not cur:
+            break
+        cand, text = await _resolve_form((cur or "").strip(" .,"))
+        if not text:
+            break
+        sub = parse_etymology(text)
+        if sub.get("components"):
+            r["components"] = sub["components"]
+            break
+        nxt = None
+        for c in sub.get("chain", []):                 # 清潔な der/inh 連鎖を優先
+            t = _strip_len_marks(c.get("term") or "")  # 表示・クリックとも計量記号を外した実在形へ
+            if t and t not in seen:
+                seen.add(t); r["chain"].append({**c, "term": t}); nxt = t
+        if not nxt:                                     # 無ければ散文 From X（実在ページで裏取りしてから追加）
+            pf = _strip_len_marks(_prose_from(text))
+            if pf and pf not in seen:
+                vcand, vtext = await _resolve_form(pf)
+                if vtext:
+                    seen.add(pf); r["chain"].append({"lang": "", "term": pf, "gloss": ""}); nxt = pf
+        cur = nxt
+
+
 async def anatomy(word, orig_terms, lang="ja"):
     """候補の原語（英/羅/独/希ラベル、無ければ入力語）を順に試し、語源が取れた最初のものを解剖。
     アルファベット語で取れない場合は、CJK 語なら構成文字へ分解して解剖する（矛盾＝矛＋盾・普遍化）。"""
@@ -110,6 +174,7 @@ async def anatomy(word, orig_terms, lang="ja"):
             if r["chain"] or r["components"]:
                 r["term"] = term
                 r["wiktionary_url"] = f"https://en.wiktionary.org/wiki/{term}"
+                await _deepen_chain(r)   # 連鎖を最古層まで辿り、根の構成要素まで到達＝どの言語形から入っても同じ深さ（統一）
                 return r
     cjk = await _cjk_anatomy(word)                    # CJK 語の構成文字分解（矛盾→矛＋盾）
     if cjk:

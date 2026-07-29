@@ -75,8 +75,31 @@ LANG_NAMES = {
 }
 
 
+# 全言語コード→日本語名（MediaWiki languageinfo API・一括取得・長期キャッシュ）。手当てした
+# LANG_NAMES（印欧祖語・古典ギリシャ語等の正典名）を最優先し、残りの数百コードをAPIで埋める。
+# これで「af/an/bg…」等の生コード表示が無くなる（半田様指摘2026-07-29・普遍）。
+_LANG_NAME_CACHE: dict = {}
+
+
+async def ensure_langnames(uselang: str = "ja") -> None:
+    if _LANG_NAME_CACHE:
+        return
+    try:
+        body, _, _ = await cached_get_json(
+            "https://www.wikidata.org/w/api.php",
+            {"action": "query", "meta": "languageinfo", "liprop": "name",
+             "uselang": uselang, "format": "json"}, ttl=2592000)  # 30日
+        for code, info in body.get("query", {}).get("languageinfo", {}).items():
+            nm = info.get("name")
+            if nm:
+                _LANG_NAME_CACHE[code] = nm
+    except Exception:
+        pass
+
+
 def langname(code: str) -> str:
-    return LANG_NAMES.get(code, code)  # unmapped → raw code, never dropped
+    # 正典名（curated）を最優先→API名で補完→どちらも無ければ生コード（決して落とさない）
+    return LANG_NAMES.get(code) or _LANG_NAME_CACHE.get(code) or code
 
 
 # Wiktionary section heading → language code, to drop self-references from a chain.

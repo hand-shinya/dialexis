@@ -547,6 +547,7 @@ async def api_origin(q: str, lang: str = "ja"):
     言語と語形の連鎖（翻訳による変容＝宿痾を可視化）と、その語を担う言語の広がりを
     示す。いかなる言語も中心に置かない。原点は「推定」で断定せず、連鎖は常に全て示し、
     breadthはモデルでなくデータの和集合に語らせる。"""
+    await wiktionary.ensure_langnames(lang)   # 全言語コード→日本語名を用意（生コード表示の解消）
     if not q.strip():
         raise HTTPException(400, "empty query")
     SECTION = {"ja": "Japanese", "en": "English", "de": "German", "zh": "Chinese",
@@ -661,6 +662,7 @@ async def api_origin_graph(q: str, lang: str = "ja"):
     関与する著者・著作（重要度順）。node の大きさ＝重力（密度の代理指標＝推定）、edge＝
     関係。データのある枝は濃く、無い枝は薄い（捏造しない・A3）。各 node は q を持てば
     クリックで新たな第1階層として展開できる。"""
+    await wiktionary.ensure_langnames(lang)   # 全言語コード→日本語名を用意（生コード表示の解消）
     if not q.strip():
         raise HTTPException(400, "empty query")
     cn = await concept.node(q, lang)
@@ -948,6 +950,7 @@ async def api_timeline(q: str, lang: str = "ja"):
     """時代・変遷レンズ: この概念（原語）がいつ流行り・衰退し・再評価されたかを、Google Books
     Ngram の通時頻度で返す（無料・鍵不要）。カタカナ入力語は書物コーパスに乏しいため、原語
     （独/英/仏など）の語形で引く。捏造せず、取得できた系列だけ返す。"""
+    await wiktionary.ensure_langnames(lang)
     cn = await concept.node(q, lang)
     cd = cn["data"] if not cn["error"] else {}
     labels = cd.get("breadth_labels") or {}
@@ -1013,6 +1016,7 @@ async def _ndl_works(q, n=6):
 async def api_culture(q: str, lang: str = "ja"):
     """文化圏レンズ: この概念を担う言語を欧/漢字圏/日本/その他で束ね、日本圏には国立国会図書館
     （NDL・鍵不要）の国内文献を実データで足す＝どの文化圏を基準にするかで重力場が変わる。"""
+    await wiktionary.ensure_langnames(lang)
     cn = await concept.node(q, lang)
     cd = cn["data"] if not cn["error"] else {}
     labels = cd.get("breadth_labels") or {}
