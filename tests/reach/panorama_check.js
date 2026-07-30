@@ -62,23 +62,54 @@ const B = process.argv[2] || "http://127.0.0.1:8060";
   const disp = await p.evaluate(() => __dx.lastDispatch);
   ok("(1) 単一Dispatcher経由(panorama)・target=矛盾", !!(disp && disp.actionId === "panorama" && disp.target && disp.target.term === "矛盾"), JSON.stringify(disp && { a: disp.actionId, t: disp.target && disp.target.term }));
 
-  // (2) 意味契約の分離: 来歴に語形成(矛/盾)・焦点は埋没根拠が無ければ非表示・別カテゴリで穴埋めしない
-  const contracts = await p.evaluate(() => {
-    const hist = document.getElementById("pano-history"); const focus = document.getElementById("pano-focus");
-    // 区画は既定で折り畳み（<details>）＝innerTextは中身を除外するのでinnerHTMLで内容を検査する
-    const histHtml = hist ? hist.querySelector(".pano-in").innerHTML : ""; const bodyTxt = document.querySelector("#graph-panel").innerHTML;
-    // 来歴には「語そのものの来歴」（矛+盾 か 韓非子の由来）が入り、訳語(contradiction)のLatin語源が本文(details外)に紛れないこと
+  // (2) 意味契約の分離＋UX整理（操作行なし・目次=見出し一致・番号なし・英語散文なし・無関係な意外差なし）
+  const c2 = await p.evaluate(() => {
+    const panel = document.getElementById("graph-panel");
+    const hist = document.getElementById("pano-history");
+    const histHtml = hist ? hist.querySelector(".pano-in").innerHTML : "";
     const ownHistory = /矛|盾|spear|shield|韓非|Han\s*Feizi/.test(histHtml);
-    const translationEty = /語の成り立ち[^<]*contra|anat-part[^>]*>contra|dicere/.test(histHtml);   // 訳語の語源が構成要素として紛れていないこと
+    const translationEty = /anat-part[^>]*>contra|dicere/.test(histHtml);
     const spearElsewhere = (() => { let n = 0; document.querySelectorAll(".pano-sec").forEach(s => { if (s.id !== "pano-history" && /(矛＝|盾＝|>spear|>shield)/.test(s.querySelector(".pano-in").innerHTML)) n++; }); return n; })();
-    return { hasHistory: !!hist, histHasFormation: ownHistory && !translationEty, focusPresent: !!focus,
-      spearElsewhere, forbiddenPhrase: /原語の意味空間/.test(bodyTxt), collocPresent: !!document.getElementById("pano-colloc") };
+    const bodyHtml = panel.innerHTML;
+    const secHeads = [...panel.querySelectorAll(".pano-sec .pano-h")].map(h => h.textContent.trim());
+    const tocLinks = [...panel.querySelectorAll(".pano-toc-a")];
+    const tocHeads = tocLinks.map(a => a.textContent.trim());
+    const tocSecIds = tocLinks.map(a => "pano-" + a.dataset.sec);
+    const tocMatchesBody = tocHeads.length === secHeads.length && tocHeads.every((t, i) => secHeads.includes(t)) && tocSecIds.every(id => !!document.getElementById(id));
+    return {
+      histHasFormation: ownHistory && !translationEty,
+      focusPresent: !!document.getElementById("pano-focus"),
+      collocPresent: !!document.getElementById("pano-colloc"),
+      overlookPresent: !!panel.querySelector(".pano-overlook"),
+      forbiddenPhrase: /原語の意味空間/.test(bodyHtml),
+      spearElsewhere,
+      hasOpButtons: !!panel.querySelector(".pano-op") || [...panel.querySelectorAll("button")].some(b => b.disabled),
+      hasKukaku: /区画/.test(panel.innerText),
+      tocExists: !!panel.querySelector(".pano-toc") && /この語の見どころ/.test(panel.innerText),
+      tocMatchesBody, tocHeads, secHeads,
+      hasNumberedHeads: /class="pano-n"/.test(bodyHtml) || secHeads.some(h => /^[0-9０-９]/.test(h)),
+      rawEnglishEty: /Borrowed from|By surface analysis|surface analysis/.test(panel.innerText),
+    };
   });
-  ok("(2) 語源=来歴に語形成が入る（矛/盾）", contracts.histHasFormation, "");
-  ok("(2) 埋没根拠が無い矛盾では『焦点(並置)』を別カテゴリで穴埋めしない（非表示）", contracts.focusPresent === false);
-  ok("(2) 独語コーパスに載らない矛盾では『共起』を翻訳語等で穴埋めしない（非表示）", contracts.collocPresent === false);
-  ok("(2) 『原語の意味空間』という誤呼称を使わない", contracts.forbiddenPhrase === false);
-  ok("(2) 同一事実(矛/盾)は来歴に一度だけ・他区画へ複製しない", contracts.spearElsewhere === 0, "elsewhere=" + contracts.spearElsewhere);
+  ok("(2) 語の来歴に語自身の来歴（矛/盾・韓非子）が入り訳語Latin語源が紛れない", c2.histHasFormation);
+  ok("(2) 埋没根拠が無い矛盾では『翻訳で変わった焦点』を穴埋めせず非表示", c2.focusPresent === false);
+  ok("(2) 独語コーパスの無い矛盾では『実際の用法・共起』を穴埋めせず非表示", c2.collocPresent === false);
+  ok("(2) 同一事実(矛/盾)は来歴に一度だけ・他節へ複製しない", c2.spearElsewhere === 0, "elsewhere=" + c2.spearElsewhere);
+  ok("(2) 対比が成立しない矛盾では『この語で見落としやすいこと』を出さない（無関係な意外差なし）", c2.overlookPresent === false);
+  ok("(2) パネル内に灰色の操作ボタン/操作行がない", c2.hasOpButtons === false);
+  ok("(2) 『区画』という語が残っていない", c2.hasKukaku === false);
+  ok("(2) 目次『この語の見どころ』が存在", c2.tocExists);
+  ok("(2) 目次と本文の見出しが一致・表示されない節は目次にも無い", c2.tocMatchesBody, "toc=" + JSON.stringify(c2.tocHeads) + " sec=" + JSON.stringify(c2.secHeads));
+  ok("(2) 番号と番号抜けがない（見出しに番号なし）", c2.hasNumberedHeads === false);
+  ok("(2) raw Englishの語源説明がない（Borrowed from等）", c2.rawEnglishEty === false);
+  ok("(2) 『原語の意味空間』という誤呼称を使わない", c2.forbiddenPhrase === false);
+  // 目次クリックで該当セクションへ（active強調）
+  const tocJump = await p.evaluate(async () => {
+    const a = document.querySelector(".pano-toc-a"); if (!a) return null; const sec = "pano-" + a.dataset.sec;
+    a.click(); await new Promise(r => setTimeout(r, 300));
+    return { active: a.classList.contains("active") || document.querySelector(".pano-toc-a.active") != null, target: !!document.getElementById(sec) };
+  });
+  ok("(2) 目次クリックで正しいセクションへ移動（active強調）", !!(tocJump && tocJump.target), JSON.stringify(tocJump));
 
   // (3) 戻る/進むで選択前後を復元
   const before = await p.evaluate(() => __dx.viewState());

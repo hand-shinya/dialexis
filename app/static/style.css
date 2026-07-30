@@ -237,29 +237,36 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
   width: min(560px, 46vw); max-height: 100vh; height: 100vh; border-radius: 0;
   border-left: 2px solid var(--ink); box-shadow: -10px 0 40px rgba(0,0,0,.22); }
 @media (max-width: 760px) { #graph-panel.gp-wide { width: 100vw; border-left: none; } }
-.pano-ops { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; padding: .5rem .9rem;
-  border-bottom: 1px solid var(--line); position: sticky; top: 2.6rem; background: var(--card); z-index: 2; }
-.pano-ops-h { font-family: system-ui, sans-serif; font-size: .74rem; color: var(--muted); margin: 0 .1rem 0 .3rem; }
-.pano-op, .pano-jump { font-family: system-ui, sans-serif; font-size: .78rem; padding: .2rem .55rem;
-  border: 1px solid var(--line); border-radius: 999px; background: var(--card); cursor: pointer; }
-.pano-jump { border-style: dashed; color: var(--accent2); }
-.pano-op:hover, .pano-jump:hover { border-color: var(--accent); background: #f2eee4; }
-.pano-lead { font-size: .95rem; line-height: 1.55; margin: .3rem 0 .5rem; }
-.pano-surprise { font-family: system-ui, sans-serif; font-size: .84rem; background: #f6f1e2;
-  border-left: 3px solid var(--accent); padding: .4rem .6rem; border-radius: 4px; margin: .3rem 0 .6rem; }
-.pano-sec { border-top: 1px solid var(--line); padding: .1rem 0; }
-.pano-sec > summary { cursor: pointer; font-family: system-ui, sans-serif; font-size: .9rem;
-  padding: .5rem .2rem; list-style: none; }
-.pano-sec > summary::-webkit-details-marker { display: none; }
-.pano-sec > summary::before { content: "▸"; color: var(--muted); margin-right: .4rem; font-size: .8rem; }
-.pano-sec[open] > summary::before { content: "▾"; }
-.pano-n { display: inline-block; min-width: 1.3rem; color: var(--accent2); font-weight: 600; }
-.pano-in { padding: .2rem .3rem .7rem 1.7rem; }
+/* 概要（この場所での意味を短く）＝最上部 */
+.pano-lead { padding: .7rem .9rem .5rem; }
+.pano-eyebrow { font-family: system-ui, sans-serif; font-size: .72rem; letter-spacing: .04em;
+  color: var(--muted); margin: 0 0 .2rem; }
+.pano-lead-body { font-size: .95rem; line-height: 1.55; margin: .1rem 0; }
+/* この語で見落としやすいこと（条件成立時のみ） */
+.pano-overlook { margin: .2rem .9rem .6rem; background: #f6f1e2; border-left: 3px solid var(--accent);
+  padding: .5rem .7rem; border-radius: 4px; }
+.pano-ol-h { font-family: system-ui, sans-serif; font-weight: 600; font-size: .86rem; margin: 0 0 .1rem; }
+.pano-ol-sub { font-family: system-ui, sans-serif; font-size: .74rem; color: var(--muted); margin: 0 0 .3rem; }
+.pano-ol-body { font-size: .88rem; line-height: 1.55; margin: 0; }
+/* パネル内目次「この語の見どころ」＝地図上部メニューとは見た目も役割も分離。上部に簡潔に固定 */
+.pano-toc { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; padding: .45rem .9rem;
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  position: sticky; top: 2.6rem; background: var(--paper, var(--card)); z-index: 2; }
+.pano-toc-h { font-family: system-ui, sans-serif; font-size: .74rem; font-weight: 600; color: var(--accent2); margin-right: .3rem; }
+.pano-toc-a { font-family: system-ui, sans-serif; font-size: .78rem; padding: .16rem .5rem;
+  border: 1px solid var(--line); border-radius: 6px; color: var(--ink); text-decoration: none; background: var(--card); }
+.pano-toc-a:hover { border-color: var(--accent); background: #f2eee4; }
+.pano-toc-a.active { border-color: var(--accent); background: var(--accent); color: #fff; }
+/* 本文セクション（<section>+<h4>・番号なし・目次と同名見出し） */
+.pano-sec { border-top: 1px solid var(--line); padding: .3rem .2rem .6rem; scroll-margin-top: 5.4rem; }
+.pano-sec:first-of-type { border-top: none; }
+.pano-h { font-family: system-ui, sans-serif; font-size: .9rem; margin: .4rem 0 .3rem; }
+.pano-in { padding: 0 .2rem; }
 .pano-lbl { font-family: system-ui, sans-serif; font-size: .74rem; color: var(--muted); margin: .5rem 0 .2rem; }
 .pano-ctx, .pano-note { font-family: system-ui, sans-serif; font-size: .8rem; color: var(--muted); margin: .2rem 0 .4rem; }
 .pano-terms, .pano-branch { line-height: 2; }
 .pano-collapse { margin: .3rem 0; padding-left: 1.1rem; }
-.pano-more > summary, .pano-orig > summary { cursor: pointer; font-family: system-ui, sans-serif;
+.pano-more > summary { cursor: pointer; font-family: system-ui, sans-serif;
   font-size: .78rem; color: var(--accent2); padding: .3rem 0; }
 .pano-load { font-family: system-ui, sans-serif; font-size: .8rem; padding: .3rem .7rem;
   border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; }
