@@ -1125,18 +1125,26 @@ function altFromAnatomy(a, word) {
 //   colloc は /api/origin(独語解決)＋/api/collocations を試す → 代替は未試行の /api/anatomy。
 //   contrast は /api/origin＋/api/anatomy を両方試済 → 未試行の第三経路が無い＝null（再利用しない）。
 const _ALT_FOR = { meaning: "anatomy", breadth: "anatomy", collapse: "anatomy", anatomy: "origin", colloc: "anatomy", contrast: null };
-// 表示する出所は内部endpoint名でなく、応答中の実提供元（Wiktionary/Wikidata/Wikipedia）にする。
+// 表示する出所は内部endpoint名でも推測既定値でもなく、応答が実際に接地している提供元だけにする（P6・捏造禁止）。
+// 応答の sources[] の公開提供元名と、応答が明示するURLフィールド（wiktionary_url/wikidata_url/article_url=Wikipedia）
+// から確定できる提供元のみを採る。内部集約id（concept-node 等）は公開提供元名でないので採らない。確定できなければ空。
 function _providerLabel(ep, data) {
-  if (ep === "anatomy") return "Wiktionary";
   const names = [];
+  const add = (n) => { if (n && !names.includes(n)) names.push(n); };
   for (const s of ((data && data.sources) || [])) {
     if (!s || s.error) continue;
     const id = String(s.source || "");
-    const n = /wiktionary/i.test(id) ? "Wiktionary" : /wikipedia/i.test(id) ? "Wikipedia"
-            : (/wikidata|concept-node/i.test(id) ? "Wikidata" : null);
-    if (n && !names.includes(n)) names.push(n);
+    if (/wiktionary/i.test(id)) add("Wiktionary");
+    else if (/wikipedia/i.test(id)) add("Wikipedia");
+    else if (/wikidata/i.test(id)) add("Wikidata");
+    // concept-node 等の内部idは推測で提供元名にしない
   }
-  return names.length ? names.join("・") : (data && data.wikidata_url ? "Wikidata" : "Wiktionary");
+  if (data) {
+    if (data.wiktionary_url) add("Wiktionary");
+    if (data.wikidata_url) add("Wikidata");
+    if (data.article_url) add("Wikipedia");   // /api/origin の article_url は Wikipedia 記事
+  }
+  return names.join("・");   // 確定できなければ空文字（提供元名を捏造しない）
 }
 // 否定Outcome時に実走行する自動代替。body（パネル本体）へ実データ＋実提供元+取得時刻を書き、続行フッターも残す。
 // 未試行の第三経路が無い kind（contrast）は、虚偽の切替文言を出さず、既存の続行操作を直ちに表示する（P6）。
@@ -1148,18 +1156,24 @@ async function autoFallback(word, kind, body) {
     try {
       if (ep === "anatomy") {
         const a = await api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`);
-        html = altFromAnatomy(a, word); provider = _providerLabel("anatomy", a); retrieved = (a && a.queried_at) || _nowStamp();
+        html = altFromAnatomy(a, word); provider = _providerLabel("anatomy", a); retrieved = (a && a.queried_at) || "";
       } else {
         const o = await api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}`);
-        html = altFromOrigin(o, word); provider = _providerLabel("origin", o); retrieved = (o && o.queried_at) || _nowStamp();
+        html = altFromOrigin(o, word); provider = _providerLabel("origin", o); retrieved = (o && o.queried_at) || "";
       }
       outcome = html ? "success" : "empty";
     } catch (e) { outcome = "error"; console.error("autoFallback", e); }
   }
   logFallback(word, kind, ep ? ("/api/" + ep) : "(none)", outcome);
   if (html && body) {   // 実データが取れた時だけ「切替えた」と言う（切替文言は実取得に接地する）
-    body.innerHTML = `<div class="fallback"><p class="fb-note">${jp ? "主要な源では十分な結果が得られなかったため、別の情報源に自動で切り替えて取得しました。" : "Auto-switched to an alternative source."}</p>${html}`
-      + `<p class="srcline">${jp ? "自動代替（出所：" : "auto-fallback (source: "}${esc(provider)}${jp ? "）／取得時刻：" : ") / retrieved: "}${esc(retrieved)}</p></div>`
+    // 出所・取得時刻は応答から確定できたものだけを出す（推測・既定値は出さない＝捏造禁止・P6・半田様2026-07-30）
+    const parts = [];
+    if (provider) parts.push((jp ? "出所：" : "source: ") + esc(provider));
+    if (retrieved) parts.push((jp ? "取得時刻：" : "retrieved: ") + esc(retrieved));
+    const srcline = parts.length
+      ? `<p class="srcline">${jp ? "自動代替（" : "auto-fallback ("}${parts.join(jp ? "／" : ", ")}${jp ? "）" : ")"}</p>`
+      : `<p class="srcline">${jp ? "自動代替" : "auto-fallback"}</p>`;
+    body.innerHTML = `<div class="fallback"><p class="fb-note">${jp ? "主要な源では十分な結果が得られなかったため、別の情報源に自動で切り替えて取得しました。" : "Auto-switched to an alternative source."}</p>${html}${srcline}</div>`
       + softLine(word);
   } else if (body) {
     body.innerHTML = softLine(word);   // 第三経路なし/空/失敗＝虚偽の切替文言を出さず、続行操作を直ちに表示（捏造で埋めない・P6）
@@ -1452,21 +1466,24 @@ function originStale(tok) { return tok !== OZ.token; }
 function originCurrent(q) { return OZ.q === q; }
 
 // dispatch a dimension-of-inquiry entry to its data path (or 整備中 note).
+// 非同期の実データ経路は必ず return して呼び元 dispatchAction に await させる（settle後に1回だけcommit＝
+// 一操作一commitを守る。returnしないと取得完了前に先行commitし、gCombineRun等の完了時に再commitして履歴が
+// 2件になる回帰＝Codex対審E2・半田様2026-07-30の保持指示に違反する）。
 function gDimAct(dm) {
   if (!dm) return;
   const act = dm.act || "";
   const w = (G && G.rootQ) || (($("origin-results") || {}).dataset || {}).q || "";   // この探索の中心語
   // soon次元＝説明だけで止めない。現在語と次元名を既存の組合せ探索(実データ)へ渡し、同一操作内で実行する
   // （新機構を作らず既存Action/APIを再利用・取得できなければ組合せ側が続行操作を出す・半田様2026-07-30）。
-  if (dm.status === "soon") { gCombineRun(w, dm.label, "and"); return; }
+  if (dm.status === "soon") { return gCombineRun(w, dm.label, "and"); }
   if (act.startsWith("scroll:")) {
     const el = $(act.slice(7));
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
     else gPanel(dm.label, softLine(w), w);   // 否定表示を出さず続行フッターへ（逆側logic）
-  } else if (act.startsWith("colloc:")) gColloc(act.slice(7), "de");
-  else if (act.startsWith("counter:")) gCounter(act.slice(8));
+  } else if (act.startsWith("colloc:")) return gColloc(act.slice(7), "de");
+  else if (act.startsWith("counter:")) return gCounter(act.slice(8));
   else if (act === "graph") { const gw = $("origin-graph-wrap"); if (gw) gw.scrollIntoView({ behavior: "smooth", block: "start" }); }
-  else gCombineRun(w, dm.label, "and");   // 未知のact＝「準備中」で止めず、既存の組合せ実データ経路へ（P6/P11）
+  else return gCombineRun(w, dm.label, "and");   // 未知のact＝「準備中」で止めず、既存の組合せ実データ経路へ（P6/P11）
 }
 
 // 批判・異論の次元 — reuse the existing counterargument engine (steelman
