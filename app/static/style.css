@@ -231,6 +231,39 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
   position: sticky; top: 0; background: var(--card); }
 .gp-x { background: none; color: var(--muted); font-size: 1.3rem; padding: 0 .3rem; }
 .gp-body { padding: .8rem .9rem 1.1rem; }
+
+/* 概念全景ドロワー（半田様2026-07-30）: デスクトップ=右側の広いdrawer（グラフの一部を残す）／狭い画面=全画面 */
+#graph-panel.gp-wide { left: auto; right: 0; top: 0; transform: none;
+  width: min(560px, 46vw); max-height: 100vh; height: 100vh; border-radius: 0;
+  border-left: 2px solid var(--ink); box-shadow: -10px 0 40px rgba(0,0,0,.22); }
+@media (max-width: 760px) { #graph-panel.gp-wide { width: 100vw; border-left: none; } }
+.pano-ops { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; padding: .5rem .9rem;
+  border-bottom: 1px solid var(--line); position: sticky; top: 2.6rem; background: var(--card); z-index: 2; }
+.pano-ops-h { font-family: system-ui, sans-serif; font-size: .74rem; color: var(--muted); margin: 0 .1rem 0 .3rem; }
+.pano-op, .pano-jump { font-family: system-ui, sans-serif; font-size: .78rem; padding: .2rem .55rem;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--card); cursor: pointer; }
+.pano-jump { border-style: dashed; color: var(--accent2); }
+.pano-op:hover, .pano-jump:hover { border-color: var(--accent); background: #f2eee4; }
+.pano-lead { font-size: .95rem; line-height: 1.55; margin: .3rem 0 .5rem; }
+.pano-surprise { font-family: system-ui, sans-serif; font-size: .84rem; background: #f6f1e2;
+  border-left: 3px solid var(--accent); padding: .4rem .6rem; border-radius: 4px; margin: .3rem 0 .6rem; }
+.pano-sec { border-top: 1px solid var(--line); padding: .1rem 0; }
+.pano-sec > summary { cursor: pointer; font-family: system-ui, sans-serif; font-size: .9rem;
+  padding: .5rem .2rem; list-style: none; }
+.pano-sec > summary::-webkit-details-marker { display: none; }
+.pano-sec > summary::before { content: "▸"; color: var(--muted); margin-right: .4rem; font-size: .8rem; }
+.pano-sec[open] > summary::before { content: "▾"; }
+.pano-n { display: inline-block; min-width: 1.3rem; color: var(--accent2); font-weight: 600; }
+.pano-in { padding: .2rem .3rem .7rem 1.7rem; }
+.pano-lbl { font-family: system-ui, sans-serif; font-size: .74rem; color: var(--muted); margin: .5rem 0 .2rem; }
+.pano-ctx, .pano-note { font-family: system-ui, sans-serif; font-size: .8rem; color: var(--muted); margin: .2rem 0 .4rem; }
+.pano-terms, .pano-branch { line-height: 2; }
+.pano-collapse { margin: .3rem 0; padding-left: 1.1rem; }
+.pano-more > summary, .pano-orig > summary { cursor: pointer; font-family: system-ui, sans-serif;
+  font-size: .78rem; color: var(--accent2); padding: .3rem 0; }
+.pano-load { font-family: system-ui, sans-serif; font-size: .8rem; padding: .3rem .7rem;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; }
+.pano-load:hover { border-color: var(--accent); }
 .ext-cat { margin: .5rem 0; line-height: 2; }
 .ext-cat-h { font-family: system-ui, sans-serif; font-size: .72rem; color: var(--muted);
   display: inline-block; min-width: 5.5rem; }

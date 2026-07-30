@@ -1254,14 +1254,20 @@ async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
 
 
 @app.get("/api/anatomy")
-async def api_anatomy(q: str, lang: str = "ja"):
+async def api_anatomy(q: str, lang: str = "ja", own: int = 0):
     """普遍的な語源解剖: 語を原語へ辿り、構成要素(prefix+root)と連鎖を意味glossつきで返す。
-    翻訳で見えなくなった原義(弁証法→dia-=間・対話)を原語の実文書(Wiktionary)に接地して復元。"""
-    v = await concept.variants(q, lang)
-    labels = (v["data"] if not v["error"] else {}).get("labels", {})
-    cands = [labels.get("en"), labels.get("la"), labels.get("de"), labels.get("grc"), labels.get("fr")]
+    翻訳で見えなくなった原義(弁証法→dia-=間・対話)を原語の実文書(Wiktionary)に接地して復元。
+
+    own=1: 訳語(en/la/de/grc/fr の候補)を経由せず、**その語そのものの来歴**だけを解剖する
+    （概念全景の意味契約「語そのものの来歴」用。矛盾→矛+盾/韓非子 を決定論的に返す。既定 own=0 は従来通り）。"""
+    if own:
+        cands = []   # 訳語候補を使わない＝語そのもの→(自身のページ)→CJK構成文字、の順で語自身の来歴を取る
+    else:
+        v = await concept.variants(q, lang)
+        labels = (v["data"] if not v["error"] else {}).get("labels", {})
+        cands = [labels.get("en"), labels.get("la"), labels.get("de"), labels.get("grc"), labels.get("fr")]
     r = await etymology.anatomy(q, cands, lang)
-    r.update({"query": q, "queried_at": now()})
+    r.update({"query": q, "queried_at": now(), "own": bool(own)})
     return r
 
 
