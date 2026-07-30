@@ -1119,26 +1119,50 @@ function altFromAnatomy(a, word) {
   if (a.summary) h += `<p class="anat-summary">${esc(a.summary.length > 300 ? a.summary.slice(0, 300) + "…" : a.summary)}</p>`;
   return h;
 }
-// 否定Outcome時に実走行する自動代替。body（パネル本体）へ実データ＋出所+時刻を書き、続行フッターも残す。
-// kind に応じ「主要源とは別の情報源」を選ぶ（word-sense系→概念グラフ源、breadth系→原語解剖源）。
+// kind ごとの代替経路＝「その操作で既に試したendpointは使わない」（虚偽の切替を出さないための鍵・半田様2026-07-30）。
+//   meaning/breadth/collapse は gWordAspect が最初に /api/origin を使う → 代替は未試行の /api/anatomy。
+//   anatomy は最初に /api/anatomy → 代替は未試行の /api/origin（維持）。
+//   colloc は /api/origin(独語解決)＋/api/collocations を試す → 代替は未試行の /api/anatomy。
+//   contrast は /api/origin＋/api/anatomy を両方試済 → 未試行の第三経路が無い＝null（再利用しない）。
+const _ALT_FOR = { meaning: "anatomy", breadth: "anatomy", collapse: "anatomy", anatomy: "origin", colloc: "anatomy", contrast: null };
+// 表示する出所は内部endpoint名でなく、応答中の実提供元（Wiktionary/Wikidata/Wikipedia）にする。
+function _providerLabel(ep, data) {
+  if (ep === "anatomy") return "Wiktionary";
+  const names = [];
+  for (const s of ((data && data.sources) || [])) {
+    if (!s || s.error) continue;
+    const id = String(s.source || "");
+    const n = /wiktionary/i.test(id) ? "Wiktionary" : /wikipedia/i.test(id) ? "Wikipedia"
+            : (/wikidata|concept-node/i.test(id) ? "Wikidata" : null);
+    if (n && !names.includes(n)) names.push(n);
+  }
+  return names.length ? names.join("・") : (data && data.wikidata_url ? "Wikidata" : "Wiktionary");
+}
+// 否定Outcome時に実走行する自動代替。body（パネル本体）へ実データ＋実提供元+取得時刻を書き、続行フッターも残す。
+// 未試行の第三経路が無い kind（contrast）は、虚偽の切替文言を出さず、既存の続行操作を直ちに表示する（P6）。
 async function autoFallback(word, kind, body) {
   const jp = LANG === "ja";
-  let html = "", alt = "", outcome = "empty";
-  try {
-    if (kind === "breadth" || kind === "collapse") {
-      alt = "/api/anatomy"; const a = await api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`); html = altFromAnatomy(a, word);
-    } else {   // meaning / anatomy / contrast / colloc / etymology → 概念グラフ源（Wikidata＋多言語）
-      alt = "/api/origin"; const o = await api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}`); html = altFromOrigin(o, word);
-    }
-    outcome = html ? "success" : "empty";
-  } catch (e) { outcome = "error"; console.error("autoFallback", e); }
-  logFallback(word, kind, alt, outcome);
-  if (html && body) {
+  const ep = _ALT_FOR.hasOwnProperty(kind) ? _ALT_FOR[kind] : "origin";
+  let html = "", outcome = ep ? "empty" : "no-alt", provider = "", retrieved = "";
+  if (ep) {
+    try {
+      if (ep === "anatomy") {
+        const a = await api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`);
+        html = altFromAnatomy(a, word); provider = _providerLabel("anatomy", a); retrieved = (a && a.queried_at) || _nowStamp();
+      } else {
+        const o = await api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}`);
+        html = altFromOrigin(o, word); provider = _providerLabel("origin", o); retrieved = (o && o.queried_at) || _nowStamp();
+      }
+      outcome = html ? "success" : "empty";
+    } catch (e) { outcome = "error"; console.error("autoFallback", e); }
+  }
+  logFallback(word, kind, ep ? ("/api/" + ep) : "(none)", outcome);
+  if (html && body) {   // 実データが取れた時だけ「切替えた」と言う（切替文言は実取得に接地する）
     body.innerHTML = `<div class="fallback"><p class="fb-note">${jp ? "主要な源では十分な結果が得られなかったため、別の情報源に自動で切り替えて取得しました。" : "Auto-switched to an alternative source."}</p>${html}`
-      + `<p class="srcline">${jp ? "自動代替（源：" : "auto-fallback (source: "}${esc(alt)}${jp ? "）／取得時刻：" : ") / retrieved: "}${esc(_nowStamp())}</p></div>`
+      + `<p class="srcline">${jp ? "自動代替（出所：" : "auto-fallback (source: "}${esc(provider)}${jp ? "）／取得時刻：" : ") / retrieved: "}${esc(retrieved)}</p></div>`
       + softLine(word);
   } else if (body) {
-    body.innerHTML = softLine(word);   // 代替も空/失敗なら続行フッター（捏造で埋めない・P6）
+    body.innerHTML = softLine(word);   // 第三経路なし/空/失敗＝虚偽の切替文言を出さず、続行操作を直ちに表示（捏造で埋めない・P6）
   }
   return outcome;
 }
@@ -1430,12 +1454,11 @@ function originCurrent(q) { return OZ.q === q; }
 // dispatch a dimension-of-inquiry entry to its data path (or 整備中 note).
 function gDimAct(dm) {
   if (!dm) return;
-  const jp = LANG === "ja", act = dm.act || "";
-  const w = (G && G.rootQ) || (($("origin-results") || {}).dataset || {}).q || "";   // この探索の中心語＝続行フッター用term
-  if (dm.status === "soon") {
-    gPanel(dm.label, `<p class="muted">${jp ? "この次元は整備中です。路（構造）は用意されており、データ源が接続され次第ここに現れます。内容はベンチマークと違ってよく、広さ・深さ・次元の多様性の路を保証します。" : "This dimension is being built; the path exists and fills in as its source connects."}</p>`, w);
-    return;
-  }
+  const act = dm.act || "";
+  const w = (G && G.rootQ) || (($("origin-results") || {}).dataset || {}).q || "";   // この探索の中心語
+  // soon次元＝説明だけで止めない。現在語と次元名を既存の組合せ探索(実データ)へ渡し、同一操作内で実行する
+  // （新機構を作らず既存Action/APIを再利用・取得できなければ組合せ側が続行操作を出す・半田様2026-07-30）。
+  if (dm.status === "soon") { gCombineRun(w, dm.label, "and"); return; }
   if (act.startsWith("scroll:")) {
     const el = $(act.slice(7));
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1443,7 +1466,7 @@ function gDimAct(dm) {
   } else if (act.startsWith("colloc:")) gColloc(act.slice(7), "de");
   else if (act.startsWith("counter:")) gCounter(act.slice(8));
   else if (act === "graph") { const gw = $("origin-graph-wrap"); if (gw) gw.scrollIntoView({ behavior: "smooth", block: "start" }); }
-  else gPanel(dm.label, `<p class="muted">${jp ? "準備中" : "coming"}</p>`, w);
+  else gCombineRun(w, dm.label, "and");   // 未知のact＝「準備中」で止めず、既存の組合せ実データ経路へ（P6/P11）
 }
 
 // 批判・異論の次元 — reuse the existing counterargument engine (steelman
@@ -2427,10 +2450,10 @@ async function originRun(q, tok) {
   if (d.dimensions && d.dimensions.length) {
     const badge = (s) => s === "ok" ? `<span class="dim-b dim-ok">${jp ? "辿れる" : "ready"}</span>`
       : s === "partial" ? `<span class="dim-b dim-part">${jp ? "一部" : "partial"}</span>`
-      : `<span class="dim-b dim-soon">${jp ? "整備中" : "coming"}</span>`;
+      : `<span class="dim-b dim-soon">${jp ? "組合せで探索" : "via combine"}</span>`;   // 未接続機能の宣伝でなく、クリックで実際に起きる操作を示す
     DIMS = d.dimensions;
     html += `<div class="card dim-card"><h3>${jp ? "探究の次元（この言葉をどこから見ていくか）" : "Dimensions of inquiry"}</h3>
-      <p class="muted">${jp ? "一つの言葉を、いくつかの次元から見ていく入口です。「辿れる」＝実データに到達する次元／「一部」＝既存機構につながる次元／「整備中」＝まだ路だけで内容は未接続、を正直に区別します。上は暫定の【共通次元】。その下に、この概念自身の記事構造から【概念ごとに異なる固有の切り口】を発見して示します（固定分類でない）。" : "Entry points into several dimensions of a word. ready = reaches real data; partial = wired to an existing engine; coming = path only. Above are COMMON dimensions; below are facets DISCOVERED from this concept's own article — different per concept."}</p>
+      <p class="muted">${jp ? "一つの言葉を、いくつかの次元から見ていく入口です。「辿れる」＝実データに到達する次元／「一部」＝既存機構につながる次元／「組合せで探索」＝クリックでこの語と次元名を組合せ探索（実データ）へ渡します。上は暫定の【共通次元】。その下に、この概念自身の記事構造から【概念ごとに異なる固有の切り口】を発見して示します（固定分類でない）。" : "Entry points into several dimensions of a word. ready = reaches real data; partial = wired to an existing engine; via combine = clicking runs a real combine search of this word × the dimension name. Above are COMMON dimensions; below are facets DISCOVERED from this concept's own article — different per concept."}</p>
       <div class="dims">${d.dimensions.map((dm, i) =>
         `<button type="button" class="dim${dm.status === "soon" ? " dim-x" : ""}" data-i="${i}">${esc(dm.label)} ${badge(dm.status)}</button>`).join("")}</div>
       <div id="dim-discovered" class="dim-disc"><p class="srcline muted">${jp ? "この概念に固有の切り口を、記事の構造から取得中…" : "discovering concept-specific facets…"}</p></div></div>`;
