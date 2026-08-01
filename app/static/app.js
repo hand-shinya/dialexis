@@ -1931,6 +1931,8 @@ function gActions(n) {
     ];
   } else {
     const CORE_HEAD = [
+      // 第一候補＝この語の全体像（概念全景）。派生ノードからも全景へ進める（半田様2026-08-01）
+      { s: "🖼 全体像を見る", t: "🖼 この語の全体像を見る（概念全景）", action: "panorama", ctx: { node: n } },
       { s: "🎯 中心に据える", t: "🎯 これを地図の中心に据え直す（グラフを再構成）", action: "center" },
       { s: "🔗 組み合わせ", t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", action: "combine" },
       { s: "👓 見方", t: "👓 見方を選ぶ（この地図の切り口）", action: "lens" },
@@ -2175,9 +2177,20 @@ function _panoHistory(d) {   // 語の来歴＝日本語漢字表記の語形・
   if (a.wiktionary_url) h += `<p class="srcline"><a href="${esc(a.wiktionary_url)}" target="_blank">出典：Wiktionary${a.term ? `（${esc(a.term)}）` : ""}</a></p>`;
   return h;
 }
+// concept_origin（記事LEADの併記表記）は原語と訳語が混在する。語自身の語源データ（word_origin の言語／
+// anatomy の語形）に接地するものだけを「原語」とし、それ以外は翻訳対応語として各言語での表記側へ回す
+// （矛盾の contradiction（英語）を原語欄に置かない・半田様2026-08-01）。推測で振り分けない。
+function _panoOrigSplit(d) {
+  const o = d.origin || {}, a = d.anatomy || {};
+  const co = (o.concept_origin || []);
+  const woName = ((o.word_origin || {}).name) || "";
+  const forms = new Set([...(a.components || []).map(c => c.part), ...(a.chain || []).map(c => c.term), a.term].filter(Boolean));
+  const isOrig = (x) => !!x && ((woName && x.name === woName) || forms.has(x.term));
+  return { origs: co.filter(isOrig), trans: co.filter(x => !isOrig(x)) };
+}
 function _panoBearers(d) {   // 原語・思想家・著作（概念を担った系譜＝日本語表記の来歴とは別次元）
   const o = d.origin || {}; let h = "";
-  const co = (o.concept_origin || []);
+  const co = _panoOrigSplit(d).origs;   // 語自身の語源に接地した原語だけ（翻訳対応語は表記側へ）
   if (co.length) h += `<p class="pano-lbl">概念を担った原語</p><p class="pano-terms">`
     + co.map(x => `<a href="#" class="ext-term" data-w="${esc(x.term)}">${esc(x.term)}</a>${x.name ? `（${esc(x.name)}）` : ""}`).join("　") + `</p>`;
   const persons = (o.associated || []).filter(x => x && x.is_person).slice(0, 8);
@@ -2200,19 +2213,37 @@ function _panoRelations(d, cx) {   // 関係・対立・運動
   h += row("対立", opp) + row("近い概念", near) + row("関連", concepts);
   return h || "";   // 実データが無ければ節を出さない
 }
-function _panoLang(d) {   // 言語間の意味変化（代表例＋展開・翻字羅列にしない）
-  const br = ((d.origin || {}).breadth || []); if (!br.length) return "";
-  const chip = (b) => `<span class="breadth-chip">${esc(b.name)}${b.term ? "：<a href=\"#\" class=\"ext-term\" data-w=\"" + esc(b.term) + "\">" + esc(b.term) + "</a>" : ""}</span>`;
+// 意味・焦点・用法の差が出典に接地している場合だけ「言語間の意味変化」と呼ぶ。表記しか無ければ
+// 見出しも目次も「各言語での表記」にする（表記一覧を意味変化と偽らない・半田様2026-08-01）。
+function _panoLangHasSense(d) {
+  return ((d.origin || {}).breadth || []).some(b => b && (_jaGloss(b.gloss) || _jaGloss(b.sense) || _jaGloss(b.note)));
+}
+function _panoLangHeading(d) { return _panoLangHasSense(d) ? "言語間の意味変化" : "各言語での表記"; }
+function _panoLang(d) {   // 各言語での表記（代表例＋展開・翻字の全列挙にしない）
+  const br = ((d.origin || {}).breadth || []).slice();
+  // 原語に接地しなかった concept_origin（翻訳対応語）はここへ統合し、原語欄との重複表示をしない
+  const seen = new Set(br.map(b => (b.name || "") + " " + (b.term || "")));
+  _panoOrigSplit(d).trans.forEach(t => { const k = (t.name || "") + " " + (t.term || ""); if (!seen.has(k)) { seen.add(k); br.unshift({ name: t.name, term: t.term }); } });
+  if (!br.length) return "";
+  const withSense = _panoLangHasSense(d);
+  const chip = (b) => { const g = _jaGloss(b.gloss) || _jaGloss(b.sense) || "";
+    return `<span class="breadth-chip">${esc(b.name)}${b.term ? "：<a href=\"#\" class=\"ext-term\" data-w=\"" + esc(b.term) + "\">" + esc(b.term) + "</a>" : ""}${g ? `<span class="anat-gloss">「${esc(g)}」</span>` : ""}</span>`; };
   const rep = br.slice(0, 12), rest = br.slice(12);
-  let h = `<p class="pano-note">この概念が世界の言語でどう担われているかの広がり（代表例）。翻字の全列挙でなく、担い方の多様さを見る入口です。</p><div class="breadth-chips">${rep.map(chip).join("")}</div>`;
+  const note = withSense
+    ? "この概念が言語ごとにどう意味・焦点を変えるか（出典に接地した差のみ）。"
+    : "この概念を各言語でどう表記するか（代表例）。意味の差までは確認できていないため、表記として示します。";
+  let h = `<p class="pano-note">${note}</p><div class="breadth-chips">${rep.map(chip).join("")}</div>`;
   if (rest.length) h += `<details class="pano-more"><summary>他 ${rest.length} 言語を展開</summary><div class="breadth-chips">${rest.map(chip).join("")}</div></details>`;
   return h;
 }
-function _panoColloc(d, cx) {   // 実際の用法・共起（実コーパスのみ・遅延取得）
+function _panoColloc(d, cx) {   // 実際の用法・共起（実コーパスのみ・描画後に自動取得）
+  // 人物・著作はコーパスの見出し語でない＝対象外（節を作らない）。押せないボタンを見せないため
+  // ボタン自体を置かず、描画後に自動取得し、空・取得不能なら節と目次項目を静かに除去する。
+  if (cx.nodeKind === "author" || cx.nodeKind === "work") return "";
   const de = ((d.origin || {}).concept_origin || []).find(x => x.name === "ドイツ語");
   const hasCorpus = de || /[A-Za-zÀ-ÿ]/.test(cx.term);   // DWDS(独語)コーパスに載りうる時だけ節を出す
   if (!hasCorpus) return "";
-  return `<div class="pano-lazy" data-lazy="colloc" data-term="${esc(cx.term)}"><button type="button" class="pano-load">実コーパスの共起語を取得（DWDS・独語）</button></div>`;
+  return `<div class="pano-lazy" data-term="${esc(cx.term)}"><p class="pano-note">実コーパス（DWDS・独語）から取得中…</p></div>`;
 }
 // 共起が空/失敗＝失敗説明を出さず、その節と対応する目次項目を静かに取り除く（他の見どころ・枝はそのまま残る）
 function _panoDropSection(id) {
@@ -2248,9 +2279,8 @@ function _panoShell(title) {   // 操作行は撤去（地図操作は地図上�
   return p;
 }
 function _panoBindLazy(bodyEl) {
-  bodyEl.querySelectorAll(".pano-load").forEach(btn => btn.addEventListener("click", async () => {
-    const box = btn.closest(".pano-lazy"); if (!box) return; const term = box.dataset.term;
-    btn.disabled = true; btn.textContent = LANG === "ja" ? "取得中…" : "loading…";
+  bodyEl.querySelectorAll(".pano-lazy").forEach(async (box) => {   // 描画後に自動取得（押せないボタンを見せない）
+    const term = box.dataset.term; if (!term) return;
     try {
       let deTerm = term;
       if (!/[A-Za-zÀ-ÿ]/.test(term)) { const od = await panoData(term); const g = (((od.origin || {}).concept_origin) || []).find(x => x.name === "ドイツ語"); if (!g) { _panoDropSection("colloc"); return; } deTerm = g.term; }
@@ -2261,32 +2291,77 @@ function _panoBindLazy(bodyEl) {
         + (rels[rel] || []).slice(0, 8).map(w => { const t = _pw(w); return `<a href="#" class="ext-term" data-w="${esc(t)}">${esc(t)}</a>`; }).join("・") + `</td></tr>`).join("")
         + `</table><p class="srcline">${esc(deTerm)}・DWDS（独語コーパス）</p>`;
     } catch (e) { console.error("pano colloc", e); _panoDropSection("colloc"); }
-  }));
+  });
 }
 // 「この語の見どころ」＝パネル内目次（実在する節だけから自動生成・本文と同名・クリックでスクロール・読了節を強調）
+// 目次の選択状態（半田様2026-08-01の回帰是正）:
+//  旧実装は判定に offsetTop（コンテンツ座標）＋scrollTop を使い、スクロール/表示位置は rect（client座標）
+//  という**異なる座標系の混在**だった。パネル下端まで来ると対象節の先頭を上端まで運べず、
+//  「判定線を跨いだ最後の節」が常に選ばれて別項目（原語・思想家・著作）へ誤反転していた。
+//  → 判定は client座標に一本化し、明示クリック中はロックして誤反転させない。
 function _panoBindToc(panel) {
   const links = [...panel.querySelectorAll(".pano-toc-a")];
-  const spy = () => {
-    let cur = null; const line = panel.scrollTop + 96;
-    const secs = [...panel.querySelectorAll(".pano-sec")];
-    secs.forEach(s => { if (s.offsetTop <= line) cur = s.id; });
-    if (!cur && secs.length) cur = secs[0].id;   // 先頭を読んでいる時（スクロール不要な短い内容を含む）も強調する
-    links.forEach(a => a.classList.toggle("active", ("pano-" + a.dataset.sec) === cur));
+  if (!links.length) return;
+  let locked = null;   // 明示クリックで選ばれた節id（ユーザーが自分でスクロールするまで維持）
+  const secs = () => [...panel.querySelectorAll(".pano-sec")];
+  // 判定線＝固定ヘッダ＋固定目次の直下（client座標・スクロール量に依存しない）
+  const line = () => {
+    const pr = panel.getBoundingClientRect();
+    const hd = panel.querySelector(".gp-head"), tc = panel.querySelector(".pano-toc");
+    const h = (hd ? hd.getBoundingClientRect().height : 0) + (tc ? tc.getBoundingClientRect().height : 0);
+    return pr.top + h + 8;
   };
+  const paint = (id) => links.forEach(a => a.classList.toggle("active", ("pano-" + a.dataset.sec) === id));
+  // 通常スクロール時に「いま主に見えている節」を同一座標系で選ぶ
+  const visibleId = () => {
+    const list = secs(); if (!list.length) return null;
+    const L = line(), pr = panel.getBoundingClientRect();
+    const atBottom = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 2;
+    if (atBottom) {   // 下端＝先頭を上端まで運べない。表示中の節のうち最後のものを選ぶ
+      const vis = list.filter(s => { const r = s.getBoundingClientRect(); return r.bottom > L && r.top < pr.bottom; });
+      return (vis[vis.length - 1] || list[list.length - 1]).id;
+    }
+    let cur = list[0].id;
+    for (const s of list) { const r = s.getBoundingClientRect(); if (r.top <= L + 2) cur = s.id; else break; }
+    return cur;
+  };
+  const spy = () => { if (locked) return; paint(visibleId()); };   // 明示クリック中は通常スクロール判定を止める
   links.forEach(a => a.addEventListener("click", (e) => {
     e.preventDefault();
-    const s = panel.querySelector("#pano-" + a.dataset.sec); if (s) s.scrollIntoView({ behavior: "smooth", block: "start" });
-    links.forEach(x => x.classList.toggle("active", x === a));   // 押した項目を即強調（スクロール不要でも強調が変わる）
-    setTimeout(spy, 600);                                        // スクロール後は実際の読み位置で再判定
+    const id = "pano-" + a.dataset.sec, s = panel.querySelector("#" + id);
+    locked = id; paint(id);                                        // 押した項目を即active（短いパネルでも変わる）
+    if (s) s.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => {                                             // スクロール完了後: 実際に上端へ来ていれば通常判定へ戻す
+      if (locked !== id) return;
+      const t = panel.querySelector("#" + id); if (!t) { locked = null; return; }
+      const r = t.getBoundingClientRect(), L = line();
+      if (r.top <= L + 6) { locked = null; paint(visibleId()); }    // 上端へ運べた＝表示中の節で再判定（同じ節になる）
+      else paint(id);                                              // 下端等で運べない＝押した項目を維持（誤反転させない）
+    }, 900);
   }));
-  panel.addEventListener("scroll", spy); spy();
+  // ユーザー自身の操作（ホイール/タッチ/キー）でロック解除＝明示クリック中と通常スクロール中を区別する
+  ["wheel", "touchmove", "keydown"].forEach(ev => panel.addEventListener(ev, () => { locked = null; }, { passive: true }));
+  panel.addEventListener("scroll", spy);
+  paint(visibleId());
 }
 async function gPanorama(ctx) {
   ctx = ctx || {}; const jp = LANG === "ja"; const term = ctx.term || "";
   if (!term) return;
   const node = ctx.node || (G && (G.nodes || []).find(n => (n.q || n.label) === term)) || null;
   const idx = (node && G) ? G.nodes.indexOf(node) : -1;
-  const parent = (idx >= 0 && G && G.parent && G.parent[idx] != null) ? G.nodes[G.parent[idx]] : null;
+  // 文脈（タイトルの「〜の中の」）は、実グラフの到達経路を上へ辿って求める。ただし
+  //  ・同種ノード間の親（思想家→思想家の影響線。例: マルクスの親がレーニン）は文脈にしない
+  //  ・domain（分類の箱）も飛ばし、その上の「語」を文脈にする
+  // ＝直前に開いたPANEL_CTXや選択順序には一切依存しない（順序を入れ替えても同じタイトル・半田様2026-08-01）
+  let parent = null;
+  if (idx >= 0 && G && G.parent) {
+    let pi = G.parent[idx];
+    for (let guard = 0; pi != null && guard < 8; guard++) {
+      const pn = G.nodes[pi]; if (!pn) break;
+      if (pn.kind !== "domain" && (!node || pn.kind !== node.kind)) { parent = pn; break; }
+      pi = G.parent[pi];
+    }
+  }
   const cx = { term, node, nodeId: node && node.id, nodeKind: node && node.kind, layer: node && node.layer,
     rootQ: (G && G.rootQ) || term, parentTerm: parent ? (parent.q || parent.label) : ((G && G.rootQ) || ""), lens: (typeof G_lens !== "undefined" ? G_lens : "all") };
   const title = (cx.parentTerm && cx.parentTerm !== term) ? `${term}（${cx.parentTerm}の中の）` : term;
@@ -2301,7 +2376,7 @@ async function gPanorama(ctx) {
     _panoSection("bearers", "原語・思想家・著作", _panoBearers(d)),
     _panoSection("focus", "翻訳で変わった焦点", _panoFocus(d)),
     _panoSection("relations", "関係・対立・運動", _panoRelations(d, cx)),
-    _panoSection("lang", "言語間の意味変化", _panoLang(d)),
+    _panoSection("lang", _panoLangHeading(d), _panoLang(d)),   // 意味差データが無ければ「各言語での表記」
     _panoSection("colloc", "実際の用法・共起", _panoColloc(d, cx)),
     _panoSection("branches", "次にたどれる言葉", _panoBranches(d, cx)),
   ].filter(Boolean);
@@ -2599,11 +2674,23 @@ function gBind() {
       // domainノード（一般の意味/世界の言語/語源の連鎖 等＝カテゴリ・q無し）は、その文字列でなく親(root語)の
       // 全景を開き、対応する見どころへ寄せる（関心のある箇所へ進む導線）。エッジ選択は従来どおり関係メニュー。
       if (p.n) {
-        const n = p.n, isDomain = (n.kind === "domain") || !(n.q || n.label);
-        const term = isDomain ? ((G && G.rootQ) || n.label) : (n.q || n.label);
-        const secHint = isDomain ? (/言語/.test(n.label || "") ? "lang" : /語源|来歴/.test(n.label || "") ? "history" : null) : null;
-        dispatchAction("panorama", { term, label: n.label, kind: n.kind, id: n.id, layer: n.layer, lang: n.lang },
-          currentViewState(), { surface: "node", node: isDomain ? null : n, secHint });
+        // クリック規則（半田様2026-08-01・旧ノード操作と概念全景の共存）:
+        //  ①中心語/rootノード → 概念全景を直接開く
+        //  ②domain/categoryノード（一般の意味・世界の言語・語源の連鎖 等） → 中心語の全景＋該当節へ
+        //  ③実体を持つ派生ノード（矛盾・Karl Marx・dialectic・多言語訳語…全階層） → 既存ノードメニュー
+        const n = p.n;
+        const isDomain = (n.kind === "domain") || !(n.q || n.label);
+        const isRoot = !isDomain && (n.layer === 1 || (n.q || n.label) === ((G && G.rootQ) || ""));
+        if (isDomain) {
+          const secHint = /言語|表記/.test(n.label || "") ? "lang" : /語源|来歴/.test(n.label || "") ? "history" : null;
+          dispatchAction("panorama", { term: (G && G.rootQ) || n.label, label: n.label, kind: n.kind, id: n.id, layer: n.layer },
+            currentViewState(), { surface: "node", node: null, secHint });
+        } else if (isRoot) {
+          dispatchAction("panorama", { term: n.q || n.label, label: n.label, kind: n.kind, id: n.id, layer: n.layer, lang: n.lang },
+            currentViewState(), { surface: "node", node: n });
+        } else {
+          gMenu(e.clientX, e.clientY, n);   // 既存popup（Action ID＋単一Dispatcher・無作用0）
+        }
       } else if (p.ei >= 0) gMenuEdge(e.clientX, e.clientY, p.ei);
     } else gLoopKick();
   };

@@ -47,9 +47,17 @@ const B = process.argv[2] || "http://127.0.0.1:8060";
     const pos = { n1: [180, 300], n2: [560, 300] }; g.nodes.forEach(n => { const q = pos[n.id]; if (q) { n.x = q[0]; n.y = q[1]; n.vx = 0; n.vy = 0; } n.r = n.r || 20; }); g.W = g.cv.clientWidth || 900; g.H = g.cv.clientHeight || 600; return __dx.fit(); });
   await freeze();
 
-  // (1) 矛盾ノードを実マウスクリック→概念全景が開く
+  // (1) 派生ノード「矛盾」を実マウスクリック→**既存ノードメニュー**が開き、「全体像を見る」で概念全景へ
   const c = await p.evaluate(() => __dx.nodeClientXY(n => n.layer === 2));
   await p.mouse.click(c.x, c.y);
+  await p.waitForTimeout(400);
+  const menu = await p.evaluate(() => { const m = document.getElementById("graph-menu");
+    return { open: !!m, items: m ? [...m.querySelectorAll(".gm-item")].map(e => e.textContent) : [],
+      disabled: m ? [...m.querySelectorAll("button,[disabled]")].length : 0 }; });
+  ok("(1) 派生ノード(矛盾)の実クリックで既存ノードメニューが開く", menu.open && menu.items.length > 0, (menu.items[0] || "") + " …" + menu.items.length + "項目");
+  ok("(1) メニューに無効項目(soon/灰色)が無い", menu.disabled === 0 && !menu.items.some(t => /次段|準備中|整備中/.test(t)));
+  const first = await p.evaluate(() => { const it = [...document.querySelectorAll("#graph-menu .gm-item")].find(e => /全体像/.test(e.textContent)); if (!it) return null; it.click(); return it.textContent; });
+  ok("(1) 第一候補「全体像を見る」がメニューにある", !!first, first || "見つからない");
   await p.waitForTimeout(2500);
   const pano = await p.evaluate(() => { const el = document.getElementById("graph-panel"); if (!el) return null;
     return { wide: el.classList.contains("gp-wide"), title: (el.querySelector(".gp-head b") || {}).textContent || "",
@@ -103,24 +111,31 @@ const B = process.argv[2] || "http://127.0.0.1:8060";
   ok("(2) 番号と番号抜けがない（見出しに番号なし）", c2.hasNumberedHeads === false);
   ok("(2) raw Englishの語源説明がない（Borrowed from等）", c2.rawEnglishEty === false);
   ok("(2) 『原語の意味空間』という誤呼称を使わない", c2.forbiddenPhrase === false);
-  // 目次クリック＝実動作の検証（実スクロールコンテナ=#graph-panel の scrollTop が動き、見出しが表示領域へ入り、activeが付く）
-  const tocJump = await p.evaluate(async () => {
+  // 目次クリック＝実動作の検証。**全項目**を順に実DOMクリックし、押した項目がactiveのままで
+  // 別項目へ誤反転しないこと・見出しが表示領域に入ることを、実スクロールコンテナ(#graph-panel)で確かめる。
+  const tocAll = await p.evaluate(async () => {
     const panel = document.getElementById("graph-panel");
     const links = [...panel.querySelectorAll(".pano-toc-a")]; if (!links.length) return null;
-    const a = links[links.length - 1], secId = "pano-" + a.dataset.sec, sec = document.getElementById(secId);
-    if (!sec) return { targetExists: false };
-    const scrollable = panel.scrollHeight > panel.clientHeight + 4;
-    const before = panel.scrollTop;
-    a.click(); await new Promise(r => setTimeout(r, 700));
-    const after = panel.scrollTop;
-    const pr = panel.getBoundingClientRect(), hr = sec.querySelector(".pano-h").getBoundingClientRect();
-    const headingInView = hr.top >= pr.top - 4 && hr.top <= pr.bottom;   // 見出しがパネルの表示領域に入る
-    const activeOnSome = !!panel.querySelector(".pano-toc-a.active");
-    return { targetExists: true, scrollable, before, after, scrolled: after > before, headingInView, activeOnSome };
+    const out = [];
+    for (const a of links) {
+      const sec = "pano-" + a.dataset.sec, el = document.getElementById(sec);
+      panel.scrollTop = 0; await new Promise(r => setTimeout(r, 250));
+      const before = panel.scrollTop;
+      a.click();
+      const immediate = (panel.querySelector(".pano-toc-a.active") || {}).dataset?.sec;
+      await new Promise(r => setTimeout(r, 1500));   // スクロール完了＋ロック解除判定後
+      const act = (panel.querySelector(".pano-toc-a.active") || {}).dataset?.sec;
+      const pr = panel.getBoundingClientRect(), hr = el.querySelector(".pano-h").getBoundingClientRect();
+      out.push({ sec: a.dataset.sec, immediate, after: act, moved: panel.scrollTop !== before,
+        inView: hr.top >= pr.top - 4 && hr.top <= pr.bottom });
+    }
+    return out;
   });
-  ok("(2) 目次クリックで実際にスクロールし見出しが表示領域へ入る（active付与）",
-    !!(tocJump && tocJump.targetExists && tocJump.headingInView && tocJump.activeOnSome && (!tocJump.scrollable || tocJump.scrolled)),
-    JSON.stringify(tocJump));
+  ok("(2) 全目次項目: クリックした項目がactive（別項目へ誤反転しない）",
+    !!tocAll && tocAll.every(r => r.immediate === r.sec && r.after === r.sec),
+    JSON.stringify(tocAll && tocAll.map(r => `${r.sec}:${r.immediate}/${r.after}`)));
+  ok("(2) 全目次項目: 対応する見出しがパネル表示領域内にある",
+    !!tocAll && tocAll.every(r => r.inView), JSON.stringify(tocAll && tocAll.map(r => `${r.sec}:${r.inView}`)));
 
   // (3) 戻る/進むで選択前後を復元
   const before = await p.evaluate(() => __dx.viewState());

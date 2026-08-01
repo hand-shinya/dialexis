@@ -16,7 +16,27 @@ async function loadGraph(p, q) {
   for (let i = 0; i < 20; i++) { const a = await p.evaluate(() => (window.__dx && __dx.G) ? (__dx.G.alpha || 0) : 1).catch(() => 1); if (a < 0.05) break; await sleep(400); }
   await p.evaluate(() => { const g = __dx.G; if (g && g.raf) cancelAnimationFrame(g.raf); if (g) { g.running = false; g.alpha = 0; } });   // その場で凍結（再配置しない）
 }
-async function clickNode(p, pred) {
+// 派生実体ノード＝既存ノードメニューが開く。メニュー項目を実DOMクリックして進む。
+async function menuState(p) {
+  return await p.evaluate(() => { const m = document.getElementById("graph-menu");
+    return { open: !!m, items: m ? [...m.querySelectorAll(".gm-item")].map(e => e.textContent.trim()) : [],
+      noDisabled: m ? ![...m.querySelectorAll("button")].some(b => b.disabled) : true,
+      noSoon: m ? ![...m.querySelectorAll(".gm-item")].some(e => /次段|準備中|整備中/.test(e.textContent)) : true }; });
+}
+async function menuClick(p, re) {
+  return await p.evaluate((r) => { const rx = new RegExp(r);
+    const it = [...document.querySelectorAll("#graph-menu .gm-item")].find(e => rx.test(e.textContent));
+    if (!it) return null; it.click(); return it.textContent.trim(); }, re.source || re);
+}
+async function waitPanel(p) {   // 概念全景の描画完了を待つ（固定待ちだと取得の遅い語で「読み込み中」を判定する）
+  for (let i = 0; i < 40; i++) {
+    const done = await p.evaluate(() => { const b = document.querySelector("#graph-panel .gp-body"); return !!b && !/読み込み中|loading panorama/.test(b.innerText); }).catch(() => false);
+    if (done) break; await sleep(700);
+  }
+  await sleep(400);
+}
+async function clickNode(p, pred, opts) {
+  opts = opts || {};
   // 密なグラフでも確実に当てるため、対象ノードをビュー中心へパンしてから実マウスクリックする（simは凍結のまま）
   const found = await p.evaluate((ps) => {
     const f = new Function("n", "return (" + ps + ")"); const g = __dx.G; if (!g) return false;
@@ -29,12 +49,8 @@ async function clickNode(p, pred) {
   const c = await p.evaluate((ps) => { const f = new Function("n", "return (" + ps + ")"); return __dx.nodeClientXY(f); }, pred);
   if (!c) return null;
   await p.mouse.click(c.x, c.y);
-  // 描画完了まで待つ（固定待ちにすると初回取得が遅い語＝breadth 200件超で「読み込み中」を判定してしまう）
-  for (let i = 0; i < 40; i++) {
-    const done = await p.evaluate(() => { const b = document.querySelector("#graph-panel .gp-body"); return !!b && !/読み込み中|loading panorama/.test(b.innerText); }).catch(() => false);
-    if (done) break; await sleep(700);
-  }
-  await sleep(300);
+  if (opts.menu) { await sleep(500); return c; }   // 派生ノード＝メニューが開くので全景を待たない
+  await waitPanel(p);
   return c;
 }
 async function checkPanorama(p) {
@@ -116,10 +132,9 @@ async function backForward(p) {
     if (opts.expectOverlook === false) ok(`${label}: 根拠のない「見落としやすいこと」が出ない`, v.overlook === false, v.overlookText.slice(0, 60));
     if (opts.expectOverlook === true) ok(`${label}: 根拠のある「見落としやすいこと」が出る（両側の焦点＋出典）`, v.overlook === true && /原語では次のように/.test(v.overlookText), v.overlookText.slice(0, 80).replace(/\n/g, " "));
     if (opts.expectHistory) ok(`${label}: 「語の来歴」が存在する`, v.hasHistory && v.secHeads.includes("語の来歴"), JSON.stringify(v.secHeads));
-    if (opts.colloc) {   // 共起を実行→空なら節と目次項目が静かに消える（失敗説明を出さない）
+    if (opts.colloc) {   // 共起は描画後に自動取得される（ボタン無し）。空なら節と目次項目が静かに消える
       const cr = await p.evaluate(async () => {
-        const btn = document.querySelector(".pano-load"); if (!btn) return { skipped: true };
-        btn.click(); await new Promise(r => setTimeout(r, 9000));
+        await new Promise(r => setTimeout(r, 9000));   // 自動取得の完了を待つ
         const panel = document.getElementById("graph-panel");
         return { skipped: false, secLeft: !!document.getElementById("pano-colloc"),
           tocLeft: !!panel.querySelector('.pano-toc-a[data-sec="colloc"]'),
@@ -145,18 +160,62 @@ async function backForward(p) {
     ok(`${label}: 戻る→選択前・進む→全景（履歴を壊さない）`, bf.backNull && bf.fwdPanorama, JSON.stringify(bf));
   }
 
-  // A 弁証法そのもの（対比の明示根拠なし＝見落とし枠を出さない・来歴あり）
-  await runPath("A[弁証法]", "弁証法", "n.layer===1", /弁証法/, { expectOverlook: false, expectHistory: true });
-  // B 弁証法の中の「一般の意味」（domainノード→親rootの全景）
-  await runPath("B[一般の意味]", "弁証法", "n.kind==='domain' && /一般の意味/.test(n.label)", /弁証法/, { expectOverlook: false });
-  // C 「アリストテレス」（authorノード・コペルニクスと同じ系譜グラフ上）
-  await runPath("C[アリストテレス]", "弁証法", "n.kind==='author' && /アリストテレス/.test(n.label)", /アリストテレス/, { expectOverlook: false });
-  // D 「矛盾」（周代の冠・one+sort・表層漢字分解などが出ないこと＝根拠なき見落とし枠ゼロ）
-  await runPath("D[矛盾]", "弁証法", "n.kind==='related' && /矛盾/.test(n.label)", /矛盾/, { expectOverlook: false, expectHistory: true });
-  // E 「疎外」（両側の明示根拠がある語＝見落とし枠が出る／共起は実データが返る語）
-  await runPath("E[疎外]", "疎外", "n.layer===1", /疎外/, { expectOverlook: true, colloc: true });
-  // F 「dialectic」（弁証法グラフのoriginalノード＝DWDS共起が空になる語。節も目次項目も静かに消えること）
-  await runPath("F[dialectic]", "弁証法", "n.kind==='original' && n.label==='dialectic'", /dialectic/, { expectOverlook: false, colloc: true, expectCollocEmpty: true });
+  // ── 規則①中心語/root → 概念全景を直接
+  await runPath("A[弁証法・root]", "弁証法", "n.layer===1", /弁証法/, { expectOverlook: false, expectHistory: true });
+  // ── 規則②domain → 中心語の全景（該当節へ）
+  await runPath("B[一般の意味・domain]", "弁証法", "n.kind==='domain' && /一般の意味/.test(n.label)", /弁証法/, { expectOverlook: false });
+  // ── 規則③派生実体ノード → 既存ノードメニュー（全階層・種別横断）
+  const DERIVED = [
+    ["C[矛盾・第3層related]", "n.kind==='related' && /矛盾/.test(n.label)", /矛盾/],
+    ["D[Karl Marx・author]", "n.kind==='author' && /マルクス/.test(n.label)", /マルクス/],
+    ["E[レーニン・author]", "n.kind==='author' && /レーニン/.test(n.label)", /レーニン/],
+    ["F[dialectic・original]", "n.kind==='original' && n.label==='dialectic'", /dialectic/],
+    ["G[多言語ノード・language]", "n.kind==='language'", null],
+  ];
+  for (const [label, pred, titleRe] of DERIVED) {
+    await loadGraph(p, "弁証法");
+    const c = await clickNode(p, pred, { menu: true });
+    const m = await menuState(p);
+    ok(`${label}: 実クリックで既存ノードメニューが実DOMとして開く`, !!c && m.open && m.items.length > 0, m.items.slice(0, 2).join(" / "));
+    if (!m.open) continue;
+    ok(`${label}: 無効項目・soon・灰色の押せない項目が無い`, m.noDisabled && m.noSoon);
+    // 「全体像を見る」→ その語の概念全景
+    const lenBefore = await p.evaluate(() => __dx.nav.len);
+    const clicked = await menuClick(p, /全体像/);
+    await waitPanel(p);
+    const v = await checkPanorama(p);
+    ok(`${label}: 「全体像を見る」でその語の概念全景が開く`, !!clicked && v.opened && (!titleRe || titleRe.test(v.title)), v.title);
+    ok(`${label}: 全景に否定文言・番号・raw Englishが無い`, v.noNegative && v.noNumbers && v.noRawEnglish);
+    ok(`${label}: 目次と本文見出しが一致`, v.tocExists && v.tocMatches, JSON.stringify(v.secHeads));
+    const lenAfter = await p.evaluate(() => __dx.nav.len);
+    ok(`${label}: 一操作＝履歴commit 1回`, lenAfter - lenBefore === 1, `len ${lenBefore}→${lenAfter}`);
+    const tj = await tocClickWorks(p);
+    ok(`${label}: 目次クリックで実スクロール＋active`, tj.ok === true, JSON.stringify(tj));
+    const bf = await backForward(p);
+    ok(`${label}: 戻る→選択前・進む→全景`, bf.backNull && bf.fwdPanorama, JSON.stringify(bf));
+  }
+  // ── 「この語を中心にする」＝実際に中心語とグラフが変わり、戻る/進むで復元できる
+  {
+    await loadGraph(p, "弁証法");
+    const rootBefore = await p.evaluate(() => __dx.G.rootQ);
+    await clickNode(p, "n.kind==='related' && /矛盾/.test(n.label)", { menu: true });
+    const lenBefore = await p.evaluate(() => __dx.nav.len);
+    const clicked = await menuClick(p, /中心に据え/);
+    for (let i = 0; i < 30; i++) { const r = await p.evaluate(() => __dx.G && __dx.G.rootQ).catch(() => null); if (r && r !== rootBefore) break; await sleep(700); }
+    await sleep(600);
+    const after = await p.evaluate(() => ({ root: __dx.G.rootQ, nodes: __dx.G.nodes.length, len: __dx.nav.len }));
+    ok("H[中心に据える]: メニューから中心語が実際に変わる", !!clicked && after.root === "矛盾" && after.nodes > 1, `root ${rootBefore}→${after.root} / nodes ${after.nodes}`);
+    ok("H[中心に据える]: 一操作＝履歴commit 1回", after.len - lenBefore === 1, `len ${lenBefore}→${after.len}`);
+    await p.evaluate(() => navGo(-1));
+    for (let i = 0; i < 30; i++) { const r = await p.evaluate(() => __dx.G && __dx.G.rootQ).catch(() => null); if (r === rootBefore) break; await sleep(700); }
+    const back = await p.evaluate(() => __dx.G.rootQ);
+    await p.evaluate(() => navGo(1));
+    for (let i = 0; i < 30; i++) { const r = await p.evaluate(() => __dx.G && __dx.G.rootQ).catch(() => null); if (r === "矛盾") break; await sleep(700); }
+    const fwd = await p.evaluate(() => __dx.G.rootQ);
+    ok("H[中心に据える]: 戻るで元の弁証法グラフ・進むで矛盾中心グラフを復元", back === rootBefore && fwd === "矛盾", `back=${back} fwd=${fwd}`);
+  }
+  // ── 意味契約（実データ）: 疎外＝根拠ある見落とし枠＋共起実データ／dialectic＝共起が空で節と目次が消える
+  await runPath("I[疎外]", "疎外", "n.layer===1", /疎外/, { expectOverlook: true, colloc: true });
 
   const pass = R.filter(Boolean).length; console.log(`\n${pass}/${R.length} PASS`);
   await b.close(); process.exit(pass === R.length ? 0 : 1);
