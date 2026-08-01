@@ -248,6 +248,7 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .pano-ol-h { font-family: system-ui, sans-serif; font-weight: 600; font-size: .86rem; margin: 0 0 .1rem; }
 .pano-ol-sub { font-family: system-ui, sans-serif; font-size: .74rem; color: var(--muted); margin: 0 0 .3rem; }
 .pano-ol-body { font-size: .88rem; line-height: 1.55; margin: 0; }
+.pano-ol-note { font-family: system-ui, sans-serif; font-size: .8rem; color: var(--muted); margin: .35rem 0 0; }
 /* パネル内目次「この語の見どころ」＝地図上部メニューとは見た目も役割も分離。上部に簡潔に固定 */
 .pano-toc { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; padding: .45rem .9rem;
   border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);

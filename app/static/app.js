@@ -2119,34 +2119,59 @@ function _panoSection(id, heading, inner) {   // 実在する時だけ節を返�
   if (!inner) return null;   // 契約を満たす源が無い節は目次にも本文にも出さない（静かに除外）
   return { id, heading, html: `<section class="pano-sec" id="pano-${id}"><h4 class="pano-h">${esc(heading)}</h4><div class="pano-in">${inner}</div></section>` };
 }
-// 概要（この場所での意味を短く）＝パネル最上部・目次には入れない
+// 日本語UIでは、接地済みの**日本語**glossだけを併記する。英語gloss（spear/shield 等＝原語でなく英語訳）は
+// 出さない（原語表記・言語名・出典だけを示す）。機械翻訳層・手書き辞書は追加しない（半田様2026-07-31）。
+function _jaGloss(s) {
+  s = (s || "").trim(); if (!s) return "";
+  return /[ぁ-んァ-ヶ一-龥]/.test(s) ? s : "";   // 日本語文字を含む時だけ採る
+}
+// 概要（この場所での意味を短く）＝パネル最上部・目次には入れない。空なら欄ごと出さない（否定表示をしない）
 function _panoLead(d, cx) {
   const gm = ((d.origin || {}).general_meaning || []);
+  if (!gm.length) return "";   // 取得できない旨をユーザーへ示さず、存在する「見どころ」から始める
   const ctxLine = (cx.parentTerm && cx.parentTerm !== cx.term)
     ? `<p class="pano-ctx">この探索（${esc(cx.rootQ || "")}）の文脈で——「${esc(cx.parentTerm)}」から辿った——「${esc(cx.term)}」。</p>` : "";
-  const body = gm.length ? `<p class="pano-lead-body">${esc((gm[0] || "").slice(0, 200))}</p>`
-    : `<p class="pano-lead-body muted">この語の一般的な意味は取得できませんでした。下の見どころと枝から辿れます。</p>`;
-  return `<div class="pano-lead"><p class="pano-eyebrow">この場所での意味</p>${ctxLine}${body}</div>`;
+  return `<div class="pano-lead"><p class="pano-eyebrow">この場所での意味</p>${ctxLine}`
+    + `<p class="pano-lead-body">${esc((gm[0] || "").slice(0, 200))}</p></div>`;
 }
-// この語で見落としやすいこと＝出典に接地したX↔Yの対比が成立する時だけ（漢字部品分解・無関係語義・表層部品は不可）
+// 「この語で見落としやすいこと」＝取得データに**両側の焦点が明示**されている時だけ出す（半田様2026-07-31）。
+// 必要条件（すべて取得データから確認）: ①日本語側＝同一の訳語へ統合されたことが collapses_to に明示され、
+// ②原語側＝その訳語へ統合される2つ以上の別語がそれぞれ日本語glossで別の焦点を持つ。
+// general_meaning と単一の英語gloss から対比文を生成することは禁止（推論・翻訳層は追加しない）。
 function _panoOverlook(d, cx) {
   const cw = (d.origin || {}).collapse_warning;
-  const l = (cw && cw.lemmas || []).find(x => x && x.gloss);
-  if (!l) return "";   // 対比が成立しない場合はこの枠自体を出さない（穴埋め禁止）
-  const jaMean = (((d.origin || {}).general_meaning || [])[0] || "").slice(0, 50);
+  const lem = (cw && cw.lemmas) || [];
+  if (!lem.length) return "";
+  // 同一の日本語訳語へ統合される、日本語glossを持つ別語を2件以上探す（＝統合の明示根拠）
+  const byJa = {};
+  lem.forEach(l => {
+    const g = _jaGloss(l && l.gloss); if (!l || !l.lemma || !g) return;
+    (l.collapses_to || []).forEach(ja => { (byJa[ja] = byJa[ja] || []).push({ lemma: l.lemma, gloss: g }); });
+  });
+  const keys = Object.keys(byJa).filter(k => byJa[k].length >= 2);
+  if (!keys.length) return "";   // 両側の明示根拠が無ければ枠ごと出さない（穴埋め・推論禁止）
+  const ja = keys.indexOf(cx.term) >= 0 ? cx.term : keys[0];
+  const pair = byJa[ja].slice(0, 3);
+  const src = [cw.primary_source, cw.confidence].filter(Boolean).map(esc).join("・");
   return `<div class="pano-overlook"><p class="pano-ol-h">この語で見落としやすいこと</p>`
     + `<p class="pano-ol-sub">日本語だけでは見えにくい、原語・文脈上の焦点。</p>`
-    + `<p class="pano-ol-body">日本語では「${esc(cx.term)}」${jaMean ? `（${esc(jaMean)}…）` : ""}と一括りに理解されやすい。一方、原語では <b><a href="#" class="ext-term" data-w="${esc(l.lemma)}">${esc(l.lemma)}</a></b>＝${esc(l.gloss)} のように、区別された焦点が前面に出る。</p></div>`;
+    + `<p class="pano-ol-body">日本語では <b>「${esc(ja)}」</b> の一語にまとまるが、原語では次のように別の焦点として区別される：</p>`
+    + `<ul class="pano-collapse">` + pair.map(x => `<li><a href="#" class="ext-term" data-w="${esc(x.lemma)}">${esc(x.lemma)}</a>＝${esc(x.gloss)}</li>`).join("") + `</ul>`
+    + (cw.note ? `<p class="pano-ol-note">${esc(cw.note)}</p>` : "")
+    + (src ? `<p class="srcline">${src}</p>` : "") + `</div>`;
 }
 function _panoHistory(d) {   // 語の来歴＝日本語漢字表記の語形・構成要素・原語表記・出典（英語散文は出さない）
   const a = d.anatomy || {};
   const hasForm = (a.components || []).length || (a.chain || []).length;
   if (!hasForm) return "";   // 語形・構成が無ければ来歴は出さない（英語散文だけでは出さない）
   let h = "";
+  // 原語表記は保持し、glossは接地済みの日本語がある時だけ併記（英語訳は原語の意味として主表示しない）
   if ((a.components || []).length) h += `<p class="pano-lbl">語形・構成要素</p><div class="anat-comp">`
-    + a.components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}</span>`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
+    + a.components.map(c => { const g = _jaGloss(c.meaning);
+      return `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>${g ? "＝" + esc(g) : ""}</span>`; }).join(`<span class="anat-plus">＋</span>`) + `</div>`;
   if ((a.chain || []).length) h += `<p class="pano-lbl">語形変化・借用の経路</p><div class="chain">`
-    + a.chain.map(c => `<span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span><a href="#" class="ext-term chain-form" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `<span class="anat-gloss">「${esc(c.gloss)}」</span>` : ""}</span>`).join("<span class=\"chain-arrow\">←</span>") + `</div>`;
+    + a.chain.map(c => { const g = _jaGloss(c.gloss);
+      return `<span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span><a href="#" class="ext-term chain-form" data-w="${esc(c.term)}">${esc(c.term)}</a>${g ? `<span class="anat-gloss">「${esc(g)}」</span>` : ""}</span>`; }).join("<span class=\"chain-arrow\">←</span>") + `</div>`;
   if (a.wiktionary_url) h += `<p class="srcline"><a href="${esc(a.wiktionary_url)}" target="_blank">出典：Wiktionary${a.term ? `（${esc(a.term)}）` : ""}</a></p>`;
   return h;
 }
@@ -2189,10 +2214,23 @@ function _panoColloc(d, cx) {   // 実際の用法・共起（実コーパスの
   if (!hasCorpus) return "";
   return `<div class="pano-lazy" data-lazy="colloc" data-term="${esc(cx.term)}"><button type="button" class="pano-load">実コーパスの共起語を取得（DWDS・独語）</button></div>`;
 }
-function _panoEmptyColloc() { return `<p class="pano-note">${LANG === "ja" ? "実コーパス上の共起は見つかりませんでした（他の見どころと枝で探索を続けられます）。" : "no corpus collocations."}</p>`; }
+// 共起が空/失敗＝失敗説明を出さず、その節と対応する目次項目を静かに取り除く（他の見どころ・枝はそのまま残る）
+function _panoDropSection(id) {
+  const sec = $("pano-" + id); if (sec) sec.remove();
+  const a = document.querySelector(`.pano-toc-a[data-sec="${id}"]`); if (a) a.remove();
+  const toc = document.querySelector(".pano-toc");
+  if (toc && !toc.querySelector(".pano-toc-a")) toc.remove();   // 見どころが全て消えたら目次自体も残さない
+}
 function _panoBranches(d, cx) {   // 次にたどれる言葉（常にある＝探索を止めない）
   const words = new Set();
-  if (cx.node && G && G.nodes) { const idx = G.nodes.indexOf(cx.node); ((G.children && G.children[idx]) || []).forEach(c => { const n = G.nodes[c]; if (n) words.add(n.q || n.label); }); }
+  if (cx.node && G && G.nodes) {
+    const idx = G.nodes.indexOf(cx.node);
+    ((G.children && G.children[idx]) || []).forEach(c => { const n = G.nodes[c]; if (n) words.add(n.q || n.label); });
+    // 取得が空でも行き止まりにしないため、現在のグラフ文脈（親・兄弟）を次の探索先として残す
+    const pi = (G.parent && G.parent[idx] != null) ? G.parent[idx] : null;
+    if (pi != null) { const pn = G.nodes[pi]; if (pn) words.add(pn.q || pn.label);
+      ((G.children && G.children[pi]) || []).slice(0, 6).forEach(c => { const n = G.nodes[c]; if (n) words.add(n.q || n.label); }); }
+  }
   (((d.origin || {}).concept_origin) || []).slice(0, 4).forEach(x => x.term && words.add(x.term));
   (((d.origin || {}).breadth) || []).slice(0, 4).forEach(x => x.term && words.add(x.term));
   const chips = [...words].filter(w => w && w !== cx.term).slice(0, 12).map(w => `<a href="#" class="ext-term" data-w="${esc(w)}">${esc(w)}</a>`).join("　");
@@ -2215,25 +2253,32 @@ function _panoBindLazy(bodyEl) {
     btn.disabled = true; btn.textContent = LANG === "ja" ? "取得中…" : "loading…";
     try {
       let deTerm = term;
-      if (!/[A-Za-zÀ-ÿ]/.test(term)) { const od = await panoData(term); const g = (((od.origin || {}).concept_origin) || []).find(x => x.name === "ドイツ語"); if (!g) { box.innerHTML = _panoEmptyColloc(); return; } deTerm = g.term; }
+      if (!/[A-Za-zÀ-ÿ]/.test(term)) { const od = await panoData(term); const g = (((od.origin || {}).concept_origin) || []).find(x => x.name === "ドイツ語"); if (!g) { _panoDropSection("colloc"); return; } deTerm = g.term; }
       const d = await api(`/api/collocations?term=${encodeURIComponent(deTerm)}&lang=de`);
       const rels = (d && d.relations) || {}, keys = Object.keys(rels);
-      if (!keys.length) { box.innerHTML = _panoEmptyColloc(); return; }
+      if (!keys.length) { _panoDropSection("colloc"); return; }   // 空＝節と目次項目を除去（失敗説明を出さない）
       box.innerHTML = `<table class="plain orig-collo">` + keys.map(rel => `<tr><td class="srcline">${esc(rel)}</td><td>`
         + (rels[rel] || []).slice(0, 8).map(w => { const t = _pw(w); return `<a href="#" class="ext-term" data-w="${esc(t)}">${esc(t)}</a>`; }).join("・") + `</td></tr>`).join("")
         + `</table><p class="srcline">${esc(deTerm)}・DWDS（独語コーパス）</p>`;
-    } catch (e) { console.error("pano colloc", e); box.innerHTML = _panoEmptyColloc(); }
+    } catch (e) { console.error("pano colloc", e); _panoDropSection("colloc"); }
   }));
 }
 // 「この語の見どころ」＝パネル内目次（実在する節だけから自動生成・本文と同名・クリックでスクロール・読了節を強調）
 function _panoBindToc(panel) {
   const links = [...panel.querySelectorAll(".pano-toc-a")];
-  links.forEach(a => a.addEventListener("click", (e) => { e.preventDefault(); const s = panel.querySelector("#pano-" + a.dataset.sec); if (s) s.scrollIntoView({ behavior: "smooth", block: "start" }); }));
   const spy = () => {
     let cur = null; const line = panel.scrollTop + 96;
-    panel.querySelectorAll(".pano-sec").forEach(s => { if (s.offsetTop <= line) cur = s.id; });
+    const secs = [...panel.querySelectorAll(".pano-sec")];
+    secs.forEach(s => { if (s.offsetTop <= line) cur = s.id; });
+    if (!cur && secs.length) cur = secs[0].id;   // 先頭を読んでいる時（スクロール不要な短い内容を含む）も強調する
     links.forEach(a => a.classList.toggle("active", ("pano-" + a.dataset.sec) === cur));
   };
+  links.forEach(a => a.addEventListener("click", (e) => {
+    e.preventDefault();
+    const s = panel.querySelector("#pano-" + a.dataset.sec); if (s) s.scrollIntoView({ behavior: "smooth", block: "start" });
+    links.forEach(x => x.classList.toggle("active", x === a));   // 押した項目を即強調（スクロール不要でも強調が変わる）
+    setTimeout(spy, 600);                                        // スクロール後は実際の読み位置で再判定
+  }));
   panel.addEventListener("scroll", spy); spy();
 }
 async function gPanorama(ctx) {
