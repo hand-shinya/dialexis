@@ -137,6 +137,39 @@ const B = process.argv[2] || "http://127.0.0.1:8060";
   ok("(2) 全目次項目: 対応する見出しがパネル表示領域内にある",
     !!tocAll && tocAll.every(r => r.inView), JSON.stringify(tocAll && tocAll.map(r => `${r.sec}:${r.inView}`)));
 
+  // (2b) クリック契約の閉包（fixture・全entity種別×全Action ID）
+  const contract = await p.evaluate(() => {
+    const panel = document.getElementById("graph-panel");
+    panel.querySelectorAll("details:not([open]) > summary").forEach(s => { s.parentElement.open = true; });
+    const ENT = ["word", "original", "language", "related", "opposite", "author", "work", "application", "concept"];
+    const nodes = [...panel.querySelectorAll('a, button, summary, [role="button"], [tabindex]')];
+    const rows = nodes.map(el => ({ tag: el.tagName, text: (el.textContent || "").trim().slice(0, 20), full: (el.textContent || "").trim(),
+      cls: [el.classList.contains("pano-toc-a") && "A", el.classList.contains("pano-ent") && "C",
+        (el.tagName === "SUMMARY" || (el.tagName === "A" && el.getAttribute("target") === "_blank")) && "D",
+        el.classList.contains("gp-x") && "X"].filter(Boolean),
+      term: el.dataset.term || "", kind: el.dataset.kind || "", eid: el.dataset.eid || "" }));
+    const ents = rows.filter(r => r.cls.includes("C"));
+    // 全entity種別 × ACTIONS の閉包: 各kindに対し gActions が返す項目が全て有効ActionIDであること
+    const acts = new Set(__dx.actions()); const bad = [];
+    for (const k of ENT) { const n = { id: "x:" + k, label: "テスト", q: "テスト", kind: k, layer: 2 };
+      for (const it of __dx.gActions(n)) if (!acts.has(it.action)) bad.push(k + "/" + it.s); }
+    return { total: rows.length, A: rows.filter(r => r.cls.includes("A")).length, C: ents.length,
+      D: rows.filter(r => r.cls.includes("D")).length, X: rows.filter(r => r.cls.includes("X")).length,
+      unclassified: rows.filter(r => r.cls.length === 0).map(r => `${r.tag}:${r.text}`),
+      multi: rows.filter(r => r.cls.length > 1).map(r => `${r.tag}:${r.text}`),
+      emptyTarget: ents.filter(r => !r.term || !r.eid).length,
+      badKind: ents.filter(r => !ENT.includes(r.kind)).map(r => `${r.text}(${r.kind})`),
+      mismatch: ents.filter(r => r.full && r.term && r.full.replace(/\s/g, "") !== r.term.replace(/\s/g, "")).map(r => `${r.text}≠${r.term}`),
+      closureBad: bad };
+  });
+  ok("(2b) 全クリック要素がA/B/C/Dのいずれか一つ（未分類0・複数分類0）",
+    contract.unclassified.length === 0 && contract.multi.length === 0,
+    `総${contract.total} A${contract.A}/C${contract.C}/D${contract.D}/閉じる${contract.X} 未分類:${JSON.stringify(contract.unclassified)}`);
+  ok("(2b) 構造ラベルのentity化0・空target0・表示名とtargetの不一致0",
+    contract.badKind.length === 0 && contract.emptyTarget === 0 && contract.mismatch.length === 0,
+    `badKind:${JSON.stringify(contract.badKind)} empty:${contract.emptyTarget} mismatch:${JSON.stringify(contract.mismatch)}`);
+  ok("(2b) 全entity種別×全Action IDの閉包（無効Action 0）", contract.closureBad.length === 0, JSON.stringify(contract.closureBad.slice(0, 5)));
+
   // (3) 戻る/進むで選択前後を復元
   const before = await p.evaluate(() => __dx.viewState());
   await p.evaluate(() => navGo(-1)); await p.waitForTimeout(1200);

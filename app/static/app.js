@@ -2158,7 +2158,7 @@ function _panoOverlook(d, cx) {
   return `<div class="pano-overlook"><p class="pano-ol-h">この語で見落としやすいこと</p>`
     + `<p class="pano-ol-sub">日本語だけでは見えにくい、原語・文脈上の焦点。</p>`
     + `<p class="pano-ol-body">日本語では <b>「${esc(ja)}」</b> の一語にまとまるが、原語では次のように別の焦点として区別される：</p>`
-    + `<ul class="pano-collapse">` + pair.map(x => `<li><a href="#" class="ext-term" data-w="${esc(x.lemma)}">${esc(x.lemma)}</a>＝${esc(x.gloss)}</li>`).join("") + `</ul>`
+    + `<ul class="pano-collapse">` + pair.map(x => `<li>${_entLink(x.lemma, "original", "orig:" + x.lemma)}＝${esc(x.gloss)}</li>`).join("") + `</ul>`
     + (cw.note ? `<p class="pano-ol-note">${esc(cw.note)}</p>` : "")
     + (src ? `<p class="srcline">${src}</p>` : "") + `</div>`;
 }
@@ -2170,47 +2170,79 @@ function _panoHistory(d) {   // 語の来歴＝日本語漢字表記の語形・
   // 原語表記は保持し、glossは接地済みの日本語がある時だけ併記（英語訳は原語の意味として主表示しない）
   if ((a.components || []).length) h += `<p class="pano-lbl">語形・構成要素</p><div class="anat-comp">`
     + a.components.map(c => { const g = _jaGloss(c.meaning);
-      return `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>${g ? "＝" + esc(g) : ""}</span>`; }).join(`<span class="anat-plus">＋</span>`) + `</div>`;
+      return `<span class="anat-part">${_entLink(c.part, "original", "orig:" + c.part)}${g ? "＝" + esc(g) : ""}</span>`; }).join(`<span class="anat-plus">＋</span>`) + `</div>`;
   if ((a.chain || []).length) h += `<p class="pano-lbl">語形変化・借用の経路</p><div class="chain">`
     + a.chain.map(c => { const g = _jaGloss(c.gloss);
-      return `<span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span><a href="#" class="ext-term chain-form" data-w="${esc(c.term)}">${esc(c.term)}</a>${g ? `<span class="anat-gloss">「${esc(g)}」</span>` : ""}</span>`; }).join("<span class=\"chain-arrow\">←</span>") + `</div>`;
+      return `<span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span>${_entLink(c.term, "original", "orig:" + c.term)}${g ? `<span class="anat-gloss">「${esc(g)}」</span>` : ""}</span>`; }).join("<span class=\"chain-arrow\">←</span>") + `</div>`;
   if (a.wiktionary_url) h += `<p class="srcline"><a href="${esc(a.wiktionary_url)}" target="_blank">出典：Wiktionary${a.term ? `（${esc(a.term)}）` : ""}</a></p>`;
   return h;
 }
 // concept_origin（記事LEADの併記表記）は原語と訳語が混在する。語自身の語源データ（word_origin の言語／
 // anatomy の語形）に接地するものだけを「原語」とし、それ以外は翻訳対応語として各言語での表記側へ回す
 // （矛盾の contradiction（英語）を原語欄に置かない・半田様2026-08-01）。推測で振り分けない。
+// 由来関係が実源で確認できるものだけを「原語・語源」とし、確認できないものは訳語（各言語での表記）とする。
+// サイト内の全レンダラ（概念全景・旧カード）が同じ規則を使う（半田様2026-08-02）。
+function _groundedOrigSplit(co, wordOrigin, forms) {
+  const woName = (wordOrigin && wordOrigin.name) || "";
+  const F = new Set((forms || []).filter(Boolean));
+  const isOrig = (x) => !!x && ((woName && x.name === woName) || F.has(x.term));
+  return { origs: (co || []).filter(isOrig), trans: (co || []).filter(x => !isOrig(x)) };
+}
 function _panoOrigSplit(d) {
   const o = d.origin || {}, a = d.anatomy || {};
-  const co = (o.concept_origin || []);
-  const woName = ((o.word_origin || {}).name) || "";
-  const forms = new Set([...(a.components || []).map(c => c.part), ...(a.chain || []).map(c => c.term), a.term].filter(Boolean));
-  const isOrig = (x) => !!x && ((woName && x.name === woName) || forms.has(x.term));
-  return { origs: co.filter(isOrig), trans: co.filter(x => !isOrig(x)) };
+  return _groundedOrigSplit(o.concept_origin || [], o.word_origin,
+    [...(a.components || []).map(c => c.part), ...(a.chain || []).map(c => c.term), a.term]);
+}
+// ── 全景パネル内のクリック契約（半田様2026-08-02）──
+//  A=目次(.pano-toc-a) 節内スクロールのみ／B=見出し・区分名・集約・件数（**リンクにしない**）／
+//  C=実在する語・人物・著作(.pano-ent) クリックで既存の標準操作メニュー(gMenu)／D=開閉(summary)・外部出典(a[target=_blank])
+// Cは表示文字列や親見出しから対象を逆算せず、data-term/data-kind/data-eid（stable ID）を保持する。
+const _ENT_KINDS = new Set(["word", "original", "language", "related", "opposite", "author", "work", "application", "concept"]);
+function _entLink(term, kind, id, label) {
+  const t = String(term == null ? "" : term).trim(); if (!t) return "";
+  const k = _ENT_KINDS.has(kind) ? kind : "word";
+  return `<a href="#" class="pano-ent" data-term="${esc(t)}" data-kind="${esc(k)}" data-eid="${esc(id || (k + ":" + t))}">${esc(label || t)}</a>`;
+}
+// Cのクリック＝派生グラフノードと同じ正典経路（既存gMenu）。親要素への伝播で区分名が選ばれるのを止める。
+function _panoBindEntities(panel) {
+  panel.addEventListener("click", (e) => {
+    const a = e.target.closest(".pano-ent"); if (!a) return;
+    e.preventDefault(); e.stopPropagation();
+    const term = a.dataset.term, kind = a.dataset.kind || "word", eid = a.dataset.eid;
+    if (!term) return;                                   // 空targetでは何もしない
+    const pool = (G && G.nodes) || [];
+    const node = pool.find(n => n.id === eid) || pool.find(n => (n.q || n.label) === term)
+      || { id: eid, label: term, q: term, kind, layer: null };
+    const r = a.getBoundingClientRect();
+    gMenu(Math.round(r.left + r.width / 2), Math.round(r.bottom + 6), node);
+  });
 }
 function _panoBearers(d) {   // 原語・思想家・著作（概念を担った系譜＝日本語表記の来歴とは別次元）
   const o = d.origin || {}; let h = "";
   const co = _panoOrigSplit(d).origs;   // 語自身の語源に接地した原語だけ（翻訳対応語は表記側へ）
   if (co.length) h += `<p class="pano-lbl">概念を担った原語</p><p class="pano-terms">`
-    + co.map(x => `<a href="#" class="ext-term" data-w="${esc(x.term)}">${esc(x.term)}</a>${x.name ? `（${esc(x.name)}）` : ""}`).join("　") + `</p>`;
+    + co.map(x => `${_entLink(x.term, "original", "orig:" + x.term)}${x.name ? `（${esc(x.name)}）` : ""}`).join("　") + `</p>`;
   const persons = (o.associated || []).filter(x => x && x.is_person).slice(0, 8);
   if (persons.length) h += `<p class="pano-lbl">この概念を担った思想家</p><p class="pano-terms">`
-    + persons.map(x => `<a href="#" class="ext-term" data-w="${esc(_pw(x))}">${esc(_pw(x))}</a>`).join("　") + `</p>`;
+    + persons.map(x => _entLink(_pw(x), "author", x.qid ? ("wd:" + x.qid) : ("author:" + _pw(x)))).join("　") + `</p>`;
   return h;
 }
 function _panoFocus(d) {   // 翻訳で変わった焦点（意味・用法・概念作用の差＝構成要素の再掲でない）
   const cw = (d.origin || {}).collapse_warning;
   if (!(cw && cw.lemmas && cw.lemmas.length)) return "";   // 複数原語が一訳語へ統合された根拠がある時だけ
   return `<p class="pano-note">この訳語には、原語では区別される複数の意味・焦点が畳み込まれています（意味・用法・概念作用の差）。</p><ul class="pano-collapse">`
-    + cw.lemmas.map(l => `<li><a href="#" class="ext-term" data-w="${esc(l.lemma)}">${esc(l.lemma)}</a>${l.gloss ? `＝${esc(l.gloss)}` : ""}</li>`).join("") + `</ul>`;
+    + cw.lemmas.map(l => { const g = _jaGloss(l.gloss);
+      return `<li>${_entLink(l.lemma, "original", "orig:" + l.lemma)}${g ? `＝${esc(g)}` : ""}</li>`; }).join("") + `</ul>`;
 }
 function _panoRelations(d, cx) {   // 関係・対立・運動
   const o = d.origin || {}, rel = o.relations || {}; let h = "";
   const opp = (rel.opposite || []).map(_pw).filter(Boolean).slice(0, 10);
   const near = (rel.near || []).map(_pw).filter(Boolean).slice(0, 10);
   const concepts = (o.associated || []).filter(x => x && !x.is_person).map(_pw).filter(Boolean).slice(0, 10);
-  const row = (lbl, arr) => arr.length ? `<p class="pano-lbl">${lbl}</p><p class="pano-terms">` + arr.map(w => `<a href="#" class="ext-term" data-w="${esc(w)}">${esc(w)}</a>`).join("　") + `</p>` : "";
-  h += row("対立", opp) + row("近い概念", near) + row("関連", concepts);
+  // 「対立」「近い概念」「関連」は**区分名（B）**＝リンクにしない。語だけがエンティティ（C）。
+  const row = (lbl, arr, kind) => arr.length ? `<p class="pano-lbl">${lbl}</p><p class="pano-terms">`
+    + arr.map(w => _entLink(w, kind, kind + ":" + w)).join("　") + `</p>` : "";
+  h += row("対立", opp, "opposite") + row("近い概念", near, "related") + row("関連", concepts, "related");
   return h || "";   // 実データが無ければ節を出さない
 }
 // 意味・焦点・用法の差が出典に接地している場合だけ「言語間の意味変化」と呼ぶ。表記しか無ければ
@@ -2226,8 +2258,9 @@ function _panoLang(d) {   // 各言語での表記（代表例＋展開・翻字
   _panoOrigSplit(d).trans.forEach(t => { const k = (t.name || "") + " " + (t.term || ""); if (!seen.has(k)) { seen.add(k); br.unshift({ name: t.name, term: t.term }); } });
   if (!br.length) return "";
   const withSense = _panoLangHasSense(d);
+  // 言語名（Chinese/Japanese 等）は**区分名（B）**＝リンクにしない。語形がある時だけ語をエンティティ（C）にする。
   const chip = (b) => { const g = _jaGloss(b.gloss) || _jaGloss(b.sense) || "";
-    return `<span class="breadth-chip">${esc(b.name)}${b.term ? "：<a href=\"#\" class=\"ext-term\" data-w=\"" + esc(b.term) + "\">" + esc(b.term) + "</a>" : ""}${g ? `<span class="anat-gloss">「${esc(g)}」</span>` : ""}</span>`; };
+    return `<span class="breadth-chip">${esc(b.name)}${b.term ? "：" + _entLink(b.term, "language", "lang:" + (b.name || "") + ":" + b.term) : ""}${g ? `<span class="anat-gloss">「${esc(g)}」</span>` : ""}</span>`; };
   const rep = br.slice(0, 12), rest = br.slice(12);
   const note = withSense
     ? "この概念が言語ごとにどう意味・焦点を変えるか（出典に接地した差のみ）。"
@@ -2252,21 +2285,37 @@ function _panoDropSection(id) {
   const toc = document.querySelector(".pano-toc");
   if (toc && !toc.querySelector(".pano-toc-a")) toc.remove();   // 見どころが全て消えたら目次自体も残さない
 }
-function _panoBranches(d, cx) {   // 次にたどれる言葉（常にある＝探索を止めない）
-  const words = new Set();
-  if (cx.node && G && G.nodes) {
-    const idx = G.nodes.indexOf(cx.node);
-    ((G.children && G.children[idx]) || []).forEach(c => { const n = G.nodes[c]; if (n) words.add(n.q || n.label); });
-    // 取得が空でも行き止まりにしないため、現在のグラフ文脈（親・兄弟）を次の探索先として残す
-    const pi = (G.parent && G.parent[idx] != null) ? G.parent[idx] : null;
-    if (pi != null) { const pn = G.nodes[pi]; if (pn) words.add(pn.q || pn.label);
-      ((G.children && G.children[pi]) || []).slice(0, 6).forEach(c => { const n = G.nodes[c]; if (n) words.add(n.q || n.label); }); }
+// 次にたどれる言葉＝**実体を持つ語・人物・著作だけ**。root/domain/language-hub/section/group/count/metadata
+// のような構造ノード、自分自身、term空、言語名だけ、stable IDの無い構造ラベル、正規化termの重複は除外する
+// （「一般の意味」「専門・思想の意味」「世界の言語 127」を探索対象にしない・半田様2026-08-02）。
+function _panoBranches(d, cx) {
+  const out = [], seen = new Set();
+  const norm = (s) => String(s || "").normalize("NFKC").trim().toLowerCase();
+  const add = (term, kind, id) => {
+    const t = String(term == null ? "" : term).trim();
+    if (!t || !id) return;                                   // term空・stable ID無しは候補にしない
+    if (!_ENT_KINDS.has(kind)) return;                       // 構造ノード（domain等）は語ではない
+    if (norm(t) === norm(cx.term)) return;                   // 現在表示中の語自身
+    const k = norm(t); if (seen.has(k)) return; seen.add(k); // 正規化termの重複
+    out.push({ term: t, kind, id });
+  };
+  const gnode = (n) => { if (n && n.q) add(n.q, n.kind, n.id); };   // q（実体の語）が無いノード＝構造ノード
+  if (G && G.nodes) {
+    const idx = cx.node ? G.nodes.indexOf(cx.node) : -1;
+    if (idx >= 0) {
+      ((G.children && G.children[idx]) || []).forEach(c => gnode(G.nodes[c]));
+      const pi = (G.parent && G.parent[idx] != null) ? G.parent[idx] : null;
+      if (pi != null) { gnode(G.nodes[pi]); ((G.children && G.children[pi]) || []).slice(0, 6).forEach(c => gnode(G.nodes[c])); }
+    }
+    if (!out.length) G.nodes.forEach(n => { if (n && n.layer >= 2) gnode(n); });   // 中心語の全景＝グラフの実体ノードから
   }
-  (((d.origin || {}).concept_origin) || []).slice(0, 4).forEach(x => x.term && words.add(x.term));
-  (((d.origin || {}).breadth) || []).slice(0, 4).forEach(x => x.term && words.add(x.term));
-  const chips = [...words].filter(w => w && w !== cx.term).slice(0, 12).map(w => `<a href="#" class="ext-term" data-w="${esc(w)}">${esc(w)}</a>`).join("　");
-  if (!chips) return "";
-  return `<p class="pano-note">ここからたどれる言葉（クリックでその語を中心に新しく探索）。</p><p class="pano-branch">${chips}</p>`;
+  _panoOrigSplit(d).origs.slice(0, 4).forEach(x => add(x.term, "original", "orig:" + x.term));
+  (((d.origin || {}).breadth) || []).filter(b => b && b.term).slice(0, 4)
+    .forEach(b => add(b.term, "language", "lang:" + (b.name || "") + ":" + b.term));
+  const chips = out.slice(0, 12).map(e => _entLink(e.term, e.kind, e.id));
+  if (!chips.length) return "";
+  return `<p class="pano-note">ここからたどれる言葉（クリックすると、その語の操作メニューを開きます）。</p>`
+    + `<p class="pano-branch">${chips.join("　")}</p>`;
 }
 function _panoShell(title) {   // 操作行は撤去（地図操作は地図上部メニューだけに置く）。ヘッダは title＋閉じるのみ。
   const old = $("graph-panel"); if (old) old.remove();
@@ -2288,7 +2337,7 @@ function _panoBindLazy(bodyEl) {
       const rels = (d && d.relations) || {}, keys = Object.keys(rels);
       if (!keys.length) { _panoDropSection("colloc"); return; }   // 空＝節と目次項目を除去（失敗説明を出さない）
       box.innerHTML = `<table class="plain orig-collo">` + keys.map(rel => `<tr><td class="srcline">${esc(rel)}</td><td>`
-        + (rels[rel] || []).slice(0, 8).map(w => { const t = _pw(w); return `<a href="#" class="ext-term" data-w="${esc(t)}">${esc(t)}</a>`; }).join("・") + `</td></tr>`).join("")
+        + (rels[rel] || []).slice(0, 8).map(w => { const t = _pw(w); return _entLink(t, "original", "colloc:" + t); }).join("・") + `</td></tr>`).join("")
         + `</table><p class="srcline">${esc(deTerm)}・DWDS（独語コーパス）</p>`;
     } catch (e) { console.error("pano colloc", e); _panoDropSection("colloc"); }
   });
@@ -2385,6 +2434,7 @@ async function gPanorama(ctx) {
   bodyEl.innerHTML = _panoLead(d, cx) + _panoOverlook(d, cx) + toc + built.map(s => s.html).join("");
   _panoBindLazy(bodyEl);
   _panoBindToc(p);
+  _panoBindEntities(p);   // C（実在する語・人物・著作）のクリック＝既存の標準操作メニュー
   if (ctx.secHint) { const s = $("pano-" + ctx.secHint); if (s) s.scrollIntoView({ behavior: "smooth", block: "start" }); }   // domainノード等の「関心のある箇所へ進む」
 }
 
@@ -2832,11 +2882,15 @@ async function originRun(q, tok) {
       <p class="srcline">${jp ? "『立てた人』が一人に定まらない概念でも、通常検索が結びつける主要人物へ届くための層。記事の言及に接地（賛否は判定しない）。" : "A recall layer reaching the figures normal search associates; grounded in the article's mentions."}</p>`;
   }
   // (2) 語形の由来（語源）＋翻訳原点の候補 — 思想家がいる場合は"語源"として明確に降格し警告
-  if (co.length || na.length) {
+  // 由来関係が実源で確認できるものだけを原語・語源として扱い、確認できない併記は「各言語での表記（訳語）」へ
+  // 分離する（英訳 contradiction を日本語「矛盾」の原語候補として扱わない・全レンダラ共通・半田様2026-08-02）。
+  const _cosp = _groundedOrigSplit(co, o, (d.chain || []).map(c => c.form));
+  const coG = _cosp.origs, coT = _cosp.trans;
+  if (coG.length || na.length) {
     const label = orig.length
       ? (jp ? "語形の由来（語源・この訳語の《形》が写した語）" : "Word-form etymology")
       : (jp ? "概念-翻訳-原点の候補（この訳語が写した可能性のある原語）" : "Candidate translation-origin (not asserted as the single origin)");
-    const items = co.map(o2 => `<b class="origin-lang">${esc(o2.name)}</b> <span lang="${esc(o2.code||'')}">${esc(o2.term)}</span>`)
+    const items = coG.map(o2 => `<b class="origin-lang">${esc(o2.name)}</b> <span lang="${esc(o2.code||'')}">${esc(o2.term)}</span>`)
       .concat(na.map(p => `<span class="origin-lang">${esc(p.label)}</span>`));
     html += `<p>${label}: ${items.join("　／　")}</p>`;
     html += orig.length
@@ -2849,6 +2903,11 @@ async function originRun(q, tok) {
       <b class="origin-lang">${esc(o.name)}</b>
       ${o.native ? `<span class="badge">${jp ? "この言語生まれ" : "native"}</span>` : ""}
       ${o.multi ? `<span class="badge warn2">${jp ? "複数の語源" : "multiple"}</span>` : ""}</p>`;
+  }
+  // 由来が確認できない併記＝訳語。原語欄でなく「各言語での表記」として示す（分類を混同しない）
+  if (coT.length) {
+    html += `<p>${jp ? "各言語での表記（訳語・由来関係は確認できていません）" : "Terms in other languages (translations; origin not established)"}: `
+      + coT.map(o2 => `<b class="origin-lang">${esc(o2.name)}</b> <span lang="${esc(o2.code||'')}">${esc(o2.term)}</span>`).join("　／　") + `</p>`;
   }
   if (!orig.length && !co.length && !na.length && !o) {
     html += `<p class="muted">${jp ? "この概念の原点は一つに断定しません（無中心・P1）。下の外部の専門情報源や『思想家の系譜』から、実際の言説（誰が・どの著作で・どう使ったか）へ辿れます。" : "We do not assert a single origin (P1). Reach the actual discourse via the external sources / thinkers below."}</p>`;
@@ -2865,8 +2924,10 @@ async function originRun(q, tok) {
     html += `<p class="chain-label">${jp ? "変容の連鎖（訳語をさかのぼる）" : "The chain of transformation (back through translation)"}</p>
       <div class="chain">${steps.join(`<span class="chain-arrow">←</span>`)}</div>`;
   }
+  // 原語での語義: 英語の生glossを主表示しない。日本語の根拠ある語義がある時だけ示す（半田様2026-08-02）
   if (d.senses && d.senses.length) {
-    html += `<p class="muted">${jp ? "原語での語義" : "senses in the original"}: ${esc(cleanWikt(d.senses.slice(0,3).join(" / ")))}</p>`;
+    const jaSenses = d.senses.slice(0, 3).map(s => _jaGloss(cleanWikt(s))).filter(Boolean);
+    if (jaSenses.length) html += `<p class="muted">${jp ? "原語での語義" : "senses in the original"}: ${esc(jaSenses.join(" / "))}</p>`;
   }
   if (d.wiktionary_url) html += `<p class="srcline"><a href="${esc(d.wiktionary_url)}" target="_blank">Wiktionary</a></p>`;
   html += `</div>`;

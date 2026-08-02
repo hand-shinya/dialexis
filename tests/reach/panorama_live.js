@@ -16,6 +16,41 @@ async function loadGraph(p, q) {
   for (let i = 0; i < 20; i++) { const a = await p.evaluate(() => (window.__dx && __dx.G) ? (__dx.G.alpha || 0) : 1).catch(() => 1); if (a < 0.05) break; await sleep(400); }
   await p.evaluate(() => { const g = __dx.G; if (g && g.raf) cancelAnimationFrame(g.raf); if (g) { g.running = false; g.alpha = 0; } });   // その場で凍結（再配置しない）
 }
+// 全景パネル内の全クリック可能要素を実DOMから列挙し、A/B/C/D のどれか一つに分類する（未分類=違反）。
+//  A=目次(.pano-toc-a) B=構造ラベル(=クリック不可でなければ違反) C=実体(.pano-ent) D=開閉/外部出典
+async function classifyClickables(p) {
+  return await p.evaluate(() => {
+    const panel = document.getElementById("graph-panel"); if (!panel) return null;
+    panel.querySelectorAll("details:not([open]) > summary").forEach(s => { s.parentElement.open = true; });  // 折り畳みも展開して数える
+    const ENT = ["word", "original", "language", "related", "opposite", "author", "work", "application", "concept"];
+    const nodes = [...panel.querySelectorAll('a, button, summary, [role="button"], [tabindex]')];
+    const rows = nodes.map(el => {
+      const isA = el.classList.contains("pano-toc-a");
+      const isC = el.classList.contains("pano-ent");
+      const isD = el.tagName === "SUMMARY" || (el.tagName === "A" && el.getAttribute("target") === "_blank");
+      const isX = el.classList.contains("gp-x");   // 閉じるボタン（パネル制御）
+      const cls = [isA && "A", isC && "C", isD && "D", isX && "X"].filter(Boolean);
+      const full = (el.textContent || "").trim();
+      return { tag: el.tagName, text: full.slice(0, 24), full, cls,
+        term: el.dataset ? (el.dataset.term || "") : "", kind: el.dataset ? (el.dataset.kind || "") : "",
+        eid: el.dataset ? (el.dataset.eid || "") : "" };
+    });
+    const ents = rows.filter(r => r.cls.includes("C"));
+    return {
+      total: rows.length,
+      A: rows.filter(r => r.cls.includes("A")).length,
+      C: ents.length,
+      D: rows.filter(r => r.cls.includes("D")).length,
+      X: rows.filter(r => r.cls.includes("X")).length,
+      unclassified: rows.filter(r => r.cls.length === 0).map(r => `${r.tag}:${r.text}`),
+      multi: rows.filter(r => r.cls.length > 1).map(r => `${r.tag}:${r.text}:${r.cls}`),
+      emptyTarget: ents.filter(r => !r.term || !r.eid).map(r => r.text),
+      badKind: ents.filter(r => !ENT.includes(r.kind)).map(r => `${r.text}(${r.kind})`),
+      mismatch: ents.filter(r => r.full && r.term && r.full.replace(/\s/g, "") !== r.term.replace(/\s/g, "")).map(r => `${r.text}≠${r.term}`),
+      entTerms: ents.map(r => r.term),
+    };
+  });
+}
 // 派生実体ノード＝既存ノードメニューが開く。メニュー項目を実DOMクリックして進む。
 async function menuState(p) {
   return await p.evaluate(() => { const m = document.getElementById("graph-menu");
@@ -154,6 +189,17 @@ async function backForward(p) {
         ok(`${label}: 共起の失敗説明を出さず「次にたどれる言葉」は残る`, cr.negative === false && cr.hasBranches, JSON.stringify({ neg: cr.negative, br: cr.hasBranches }));
       }
     }
+    // 第1階層: 全クリック可能要素の閉包検証（未分類0・複数分類0・構造ラベルのentity化0・空target0・不一致0）
+    const cz = await classifyClickables(p);
+    ok(`${label}: 全クリック要素がA/B/C/Dのいずれか一つ（未分類0・複数分類0）`,
+      !!cz && cz.unclassified.length === 0 && cz.multi.length === 0,
+      cz ? `総${cz.total} A${cz.A}/C${cz.C}/D${cz.D}/閉じる${cz.X} 未分類:${JSON.stringify(cz.unclassified)} 複数:${JSON.stringify(cz.multi)}` : "no panel");
+    ok(`${label}: 構造ラベルがentity target化0・空target0・表示名とtargetの不一致0`,
+      !!cz && cz.badKind.length === 0 && cz.emptyTarget.length === 0 && cz.mismatch.length === 0,
+      cz ? `badKind:${JSON.stringify(cz.badKind)} empty:${JSON.stringify(cz.emptyTarget)} mismatch:${JSON.stringify(cz.mismatch)}` : "");
+    ok(`${label}: 区分名・件数表示がentityに混入しない（一般の意味/専門・思想の意味/世界の言語◯◯）`,
+      !!cz && !cz.entTerms.some(t => /^(一般の意味|専門・思想の意味|世界の言語|語源の連鎖|近い概念|対立|関連)/.test(t) || /^世界の言語\s*\d+/.test(t)),
+      JSON.stringify((cz && cz.entTerms || []).slice(0, 8)));
     const tj = await tocClickWorks(p);
     ok(`${label}: 目次クリックで実際にスクロールしactiveが変わる`, tj.ok === true, JSON.stringify(tj));
     const bf = await backForward(p);
@@ -213,6 +259,97 @@ async function backForward(p) {
     for (let i = 0; i < 30; i++) { const r = await p.evaluate(() => __dx.G && __dx.G.rootQ).catch(() => null); if (r === "矛盾") break; await sleep(700); }
     const fwd = await p.evaluate(() => __dx.G.rootQ);
     ok("H[中心に据える]: 戻るで元の弁証法グラフ・進むで矛盾中心グラフを復元", back === rootBefore && fwd === "矛盾", `back=${back} fwd=${fwd}`);
+  }
+  // ── 第2階層: 全景内の全entity linkを実マウスで押し、メニュー対象がクリックしたstable ID・termと一致
+  {
+    await loadGraph(p, "弁証法");
+    await clickNode(p, "n.layer===1");   // 弁証法の全景
+    const ents = await p.evaluate(() => {
+      const panel = document.getElementById("graph-panel");
+      panel.querySelectorAll("details:not([open]) > summary").forEach(s => { s.parentElement.open = true; });
+      return [...panel.querySelectorAll(".pano-ent")].map((e, i) => ({ i, term: e.dataset.term, kind: e.dataset.kind, eid: e.dataset.eid }));
+    });
+    let mismatch = 0, opened = 0, skipped = 0, retried = 0; const badSamples = [];
+    for (const e of ents) {
+      // 位置決め→安定待ち→直前に座標を再測定してから実クリック（スクロール未完了での取りこぼしを防ぐ）
+      const locate = async () => await p.evaluate(async (i) => {
+        const m0 = document.getElementById("graph-menu"); if (m0) m0.remove();
+        const el = [...document.querySelectorAll("#graph-panel .pano-ent")][i];
+        el.scrollIntoView({ block: "center" });
+        await new Promise(r2 => setTimeout(r2, 200));
+        // 折り返した inline リンクは bounding box の中心が行間（親要素）に落ちる。実際の行矩形から
+        // 「その点で本当にこの要素が最前面になる」座標を選ぶ（実マウスクリックのまま当たり判定を正す）。
+        const rects = [...el.getClientRects()];
+        const cands = (rects.length ? rects : [el.getBoundingClientRect()]);
+        let pick = null;
+        for (const b of cands) {
+          if (!(b.width > 0 && b.height > 0 && b.top >= 0 && b.bottom <= innerHeight)) continue;
+          const x = Math.round(b.left + Math.min(b.width / 2, 30)), y = Math.round(b.top + b.height / 2);
+          const mid = document.elementFromPoint(x, y);
+          if (mid && mid.closest && mid.closest(".pano-ent") === el) { pick = { x, y, visible: true, hit: true }; break; }
+          if (!pick) pick = { x, y, visible: true, hit: false };
+        }
+        return pick || { x: 0, y: 0, visible: false, hit: false };
+      }, e.i);
+      let r = await locate();
+      if (!r.visible) { skipped++; continue; }                     // 実クリック不能な位置は計上して除外
+      await p.mouse.click(r.x, r.y); await sleep(220);
+      let got = await p.evaluate(() => { const m = document.getElementById("graph-menu");
+        return { open: !!m, title: m ? (m.querySelector(".gm-title") || {}).textContent || "" : "",
+          ctxTerm: (window.__dx && __dx.MENUCTX && __dx.MENUCTX.n) ? (__dx.MENUCTX.n.q || __dx.MENUCTX.n.label) : null }; });
+      if (!got.open) {                                             // 座標競合の取りこぼしは1回だけ再試行
+        retried++;
+        r = await locate();
+        if (r.visible) { await p.mouse.click(r.x, r.y); await sleep(280);
+          got = await p.evaluate(() => { const m = document.getElementById("graph-menu");
+            return { open: !!m, title: m ? (m.querySelector(".gm-title") || {}).textContent || "" : "",
+              ctxTerm: (window.__dx && __dx.MENUCTX && __dx.MENUCTX.n) ? (__dx.MENUCTX.n.q || __dx.MENUCTX.n.label) : null }; }); }
+      }
+      if (got.open) opened++;
+      if (!got.open || got.ctxTerm !== e.term || !got.title.includes(e.term)) {
+        mismatch++;
+        if (badSamples.length < 6) badSamples.push({ term: e.term, kind: e.kind, eid: e.eid, open: got.open, ctxTerm: got.ctxTerm, title: got.title.slice(0, 40) });
+      }
+    }
+    ok(`第2階層: 全entity link(${ents.length}件)の実クリックでメニューが開く`, ents.length > 0 && opened === ents.length - skipped,
+      `opened=${opened}/${ents.length - skipped}（列挙${ents.length}・位置不能${skipped}・再試行${retried}）`);
+    ok("第2階層: メニュー対象がクリックしたstable ID・termと完全一致（不一致0）", mismatch === 0, `mismatch=${mismatch}/${ents.length - skipped} ${JSON.stringify(badSamples)}`);
+    await p.evaluate(() => { const m = document.getElementById("graph-menu"); if (m) m.remove(); });
+  }
+  // ── 第2階層: entity種別ごとの代表について、メニュー全項目を実クリック（無作用0・commit1回・対象は自分自身）
+  for (const [kindLabel, pred, expectTerm] of [
+    ["related(矛盾)", "n.kind==='related' && /矛盾/.test(n.label)", "矛盾"],
+    ["author(マルクス)", "n.kind==='author' && /マルクス/.test(n.label)", "カール・マルクス"],
+    ["original(dialectic)", "n.kind==='original' && n.label==='dialectic'", "dialectic"],
+  ]) {
+    await loadGraph(p, "弁証法");
+    await clickNode(p, pred, { menu: true });
+    const items = await p.evaluate(() => [...document.querySelectorAll("#graph-menu .gm-item")].map((e, i) => ({ i, t: e.textContent.trim() })));
+    const acted = [], noop = [];
+    for (const it of items) {
+      if (/新しいタブ|新タブ/.test(it.t)) continue;   // 新タブは状態遷移でない（別ウィンドウを開くため除外）
+      await loadGraph(p, "弁証法");
+      await clickNode(p, pred, { menu: true });
+      const before = await p.evaluate(() => ({ len: __dx.nav.len, root: __dx.G.rootQ }));
+      const disp = await p.evaluate(async (i) => {
+        const el = [...document.querySelectorAll("#graph-menu .gm-item")][i]; if (!el) return null;
+        el.click(); await new Promise(r => setTimeout(r, 2500));
+        return __dx.lastDispatch ? { a: __dx.lastDispatch.actionId, t: __dx.lastDispatch.target && __dx.lastDispatch.target.term } : null;
+      }, it.i);
+      await sleep(1200);
+      const after = await p.evaluate(() => ({ len: __dx.nav.len, root: __dx.G.rootQ, panel: __dx.viewState().panel }));
+      if (!disp || !disp.a) { noop.push(it.t); continue; }
+      acted.push({ item: it.t.slice(0, 12), action: disp.a, target: disp.t, dLen: after.len - before.len, root: after.root });
+    }
+    ok(`第2階層[${kindLabel}]: メニュー全項目に無作用0`, noop.length === 0, JSON.stringify(noop));
+    ok(`第2階層[${kindLabel}]: 全操作の対象がクリックした語自身（${expectTerm}）`,
+      acted.every(a => a.target === expectTerm), JSON.stringify(acted.map(a => `${a.action}:${a.target}`)));
+    ok(`第2階層[${kindLabel}]: 各操作の履歴commitは1回以内（0=状態変化なし操作を含む）`,
+      acted.every(a => a.dLen >= 0 && a.dLen <= 1), JSON.stringify(acted.map(a => `${a.action}:${a.dLen}`)));
+    const center = acted.find(a => a.action === "center");
+    if (center) ok(`第2階層[${kindLabel}]: 「中心に据える」でその語自身が中心語になる`, center.root === expectTerm, `root=${center.root}`);
+    const pano = acted.find(a => a.action === "panorama");
+    if (pano) ok(`第2階層[${kindLabel}]: 「全体像を見る」がその語自身の全景`, pano.target === expectTerm, `target=${pano.target}`);
   }
   // ── 意味契約（実データ）: 疎外＝根拠ある見落とし枠＋共起実データ／dialectic＝共起が空で節と目次が消える
   await runPath("I[疎外]", "疎外", "n.layer===1", /疎外/, { expectOverlook: true, colloc: true });
