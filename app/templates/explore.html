@@ -1,12 +1,26 @@
 {% extends "base.html" %}
-{% block title %}{{ t.nav_home }}{% endblock %}
+{% block title %}{{ t.nav_explore }}{% endblock %}
 {% block content %}
-<h1>{{ t.nav_home }}</h1>
+<h1>{{ t.nav_explore }}</h1>
 <form action="/explore" method="get" class="searchbox">
   <input type="text" name="q" value="{{ q }}" placeholder="{{ t.search_placeholder }}">
   <input type="hidden" name="lang" value="{{ lang }}">
   <button type="submit">{{ t.search_button }}</button>
 </form>
+<div class="route-bridge card">
+  {% if lang == 'ja' %}
+  <b>意味空間の相関図と共通Menuを開く</b>
+  <span class="muted">この画面は資料・文献を横断する補助探索です。入力語の原語、概念、思想家、関連語を地図で辿る場合はこちら。</span>
+  {% else %}
+  <b>Open the meaning-space map and common menu</b>
+  <span class="muted">This is the supporting source-search view. Use the map to trace original terms, concepts, thinkers, and related words.</span>
+  {% endif %}
+  {% if q %}
+  <a class="btn" href="/origin?q={{ q | urlencode }}&amp;lang={{ lang }}">{{ t.nav_origin }}</a>
+  {% else %}
+  <a class="btn" href="/origin?lang={{ lang }}">{{ t.nav_origin }}</a>
+  {% endif %}
+</div>
 <div id="adopt-picker" class="adopt-picker"></div>
 <div id="explore-status"></div>
 <div id="explore-results"></div>

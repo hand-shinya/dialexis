@@ -10,10 +10,10 @@
 <header>
   <a class="brand" href="/">Dialexis<span class="brand-sub">{{ t.tagline }}</span></a>
   <nav>
-    {# 原語による探求へ一本化（2026-07-17）: menuは核＋深掘り探索プロンプト＋設定＋支援＋
-       言語切り替えのみ。研究デスク/ウォッチ/読解レベル/Aboutは一旦保留＝menu非掲載（route自体は
-       残置・裏で稼働。復帰は本コメント下に該当<a>を戻すだけ）。 #}
-    <a href="/" class="{{ 'on' if path == '/' }}">{{ t.nav_home }}</a>
+    {# 原語による探求を主入口にし、旧来の資料横断探索は明示的な副入口として残す。
+       研究デスク/ウォッチ/読解レベル/Aboutは一旦保留＝menu非掲載（route自体は残置・裏で稼働）。 #}
+    <a href="/origin" class="{{ 'on' if path.startswith('/origin') }}">{{ t.nav_origin }}</a>
+    <a href="/explore" class="{{ 'on' if path.startswith('/explore') }}">{{ t.nav_explore }}</a>
     <a href="/deepsearch" class="{{ 'on' if path.startswith('/deepsearch') }}">{{ t.nav_deepsearch }}</a>
     <a href="/settings" class="{{ 'on' if path.startswith('/settings') }}">{{ t.nav_settings }}</a>
     <a href="/donate" class="{{ 'on' if path.startswith('/donate') }}">{{ t.nav_donate }}</a>

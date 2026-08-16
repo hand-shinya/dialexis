@@ -4,17 +4,17 @@
 <section class="hero">
   <h1>Dialexis</h1>
   <p class="tagline">{{ t.tagline }}</p>
-  <form action="/explore" method="get" class="searchbox">
+  <form action="/origin" method="get" class="searchbox">
     <input type="text" name="q" placeholder="{{ t.search_placeholder }}" autofocus>
     <input type="hidden" name="lang" value="{{ lang }}">
-    <button type="submit">{{ t.search_button }}</button>
+    <button type="submit">{{ t.entry_button }}</button>
   </form>
   {% if question_doors %}
   <div class="qdoors-wrap">
     <p class="qdoors-title">{{ t.qdoors_title }}</p>
     <nav class="qdoors" aria-label="{{ t.qdoors_title }}">
       {% for d in question_doors %}
-      <a class="qdoor" href="/explore?q={{ d.seed | urlencode }}&amp;lang={{ lang }}">{{ d.q }}</a>
+      <a class="qdoor" href="/origin?q={{ d.seed | urlencode }}&amp;lang={{ lang }}">{{ d.q }}</a>
       {% endfor %}
     </nav>
     <p class="qdoors-hint muted">{{ t.qdoors_hint }}</p>

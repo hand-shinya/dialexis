@@ -1,5 +1,5 @@
 """PoC A (question-first entry): a curious person who knows no philosopher's
-name still gets a door. Doors are real <a href="/explore?q=SEED"> links (work
+name still gets a door. Doors are real <a href="/origin?q=SEED"> links (work
 without JS = screen-reader friendly), and every seed must be a concept verified
 to return a real result — no door may lead to an empty room. Offline Level-0."""
 import os
@@ -36,7 +36,11 @@ def test_seeds_are_verified_only():
 def test_home_renders_real_links_ja():
     html = client.get("/?lang=ja").text
     assert "qdoors" in html
-    assert 'href="/explore?q=' in html          # real anchor, not JS-only
+    assert '<form action="/origin"' in html   # primary search opens the Map
+    assert "意味Mapを開く" in html              # button names the actual destination
+    assert 'href="/origin?q=' in html         # real anchor, not JS-only
+    assert 'href="/explore?q=' not in html   # no accidental old-route door
+    assert 'href="/origin"' in html          # header has a visible Map route
     assert "愛とは何か" in html                   # a novice-voice question
     assert "名前を知らなくても" in html            # the door title
 
@@ -44,8 +48,16 @@ def test_home_renders_real_links_ja():
 def test_home_renders_english_doors():
     html = client.get("/?lang=en").text
     assert "What is love?" in html
-    assert "href=\"/explore?q=love" in html
+    assert "href=\"/origin?q=love" in html
+    assert "Open meaning map" in html
     assert "No name needed" in html
+
+
+def test_secondary_explore_explains_and_links_to_origin_map():
+    html = client.get("/explore?q=非有機的肉体&lang=ja").text
+    assert 'action="/explore"' in html
+    assert 'href="/origin?q=' in html
+    assert "意味空間の相関図" in html
 
 
 def test_placeholder_no_longer_presupposes_a_name():

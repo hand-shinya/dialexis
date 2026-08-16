@@ -108,7 +108,9 @@ def render(request: Request, name: str, **ctx):
 
 # Question-first entry (PoC A): a curious person who does not yet know any
 # philosopher's name still needs a door. Each door is a human-language question
-# (the novice's own voice) that runs the existing /explore on a concept SEED.
+# (the novice's own voice) that opens the primary /origin meaning-space map on a
+# concept seed; the older /explore source-search surface remains available as a
+# deliberately separate secondary route.
 # Every seed below was EMPIRICALLY VERIFIED (2026-07-12, per-language) to return
 # a real SEP entry + scholarship — known wrong-sense resolutions (時間→Hour,
 # 存在→Entity, 徳→誤爆; en justice→None, freedom→"Divine Freedom") are excluded
