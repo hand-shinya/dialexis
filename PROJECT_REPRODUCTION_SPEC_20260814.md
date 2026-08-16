@@ -1144,6 +1144,20 @@ LD_LIBRARY_PATH=/home/handa/pwlibs/usr/lib/x86_64-linux-gnu \
   node tests/e2e/run_local.js tests/e2e/universality_sweep.e2e.js
 ~~~
 
+### 公開URLでの反映確認（2026-08-16）
+
+VPS反映後の `http://219.94.244.239:8000` を読み取り・実ブラウザで確認した。
+
+~~~text
+healthz                         200
+/api/anatomy?非有機的肉体       semantic_units=[非, 有機的, 肉体], character priority=3
+/api/combine?カール・マルクス×吉本隆明&op=and
+                                has_results=true, nodes=13, edges=12, source=SearXNG
+公開 combine_ui.e2e.js          4/4 PASS
+~~~
+
+公開ブラウザでは、canvasを可視領域へ移動し、語ノード → 「別の語と組み合わせる」 → `労働` → `AND` の順に実操作し、`「疎外」を「労働」で絞り込み（AND）` の結果Mapへ遷移した。公開URL上のテストは外部APIの初回キャッシュ状態により時間が変動するため、同一操作を再試行できる構成にしている。
+
 ### 残る未検証・限界の更新
 
 - **未検証:** 公開本番サイトへのdeploy後に、同じ変更が実際の公開URLへ反映されていること。この作業ではcommit/push/deployは行っていない。
@@ -1168,3 +1182,4 @@ LD_LIBRARY_PATH=/home/handa/pwlibs/usr/lib/x86_64-linux-gnu \
 - 意味単位優先のAPI/UI実装、dispatcher復旧面、組み合わせ結果面の動的演算子表示を反映。
 - 部分応答の配列欠落に対する画面構築の防御を追加。
 - 失敗注入・自動代替・探究次元・共通メニュー・普遍性掃引を実ブラウザで再検証し、上記の結果を記録。
+- VPS公式デプロイ後のhealthz、意味単位API、AND API、公開ブラウザ組み合わせ操作を確認。
