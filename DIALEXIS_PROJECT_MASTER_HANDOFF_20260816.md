@@ -1,6 +1,6 @@
 # Dialexis プロジェクト完全引継ぎ記録
 
-**スナップショット:** 2026-08-16（Asia/Tokyo）
+**スナップショット:** 2026-08-16 23時台（Asia/Tokyo）
 **対象:** Dialexis / 反省的哲学研究インフラ
 **目的:** 本プロジェクトを全く知らないAIまたは開発者が、この一ファイルと現行リポジトリだけで、目的・背景・画面・コード・データ契約・失敗史・検証・公開運用を理解し、同じ状態を再現して継続開発できるようにする。
 
@@ -21,11 +21,11 @@ Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を�
 | 開発リポジトリ | /home/handa/dialexis |
 | GitHub | https://github.com/hand-shinya/dialexis |
 | ブランチ | main |
-| 公開反映済みのコードHEAD | 439e367 公開確認後の検証済みSHAを更新 |
-| 文書追加コミット | be70233（本書のみ） |
-| 文書追加後の検証マーカー同期 | f562724（本書とマーカーのみ） |
-| origin/main | 439e367 |
-| コードを検証したSHA | 4f0ef9886aa85136c8afa02996f54be74a2bb1d6 |
+| 公開反映済みの製品コードHEAD | 11c49b0（入口修正4e96a3bを含む） |
+| 今回の入口修正 | 4e96a3b（ホーム・Question Doors・navを /originへ） |
+| 公開デプロイ時の検証SHA | 4e96a3b522d95f8ae1e4e32e998f9545a8ead66a |
+| 本書・回帰E2Eの追加 | 本書更新後のGit履歴を参照（製品runtimeは11c49b0） |
+| origin/main | 本書更新後のmain。再現時は `git rev-parse HEAD` で確定 |
 | 検証マーカー | deploy/verified_sha.txt |
 | 公開URL | http://219.94.244.239:8000 |
 | 公開アプリ | /opt/dialexis |
@@ -34,11 +34,11 @@ Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を�
 | 作業フォルダー（WSL） | /mnt/i/GoogleDriveMirror/MyKnowledgeBase/Main/論考/哲学DESK |
 | ライセンス | Code: AGPL-3.0 / Documentation: CC-BY-4.0 |
 
-439e367は、4f0ef98でコードと公開URL確認を終えた後のマーカー更新である。
-その後のbe70233/f562724は本書と検証マーカーだけの同期で、公開アプリの
-実装コードは変更していない。現在のGit先端はgit logとgit rev-parseで確認し、
-公開ランタイムのコード基準はこの表の439e367とする。
-したがって、4f0ef...以降に未検証の製品コードが入ったという意味ではない。
+11c49b0は、4e96a3bで入口の製品コードを修正し、公式verify、VPS側pytest、
+サービス再起動、公開HTTP検査を完了した公開runtimeである。その後の本書と
+`entry_routing.e2e.js`の更新は、製品runtimeを変更しない記録・回帰検査の追加である。
+現在のGit先端はgit logとgit rev-parseで確認し、公開runtimeの基準は11c49b0とする。
+検証SHAはdeploy/verified_sha.txtで確認する。
 vps_update.shは、検証SHA以降の差分がマーカーだけであることを確認する。
 
 ### 1.2 2026-08-16時点で直った最重要問題
@@ -68,6 +68,50 @@ healthz: 200
 公開ブラウザでは、Canvas上の中心語を実マウスクリックし、
 「別の語と組み合わせる」→「労働」→「AND」を実行し、
 「疎外」を「労働」で絞り込み（AND）の結果Mapへ遷移した。
+
+### 1.4 2026-08-16の人間検証で発見した入口回帰（重要）
+
+2026-08-16 22:56 JST、利用者のスクリーンショット
+`F:\download\screenshot_2026-08-16-22_56_26.png` は、グラフと共通Menuが消えたように見える
+旧画面を示した。これは実装が消滅した証拠ではなく、公開URLの `/explore` に到達していた。
+`/explore` のHTMLはタイトル「資料探索」、`#explore-results`を持ち、旧来の資料カードを表示する。
+一方、同じ公開サーバーの `/origin?q=非有機的肉体&lang=ja` は
+`#origin-shell`、`#origin-graph`、`#graph-lens`、`graph-play`等を返し、
+`/api/origin/graph`も正常にノード・辺を返していた。
+
+原因は、中心機能を `/origin` に移した後も、次の3箇所が旧入口へ向いていたことだった。
+
+1. ホームの検索form: `action="/explore"`
+2. Question Doors: `/explore?q=...`
+3. 上部の「探索」nav: `/`（そこから検索すると1へ戻る）
+
+したがって、これは利用者の操作ミスではなく、中心機能の実装と入口の接続を完了しないまま
+検証済みと扱った統合ミスである。AIによる内部E2Eが `/origin`を直接開いていたため、
+人間のホームからの到達経路を検証対象から漏らしていた。
+
+修正 `4e96a3b`:
+
+- ホーム検索、Question Doorsを `/origin` に変更
+- ボタン名を実際の遷移先に合わせ「意味Mapを開く」に変更
+- 上部navを「原語探求（Map）」と「資料探索」に分離
+- `/explore` は補助資料探索として保持し、常時「意味空間の相関図と共通Menu」への復帰導線を表示
+- `tests/e2e/entry_routing.e2e.js` でホーム→Map、Canvas/Menu、旧画面→Map復帰を実ブラウザ検査
+
+公開反映後の実測:
+
+~~~text
+ホーム検索 action=/origin                         PASS
+Question Doors 5件以上が /origin                  PASS
+ホーム検索→/origin                                PASS
+/origin のshell・Canvas・共通Menu surface          PASS
+/explore の資料探索表示                            PASS
+/explore→/origin 復帰リンク                        PASS
+entry_routing.e2e.js                                10/10 PASS
+~~~
+
+今後「グラフが消えた」と報告された場合は、まずブラウザの実URLが `/origin`か `/explore`かを
+記録する。`/explore`自体は壊れていないが、意味空間Mapを検証するURLは
+`http://219.94.244.239:8000/origin?q=非有機的肉体&lang=ja` である。
 
 ---
 
@@ -328,9 +372,9 @@ HTTP: User-Agent、timeout 25秒
 ### 6.1 ページ
 
 ~~~text
-/                    問いの入口、Question Doors
-/explore             統合探索
-/origin              原語探求、言語Map、概念全景
+/                    問いの入口、Question Doors。検索とDoorは /origin へ送る
+/explore             資料・文献の補助横断探索。Map復帰導線を常設
+/origin              主入口。原語探求、言語Map、概念全景、共通Menu
 /desk                研究デスクと反証
 /project/{pid}       研究過程編集
 /watches             新着監視
@@ -341,6 +385,21 @@ HTTP: User-Agent、timeout 25秒
 /about               About
 /healthz             ヘルスチェック
 ~~~
+
+### 6.1.1 入口の遷移契約
+
+通常利用者の主経路は次でなければならない。
+
+~~~text
+ホーム入力語 ─┐
+Question Door ─┼─> /origin?q=... ─> origin-shell + Canvas + graph-lens + Menu
+上部「原語探求」┘
+
+上部「資料探索」 ─> /explore?q=... ─> 資料結果 + 「原語探求（Map）」復帰リンク
+~~~
+
+`/explore`を中心Mapの代替と説明してはならない。`/explore`が表示された場合は、
+資料横断検索を意図した場合を除き、表示中のMap復帰リンクを使う。
 
 ### 6.2 /origin
 
@@ -709,6 +768,12 @@ httpx2を一時的に試したがrequirementsは変更しなかった。
 ASGITransport、Uvicorn、実ブラウザ、sandbox外の公式検証は動作した。
 テストランナー環境の失敗と製品機能を分ける。
 
+2026-08-16の入口修正では、sandbox内のTestClient停止を製品成功と混同せず、
+実環境権限で `./verify.sh` を再実行した。結果はPython 86 passed、
+決定論E2E全通過、組み合わせUI 4/4、Play 5/5、思想家Graph 4/4、
+思想家再照会 6/6、`origin` 21/23（network依存情報表示）だった。
+さらに公開URLへ `entry_routing.e2e.js` を実行し10/10 PASSした。
+
 ---
 
 ## 10. 開発時系列
@@ -825,6 +890,15 @@ origin 21/23 PASS（外部ネットワーク依存）
 
 originの21/23は決定論gateとは別の情報表示である。
 network flakeを隠さず、しかし全機能失敗とも誤診しない。
+
+### 2026-08-16: 人間入口の回帰を修正
+
+利用者スクリーンショットで、ホームから旧 `/explore` に入り、Map・共通Menuが
+「消えた」ように見える回帰を発見。内部の `/origin`機能と公開APIは生きていたため、
+原因を入口routingの不整合と特定した。`4e96a3b`でホーム検索、Question Doors、
+上部navを `/origin`中心へ変更し、旧 `/explore`には説明付きの復帰リンクを追加。
+`11c49b0`としてSHA gate、VPS pytest、サービス再起動、公開HTTP検査を完了した。
+続いて `entry_routing.e2e.js` を追加し、公開ブラウザで10/10 PASSを確認した。
 
 ### 11.3 静的確認
 
@@ -1058,6 +1132,8 @@ curl -s 'http://219.94.244.239:8000/api/combine?a=カール・マルクス&b=吉
 
 ~~~text
 [ ] /originで日本語、CJK、アルファベット、人物を入力できる
+[ ] ホーム検索・Question Doors・上部Map navが /originへ到達する
+[ ] /exploreは資料探索と明示され、Map復帰リンクを持つ
 [ ] Graphがroot-only、空、外部失敗でもshellと次Actionを失わない
 [ ] Canvas、Context、Menu、Actionが画面幅で破綻しない
 [ ] 語、人物、著作、構造ノードでActionが変わる
@@ -1090,6 +1166,12 @@ curl -s 'http://219.94.244.239:8000/api/combine?a=カール・マルクス&b=吉
 - API、SQLite、connector、E2E、SHA gate、VPS運用を統合。
 - 公開healthz、意味単位API、AND API、実ブラウザ操作を記録。
 - 旧資料に残る時点依存の未deploy・未検証記述を現在の公開実測と分離。
+
+### 2026-08-16 23時台追記
+
+- 人間スクリーンショットで発見した `/explore` 迷入の原因と責任範囲を記録。
+- ホーム→`/origin`入口修正、公開反映、公開ブラウザ10/10 E2Eを追記。
+- AI内部テストが直接 `/origin`だけを開き、人間の入口経路を漏らした失敗を明記。
 
 ### 今後
 
