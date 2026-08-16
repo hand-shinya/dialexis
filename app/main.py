@@ -630,6 +630,8 @@ async def api_origin(q: str, lang: str = "ja"):
         "suggestions": cd.get("suggestions") or [],  # 見つからない時の候補（行き止まりにしない）
         "dimensions": dimensions,                # 探究の次元（どの語からも辿れる路）
         "general_meaning": gen_senses,           # 広く共有されている意味（入力言語）
+        # 分解は語全体→意味のまとまり→文字の順。外部取得なしの構造層を意味面でも共有する。
+        "segment_layers": etymology.semantic_layers(q),
         "collapse_warning": collapse_warning,    # ⚠ 埋没の明示警告（A←B・C・D）
         "concept_origin": concept_origin,        # 概念-翻訳-原点（疎外→独 Entfremdung）
         "originators": cd.get("originators") or [],  # 立てた/著した人（P50/P61/P112・決定論）
@@ -1178,6 +1180,29 @@ def _web_entities(results, exclude, limit=10):
     return ents[:limit]
 
 
+async def _combine_web_search(q: str, lang: str, extra: str = "", n: int = 20):
+    """組合せ検索の主経路＋同一操作内の退避経路。
+
+    SearXNGの空配列は「検索語に一致なし」と「検索源が停止中」の区別が難しい。
+    そこで空の時だけWikipedia全文検索を同じ条件で実行し、出所を返す。一般ウェブ
+    全体をWikipediaと偽らず、APIのnoteに退避経路を明示する。
+    """
+    try:
+        # SearXNG側の再試行（無料検索源の不通）が画面を長時間占有しないよう、
+        # 組合せ操作では8秒で同じ条件の退避検索へ移る。
+        primary = await asyncio.wait_for(
+            searxng.search(q, lang, extra=extra, n=n, drop_commercial=True), timeout=8.0)
+    except asyncio.TimeoutError:
+        primary = []
+    if primary:
+        return primary, "SearXNG"
+    query = " ".join(x for x in (q, extra) if x).strip()
+    fallback = await wikipedia.search(query, lang, limit=n)
+    if not fallback.get("error") and fallback.get("data"):
+        return fallback["data"], "Wikipedia全文検索"
+    return [], "検索源未応答"
+
+
 @app.get("/api/combine")
 async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
     """ユーザー主導の組み合わせ探索（半田様のAND案）。op= and(絞り込み)/not(除外)/or(合わせる)/
@@ -1188,8 +1213,8 @@ async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
     nodes, edges = [], []
 
     if op == "compare":   # 2語を並べ、共有(中央)と各固有(左右)を見る
-        ra = await searxng.search(a, lang, n=16, drop_commercial=True)
-        rb = await searxng.search(b, lang, n=16, drop_commercial=True)
+        ra, sa = await _combine_web_search(a, lang, n=16)
+        rb, sb = await _combine_web_search(b, lang, n=16)
         ea, eb = _web_entities(ra, [a, b], 12), _web_entities(rb, [a, b], 12)
         setb = set(eb)
         shared = [e for e in ea if e in setb]
@@ -1207,13 +1232,15 @@ async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
                 nodes.append({"id": f"c{side}:{e}", "label": e, "kind": "application", "layer": 2, "weight": 1.0, "q": e})
                 edges.append({"from": rid, "to": f"c{side}:{e}", "strength": 0.6})
         note = f"「{a}」と「{b}」の比較。中央＝両方に関わる概念、左右＝それぞれ固有。クリックでその語へ。"
-        return {"query": a, "nodes": nodes, "edges": edges, "note": note, "queried_at": now()}
+        source = "・".join(dict.fromkeys(x for x in (sa, sb) if x))
+        return {"query": a, "nodes": nodes, "edges": edges, "note": note + f" 出所：{source}。",
+                "has_results": bool(shared or onlyA or onlyB), "queried_at": now()}
 
     if op == "semand":   # 意味で絞る: aの意味アンカー(Wikidata)のうち、bの文脈に現れるものへ
         cn = await concept.node(a, lang); cd = cn["data"] if not cn["error"] else {}
         anchors = [p["label"] for p in (cd.get("originators") or []) + (cd.get("associated") or []) if p.get("label")]
         anchors += [r["label"] for r in ((cd.get("relations") or {}).get("near") or []) if r.get("label")]
-        res = await searxng.search(a, lang, extra=b, n=20, drop_commercial=True)
+        res, source = await _combine_web_search(a, lang, extra=b, n=20)
         blob = " ".join((r["title"] + " " + r["content"]) for r in res)
         hit = [x for x in dict.fromkeys(anchors) if x and x in blob]        # 意味アンカー ∩ a+b文脈
         rest = [x for x in dict.fromkeys(anchors) if x and x not in blob][:4]
@@ -1224,33 +1251,40 @@ async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
             edges.append({"from": "root", "to": f"s:{e}", "strength": 0.7})
         note = (f"「{a}」の意味的な近縁（Wikidata）のうち、〈{b}〉の文脈に現れるものを大きく。件数でなく意味で絞る。"
                 if hit else f"〈{b}〉の意味文脈に一致する近縁は少なめ。近い候補を薄く示します。")
-        return {"query": a, "nodes": nodes, "edges": edges, "note": note, "queried_at": now()}
+        return {"query": a, "nodes": nodes, "edges": edges,
+                "note": note + f" 出所：{source}。", "has_results": bool(hit or rest), "queried_at": now()}
 
     # and / not / or ＝一般ウェブで絞る/除外/合わせる
     if op == "or":
-        ra = await searxng.search(a, lang, n=14, drop_commercial=True)
-        rb = await searxng.search(b, lang, n=14, drop_commercial=True)
+        ra, sa = await _combine_web_search(a, lang, n=14)
+        rb, sb = await _combine_web_search(b, lang, n=14)
         nodes += [root(a, "rootA", 3.0, 1), root(b, "rootB", 3.0, 1)]
         for side, res, rid in (("A", ra, "rootA"), ("B", rb, "rootB")):
             for e in _web_entities(res, [a, b], 8):
                 nodes.append({"id": f"o{side}:{e}", "label": e, "kind": "application", "layer": 2, "weight": 1.0, "q": e})
                 edges.append({"from": rid, "to": f"o{side}:{e}", "strength": 0.6})
         note = f"「{a}」と「{b}」を合わせて（OR）。両方の周辺を一度に。クリックでその語へ。"
-        return {"query": a, "nodes": nodes, "edges": edges, "note": note, "queried_at": now()}
+        source = "・".join(dict.fromkeys(x for x in (sa, sb) if x))
+        return {"query": a, "nodes": nodes, "edges": edges, "note": note + f" 出所：{source}。",
+                "has_results": bool(_web_entities(ra, [a, b], 8) or _web_entities(rb, [a, b], 8)),
+                "queried_at": now()}
 
     extra = b if op == "and" else (f"-{b}" if op == "not" else "")
-    res = await searxng.search(a, lang, extra=extra, n=20, drop_commercial=True)
+    res, source = await _combine_web_search(a, lang, extra=extra, n=20)
     label = f"「{a}」{'＋' if op == 'and' else '−'}「{b}」" if b else a
     nodes.append(root(label))
     if not res:
         return {"query": a, "nodes": nodes, "edges": edges, "queried_at": now(),
-                "note": "一般ウェブ検索（SearXNG）は現在準備中です。"}
+                "has_results": False,
+                "note": f"「{a}」と「{b}」に一致する結果は、SearXNGとWikipedia全文検索の双方で得られませんでした。出所：{source}。"}
     for e in _web_entities(res, [a, b], 12):
         nodes.append({"id": f"c:{e}", "label": e, "kind": "application", "layer": 2, "weight": 1.0, "q": e})
         edges.append({"from": "root", "to": f"c:{e}", "strength": 0.6})
     note = (f"「{a}」を「{b}」で絞り込み（AND）。両方に関わるものだけ。" if op == "and"
             else f"「{a}」から「{b}」を除外（NOT）。" if op == "not" else f"「{a}」の一般ウェブ。")
-    return {"query": a, "nodes": nodes, "edges": edges, "note": note + "クリックでその語へ。", "queried_at": now()}
+    return {"query": a, "nodes": nodes, "edges": edges,
+            "note": note + f" 出所：{source}。クリックでその語へ。",
+            "has_results": True, "queried_at": now()}
 
 
 @app.get("/api/anatomy")

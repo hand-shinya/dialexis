@@ -55,6 +55,146 @@ def _clean_gloss(s):
     return s.strip(" \t,.:：、。").strip()
 
 
+# 「一文字＝最小単位」と決め打ちしないための、保守的な意味境界辞書。
+# これは意味を生成する辞書ではなく、既にまとまりとして読める語を保つための境界辞書である。
+# 未登録語を無理に切らず、whole-term として返すことで、誤った分解を確定しない。
+_SEMANTIC_LEXEMES = {
+    "有機的", "有機体", "肉体", "身体", "身体性", "精神", "意識", "主体", "客体",
+    "自由", "意志", "自由意志", "共同", "幻想", "共同幻想", "意味", "空間", "意味空間",
+    "言語", "哲学", "概念", "構成", "要素", "構成要素", "弁証法", "弁証", "唯物論",
+    "唯心論", "存在", "存在論", "現象学", "間主観性", "自己", "自己意識", "社会",
+    "構造", "社会構造", "生産", "関係", "生産関係", "対話", "対立", "矛盾", "他者",
+    "権力", "贈与", "実存", "疎外", "歴史", "時間", "空", "無", "知的", "好奇心",
+    "知的好奇心", "教育", "心理", "研究", "言語研究", "思想", "文化", "世界",
+}
+
+# 明確に複数の語彙単位へ読める代表的な連接。ここでも文字単位には落とさない。
+_SEMANTIC_SPLITS = {
+    "非有機的肉体": ["非", "有機的", "肉体"],
+    "非有機的身体": ["非", "有機的", "身体"],
+    "自由意志": ["自由", "意志"],
+    "共同幻想": ["共同", "幻想"],
+    "意味空間": ["意味", "空間"],
+    "社会構造": ["社会", "構造"],
+    "生産関係": ["生産", "関係"],
+    "自己意識": ["自己", "意識"],
+    "知的好奇心": ["知的", "好奇心"],
+    "言語研究": ["言語", "研究"],
+}
+
+_SEMANTIC_PREFIXES = (
+    "非", "無", "不", "未", "反", "超", "脱", "再", "前", "後", "新", "旧", "半", "準",
+)
+_SEMANTIC_AFFIX_GLOSSES = {
+    "非": "否定・非〜",
+    "無": "欠如・無〜",
+    "不": "否定・不〜",
+    "未": "未成立・まだ〜でない",
+    "反": "反対・対抗",
+    "超": "越える・超〜",
+    "脱": "外れる・脱〜",
+    "再": "もう一度・再〜",
+}
+
+
+def _is_cjk_word(s):
+    return bool(re.search(r"[㐀-鿿豈-﫿]", s or ""))
+
+
+def _semantic_unit(text, role="lexical_unit", source="lexical-boundary", confidence="medium"):
+    return {
+        "text": text,
+        "role": role,
+        "gloss": _SEMANTIC_AFFIX_GLOSSES.get(text, ""),
+        "children": list(text),
+        "source": source,
+        "confidence": confidence,
+    }
+
+
+def _semantic_cjk_units(word):
+    """CJK語を、意味を担うまとまりの層へ保守的に分ける。
+
+    重要な契約:
+      * 既知の意味単位を先に採用する。
+      * 未知の連続部分は一つのまとまりとして保持する。
+      * 文字分解はこの関数の責務ではなく、常に下位層へ置く。
+    """
+    word = unicodedata.normalize("NFKC", word or "").strip()
+    if not word or not _is_cjk_word(word):
+        return []
+    if word in _SEMANTIC_SPLITS:
+        return [_semantic_unit(x, "prefix" if x in _SEMANTIC_PREFIXES else "lexical_unit",
+                               "curated-semantic-boundary", "high")
+                for x in _SEMANTIC_SPLITS[word]]
+
+    rest = word
+    units = []
+    # 接頭辞は、後続に少なくとも2文字の語彙的なまとまりがある時だけ分ける。
+    for prefix in sorted(_SEMANTIC_PREFIXES, key=len, reverse=True):
+        if rest.startswith(prefix) and len(rest) - len(prefix) >= 2:
+            units.append(_semantic_unit(prefix, "prefix", "derivational-boundary", "high"))
+            rest = rest[len(prefix):]
+            break
+
+    lexemes = sorted(_SEMANTIC_LEXEMES, key=len, reverse=True)
+    while rest:
+        hit = next((x for x in lexemes if rest.startswith(x)), None)
+        if hit:
+            units.append(_semantic_unit(hit, "lexical_unit", "lexical-boundary", "high"))
+            rest = rest[len(hit):]
+            continue
+        # 根拠のない一文字分解を避ける。未知の残りは一まとまりで示す。
+        units.append(_semantic_unit(rest, "unresolved_unit", "whole-term-preserved", "low"))
+        break
+
+    if not units:
+        return [_semantic_unit(word, "whole_term", "whole-term-preserved", "high")]
+    return units
+
+
+def _semantic_layers(word, components=None, char_units=None):
+    """UIが同じ契約で扱える分解層を作る（外部取得なし）。"""
+    word = unicodedata.normalize("NFKC", word or "").strip()
+    if not word:
+        return []
+    chars = list(dict.fromkeys(re.sub(r"[^㐀-鿿豈-﫿]", "", word)))
+    layers = [{
+        "level": "whole",
+        "label": "語全体",
+        "priority": 0,
+        "units": [{"text": word, "role": "whole_term", "gloss": "", "children": chars,
+                   "source": "user-term", "confidence": "high"}],
+    }]
+    if _is_cjk_word(word):
+        semantic = _semantic_cjk_units(word)
+        layers.append({"level": "semantic", "label": "意味のまとまり", "priority": 1, "units": semantic})
+        if char_units is None:
+            char_units = [{"text": ch, "role": "character", "gloss": "", "children": [],
+                           "source": "character-boundary", "confidence": "secondary"} for ch in chars]
+        layers.append({"level": "character", "label": "文字構成（補助）", "priority": 3, "units": char_units})
+        return layers
+
+    morph = []
+    for c in components or []:
+        text = c.get("part") or c.get("text")
+        if text:
+            morph.append({"text": text, "role": "etymological_component", "gloss": c.get("meaning", ""),
+                          "children": [], "source": "Wiktionary", "confidence": "grounded"})
+    if morph:
+        layers.append({"level": "morphology", "label": "語源的な構成要素", "priority": 2, "units": morph})
+    else:
+        layers.append({"level": "semantic", "label": "意味のまとまり", "priority": 1,
+                       "units": [{"text": word, "role": "whole_term", "gloss": "", "children": [],
+                                  "source": "whole-term-preserved", "confidence": "medium"}]})
+    return layers
+
+
+def semantic_layers(word):
+    """外部取得を伴わない、全API共通の意味分解契約。"""
+    return _semantic_layers(word)
+
+
 async def _han_gloss(ch):
     """CJK 1文字の英語義（构成要素の意味）を en.wiktionary Definitions から拾う。矛→spear／盾→shield。"""
     text = await _extract(ch)
@@ -82,20 +222,25 @@ def _etym_prose(text):
 
 
 async def _cjk_anatomy(word):
-    """CJK 語の解剖: 構成文字に分解し各字の義を取り（矛盾→矛=spear＋盾=shield）、語自身の散文語源も添える。
-    翻訳（一語の訳語）で見えなくなる、字ごとの原義を復元する＝alphabet語のdia+legeinのCJK版（普遍化）。"""
+    """CJK 語の解剖: 意味単位を先に確定し、文字の義は補助層として添える。
+    旧来の文字分解は保持するが、表示優先順位は
+    語全体 → 意味のまとまり → 文字構成、で固定する。"""
     cjk = re.sub(r"[^㐀-鿿豈-﫿]", "", word)
     if len(cjk) < 2:
         return None
     comps = []
+    char_units = []
     for ch in list(dict.fromkeys(cjk))[:6]:          # 重複字は1回・最大6字
         g = await _han_gloss(ch)
+        char_units.append({"text": ch, "role": "character", "gloss": g,
+                           "children": [], "source": "Wiktionary", "confidence": "grounded" if g else "unverified"})
         if g:
             comps.append({"part": ch, "meaning": g})
     summary = _etym_prose(await _extract(word))
-    if not comps and not summary:
-        return None
+    semantic = _semantic_cjk_units(word)
     return {"term": word, "chain": [], "components": comps, "summary": summary,
+            "semantic_segments": semantic,
+            "segment_layers": _semantic_layers(word, char_units=char_units),
             "wiktionary_url": f"https://en.wiktionary.org/wiki/{word}"}
 
 
@@ -196,8 +341,10 @@ async def anatomy(word, orig_terms, lang="ja"):
                 r["term"] = term
                 r["wiktionary_url"] = f"https://en.wiktionary.org/wiki/{term}"
                 await _deepen_chain(r)   # 連鎖を最古層まで辿り、根の構成要素まで到達＝どの言語形から入っても同じ深さ（統一）
+                r["segment_layers"] = _semantic_layers(term, components=r.get("components"))
                 return r
     cjk = await _cjk_anatomy(word)                    # CJK 語の構成文字分解（矛盾→矛＋盾）
     if cjk:
         return cjk
-    return {"term": None, "chain": [], "components": [], "summary": ""}
+    return {"term": None, "chain": [], "components": [], "summary": "",
+            "segment_layers": _semantic_layers(word)}

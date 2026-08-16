@@ -130,6 +130,14 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .cmb-op { font-size: .84rem; padding: .35rem .7rem; border: 1px solid var(--accent);
   border-radius: 999px; background: var(--paper); color: var(--accent); cursor: pointer; }
 .cmb-op:hover { background: var(--accent); color: var(--paper); }
+.cmb-op.on { background: var(--accent); color: var(--paper); }
+.combine-form-note { min-height: 1.3em; margin: .35rem 0 0; color: #9a3412; font-size: .84rem; }
+.combine-outcome { border-left: 3px solid #b45309; padding: .45rem .65rem; background: #fffaf0; }
+.combine-status { color: #7c2d12; }
+.combine-query { margin: .55rem 0; padding: .45rem .6rem; background: #f4efe3; border-radius: 4px; }
+.combine-query code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.combine-reason-detail { color: var(--muted); font-size: .84rem; }
+.combine-ext { margin: .5rem 0; }
 /* B: 視点・目的・難易度パネル */
 .psp-g { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin: .4rem 0; }
 .psp-l { font-size: .78rem; color: var(--muted); width: 3.6rem; }
@@ -159,6 +167,22 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .anat-part { border: 1px solid var(--line); border-radius: 6px; padding: .25rem .5rem; font-size: .9rem; }
 .anat-plus { font-weight: 700; color: var(--accent); margin: 0 .2rem; }
 .anat-gloss { display: block; font-size: .76rem; color: var(--muted); }
+.segment-whole { margin: .35rem 0 .55rem; padding: .45rem .6rem; border-left: 3px solid var(--accent); background: #f6f1e2; display: flex; gap: .55rem; align-items: baseline; }
+.segment-kicker, .segment-heading, .segment-note { font-family: system-ui, sans-serif; }
+.segment-kicker { color: var(--muted); font-size: .76rem; }
+.segment-block { margin: .45rem 0 .7rem; }
+.segment-heading { margin: 0 0 .15rem; font-size: .88rem; font-weight: 650; }
+.segment-note { margin: .15rem 0 .35rem; color: var(--muted); font-size: .76rem; line-height: 1.45; }
+.segment-units { display: flex; flex-wrap: wrap; align-items: stretch; gap: .3rem; }
+.segment-unit { display: inline-flex; flex-direction: column; gap: .05rem; border: 1px solid var(--line); border-radius: 6px; padding: .28rem .5rem; background: #fffdf8; }
+.segment-unit a { color: var(--accent2); text-decoration: none; font-weight: 600; }
+.segment-unit a:hover { text-decoration: underline; }
+.segment-unit small { color: var(--muted); font-size: .7rem; }
+.segment-join { align-self: center; color: var(--accent); font-weight: 700; }
+.segment-secondary { margin: .5rem 0 .7rem; padding: .35rem .55rem; border: 1px solid var(--line); border-radius: 6px; background: #faf8f2; }
+.segment-secondary summary { cursor: pointer; font-family: system-ui, sans-serif; font-size: .8rem; color: var(--accent2); }
+.segment-chars .segment-unit { background: #f4f1eb; }
+.segment-panorama { margin-bottom: .55rem; }
 #dx-toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 90;
   background: rgba(20,24,34,.94); color: #fff; padding: .5rem .9rem; border-radius: 999px;
   font-family: system-ui, sans-serif; font-size: .85rem; box-shadow: 0 6px 20px rgba(0,0,0,.3); display: none; }
@@ -214,17 +238,23 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 #tl-canvas { width: 100%; height: 52vh; min-height: 340px; display: block; }
 .lens-empty { color: var(--muted); padding: 1.5rem .5rem; font-family: system-ui, sans-serif; }
 /* グラフのコンテキストメニュー（選択時の7択・kind別） */
-#graph-menu { position: absolute; z-index: 50; width: 300px; background: var(--card);
+/* 面（Context/Menu/Action）は surface manager が position/座標系/z を一元決定する。
+   CSSは見た目と既定サイズのみを与え、配置とz-indexは manager のインラインstyleが決める
+   （Menuも fixed に統一＝Panelと座標系を揃え、スクロールでズレない・半田様2026-08-02）。 */
+#graph-menu { position: fixed; z-index: 50; width: 300px; box-sizing: border-box; background: var(--card);
   border: 1px solid var(--ink); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.18);
   font-family: system-ui, sans-serif; overflow: hidden; }
 .gm-title { font-size: .78rem; color: var(--paper); background: var(--ink); padding: .45rem .7rem; cursor: move; user-select: none; }
 #graph-menu { box-shadow: 0 6px 24px rgba(0,0,0,.28); }
-.gm-item { padding: .5rem .7rem; font-size: .86rem; cursor: pointer; border-top: 1px solid var(--line); }
+.gm-item { display: block; width: 100%; text-align: left; padding: .5rem .7rem; font-size: .86rem;
+  font-family: system-ui, sans-serif; cursor: pointer; border: 0; border-top: 1px solid var(--line);
+  border-radius: 0; background: var(--card); color: var(--ink); }
 .gm-item:hover { background: #f2eee4; }
+.gm-item:disabled, .gp-cont-b:disabled, .nomiss-b:disabled { opacity: .55; cursor: wait; }
 .gm-soon { color: var(--muted); cursor: default; }
 .gm-soon:hover { background: transparent; }
 #graph-panel { position: fixed; z-index: 60; left: 50%; top: 8vh; transform: translateX(-50%);
-  width: min(680px, 92vw); max-height: 80vh; overflow: auto; background: var(--card);
+  width: min(680px, 92vw); max-height: 80vh; overflow: auto; box-sizing: border-box; background: var(--card);
   border: 1px solid var(--ink); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
 .gp-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: .6rem .9rem; border-bottom: 1px solid var(--line); font-family: system-ui, sans-serif;
@@ -232,11 +262,19 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .gp-x { background: none; color: var(--muted); font-size: 1.3rem; padding: 0 .3rem; }
 .gp-body { padding: .8rem .9rem 1.1rem; }
 
-/* 概念全景ドロワー（半田様2026-07-30）: デスクトップ=右側の広いdrawer（グラフの一部を残す）／狭い画面=全画面 */
-#graph-panel.gp-wide { left: auto; right: 0; top: 0; transform: none;
-  width: min(560px, 46vw); max-height: 100vh; height: 100vh; border-radius: 0;
+/* Context面＝概念全景（右側の永続ドロワー・半田様2026-08-02にAction(#graph-panel)からid分離）。
+   幅は clamp で必ず利用可能領域を残す（Menu/Action が Context と交差せず置ける前提）。
+   本体は body の padding-right（surfSyncLayout）で退避するため、地図がドロワーの下に潜らない。 */
+#dx-context { position: fixed; z-index: 60; left: auto; right: 0; top: 0; transform: none;
+  width: clamp(240px, 42vw, 520px); max-height: 100vh; height: 100vh; overflow: hidden;
+  box-sizing: border-box; background: var(--card); border-radius: 0;
   border-left: 2px solid var(--ink); box-shadow: -10px 0 40px rgba(0,0,0,.22); }
-@media (max-width: 760px) { #graph-panel.gp-wide { width: 100vw; border-left: none; } }
+#dx-context .gp-wide { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+#dx-context .gp-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+#dx-context .pano-next { flex: 0 0 auto; padding: .55rem .8rem .65rem; border-top: 1px solid var(--line);
+  background: #faf7f0; box-shadow: 0 -5px 14px rgba(0,0,0,.08); z-index: 3; }
+#dx-context .pano-next .nomiss { padding: 0; }
+.pano-outcome { border-left: 3px solid #b45309; padding: .45rem .65rem; background: #fffaf0; }
 /* 概要（この場所での意味を短く）＝最上部 */
 .pano-lead { padding: .7rem .9rem .5rem; }
 .pano-eyebrow { font-family: system-ui, sans-serif; font-size: .72rem; letter-spacing: .04em;
@@ -252,7 +290,7 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 /* パネル内目次「この語の見どころ」＝地図上部メニューとは見た目も役割も分離。上部に簡潔に固定 */
 .pano-toc { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; padding: .45rem .9rem;
   border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
-  position: sticky; top: 2.6rem; background: var(--paper, var(--card)); z-index: 2; }
+  position: sticky; top: 0; background: var(--paper, var(--card)); z-index: 2; }
 .pano-toc-h { font-family: system-ui, sans-serif; font-size: .74rem; font-weight: 600; color: var(--accent2); margin-right: .3rem; }
 .pano-toc-a { font-family: system-ui, sans-serif; font-size: .78rem; padding: .16rem .5rem;
   border: 1px solid var(--line); border-radius: 6px; color: var(--ink); text-decoration: none; background: var(--card); }

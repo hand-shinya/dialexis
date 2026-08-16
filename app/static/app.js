@@ -37,13 +37,42 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// 外部情報源の応答が返らない時も、画面を「読み込み中」のまま固定しない。
+// 個別の呼び出し側で timeout を書かず、全てのAPI操作に同じ安全弁を掛ける。
+const API_TIMEOUT_MS = 20000;
 async function api(path, opts = {}) {
-  const r = await fetch(path, {
-    headers: { "Content-Type": "application/json" }, ...opts,
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
-  return r.json();
+  const { timeout = API_TIMEOUT_MS, signal: callerSignal, body, ...fetchOpts } = opts;
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  let timer = null;
+  let abortFromCaller = null;
+  if (controller && callerSignal) {
+    abortFromCaller = () => controller.abort();
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener("abort", abortFromCaller, { once: true });
+  }
+  if (controller && Number.isFinite(timeout) && timeout > 0) {
+    timer = setTimeout(() => controller.abort(), timeout);
+  }
+  try {
+    const r = await fetch(path, {
+      ...fetchOpts,
+      headers: { "Content-Type": "application/json", ...(fetchOpts.headers || {}) },
+      signal: controller ? controller.signal : callerSignal,
+      body: body == null ? undefined : (typeof body === "string" ? body : JSON.stringify(body)),
+    });
+    if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
+    return r.json();
+  } catch (e) {
+    if (controller && controller.signal.aborted && !(callerSignal && callerSignal.aborted)) {
+      const err = new Error(`API timeout: ${path}`);
+      err.name = "TimeoutError";
+      throw err;
+    }
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (callerSignal && abortFromCaller) callerSignal.removeEventListener("abort", abortFromCaller);
+  }
 }
 
 function llmConfig() {
@@ -925,11 +954,18 @@ function originInit(q) {
       const t = e.target.closest(".ext-term");
       if (!t) return;
       e.preventDefault();
-      const w = t.dataset.w; const pan = $("graph-panel"); if (pan) pan.remove();
-      if (w) dispatchAction("center", { term: w, kind: t.getAttribute("lang") ? "original" : "word", lang: t.getAttribute("lang") }, currentViewState(), { surface: "text-link" });
+      const w = t.dataset.w; if (!w) return;
+      const r = t.getBoundingClientRect();
+      // 「原語による探求」＝正典 term exploration transaction（検索・中心変更と同じ1本）
+      dispatchAction("center", { term: w, kind: t.getAttribute("lang") ? "original" : "word", lang: t.getAttribute("lang") },
+        currentViewState(), { surface: "text-link", anchor: { x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom + 6) } });
     });
   }
-  if (q) { NAV.stack = [{ q, lens: "all", focus: null, panel: null, combine: null }]; NAV.idx = 0; navUpdate(); }   // 初期ViewState
+  if (!window._dxResizeBound) {   // viewportが変わっても Context占有領域と Menu/Action の配置を保つ
+    window._dxResizeBound = 1;
+    window.addEventListener("resize", () => surfSyncLayout());
+  }
+  if (q) { NAV.stack = [{ q, lens: "all", focus: null, context: null, panel: null, combine: null }]; NAV.idx = 0; navUpdate(); }   // 初期ViewState
   const res = $("origin-results");
   if (res && !res._dimBound) {
     res._dimBound = 1;
@@ -945,9 +981,18 @@ function originInit(q) {
   }
   if (q) {
     originShellShow(q);   // 初期から操作shell（ナビ＋共通メニュー）を出す（graph成否に依存しない）
-    gBusy(true, "「" + q + "」を探索中…");                                          // 明確な処理中表示（他画面と同じ）
+    // SEARCH(term) ＝ 正典 term exploration transaction。成功時: グラフ＋中心語=term＋Contextを自動表示、
+    // Menu=0・Action=0、履歴commitは1回だけ（Context自動表示で追加commitしない）。
     const t = originClaim(q);
-    Promise.all([originGraph(q, t), originRun(q, t)]).then(() => gBusy(false)).catch(() => gBusy(false));
+    NAV.txn = true;   // 初期構築中の中間pushを抑止（settle後に初期ViewStateを1件だけ確定させる）
+    (async () => {
+      try { await originExplore(q, { tok: t, initial: true }); }
+      catch (e) { console.error("initial explore", e); }
+      finally {
+        NAV.txn = false; gBusy(false);
+        NAV.stack = [currentViewState()]; NAV.idx = 0; navUpdate();   // 履歴commitは1回だけ
+      }
+    })();
   }
 }
 
@@ -957,11 +1002,12 @@ const NAV = { stack: [], idx: -1, restoring: false, txn: false };
 function navSame(a, b) {
   if (!a || !b) return false;
   return a.q === b.q && a.lens === b.lens && a.focus === b.focus
+    && JSON.stringify(a.context || null) === JSON.stringify(b.context || null)
     && JSON.stringify(a.panel || null) === JSON.stringify(b.panel || null)
     && JSON.stringify(a.combine || null) === JSON.stringify(b.combine || null);
 }
 function navCommit(s) {   // 確定した ViewState を履歴に積む（復元中・トランザクション中は積まない）
-  if (typeof s === "string") s = { q: s, lens: "all", focus: null, panel: null, combine: null };
+  if (typeof s === "string") s = { q: s, lens: "all", focus: null, context: null, panel: null, combine: null };
   if (NAV.restoring || NAV.txn) return;
   if (!s || !s.q) return;
   if (navSame(NAV.stack[NAV.idx], s)) return;
@@ -981,15 +1027,17 @@ async function navGo(d) {
   const s = NAV.stack[i];
   NAV.restoring = true; NAV.txn = true;
   try {
-    const pan = $("graph-panel"); if (pan) pan.remove(); PANEL_CTX = null;   // 一旦パネルを閉じる（stateが言えば開き直す）
-    if (!G || G.rootQ !== s.q) { await originRecenter(s.q, { nav: true }); } // 中心語を復元
+    surfDestroy("menu"); surfDestroy("action"); PANEL_CTX = null;            // 一旦Menu/Actionを閉じる
+    surfDestroy("context");                                                 // Contextも一旦閉じる（stateが言えば開き直す）
+    if (!G || G.rootQ !== s.q) { await originExplore(s.q, { nav: true, noContext: true }); }   // 中心語を復元
     if (s.combine) { COMBINE_CTX = null; await gCombineRun(s.combine.a, s.combine.b, s.combine.op); }  // 組合せ結果を復元
     else { COMBINE_CTX = null; await applyLensBuild(s.lens || "all"); }      // 見方を復元（focusも一旦解除）
     if (s.focus) {                                                          // 分岐focusを復元（stable ID基準・表示labelでない）
       const idx = (G.nodes || []).findIndex(n => n.kind === "domain" && (n.id === s.focus || n.label === s.focus));
       if (idx >= 0) gFocusSubtree(idx, { nav: true });
     }
-    if (s.panel && ACTIONS[s.panel.action]) {                               // パネルを復元（開き直す）
+    if (s.context) await gPanorama({ term: s.context.term });               // Contextを復元（Mapと一緒に戻る/進む）
+    if (s.panel && ACTIONS[s.panel.action]) {                               // Actionを復元（開き直す）
       PANEL_CTX = { action: s.panel.action, term: s.panel.term };
       await ACTIONS[s.panel.action].run(normTarget(s.panel.term), {});
     }
@@ -1012,33 +1060,107 @@ function gBusy(on, text, x, y) {
   el.style.display = "flex";
 }
 
-// UNIVERSAL rule: selecting a word (a node / an in-page link) makes THAT word the
-// new subject — the whole exploration (search box, cards, graph) is rebuilt FRESH
-// from it. No data from a previously-entered word is reused. Optionally, after the
-// fresh cards render, scroll to a specific card of THIS word (opts.scrollTo).
-async function originRecenter(q, opts) {
+/* ═══════════ 正典 term exploration transaction（半田様2026-08-02）═══════════
+   SEARCH（初回ロード）・center（中心に据える）・本文の語リンク（原語による探求）は、すべて
+   この1本の transaction を通る。順序を固定する:
+     ① target のデータを取得（大小文字などの正規化候補も含めて「構築可能か」を判定する）
+     ② 中心ノードと Context を構築可能か確認する
+     ③ 成功後にだけ 検索欄・Map・Context・履歴 をまとめて更新（commitは1回）
+   構築できない場合:
+     空canvasへ遷移しない／検索欄だけ書き換えない／現在の Map + Context を完全保持する／
+     取得済みの実データで target の Context または Menu を表示する／捏造しない／否定文言で停止しない。 */
+function _termVariants(q) {
+  const out = [], add = (s) => { s = String(s || "").trim(); if (s && out.indexOf(s) < 0) out.push(s); };
+  add(q);
+  try { add(String(q).normalize("NFKC")); } catch (e) {}
+  add(String(q).toLowerCase());
+  add(String(q).charAt(0).toUpperCase() + String(q).slice(1));
+  return out;
+}
+// ① 取得＋② 構築可能性の確認。構築できた変種のデータを返す（できなければ null）。
+async function originResolveGraph(q, tok) {
+  for (const v of _termVariants(q)) {
+    let d = null;
+    try { d = await api(`/api/origin/graph?q=${encodeURIComponent(v)}&lang=${LANG}`); } catch (e) { d = null; }
+    if (tok != null && originStale(tok)) return null;
+    // rootだけの薄いMapも「構築可能な結果」として採用する。語源形・著者名・
+    // 外部sourceが薄い語を、旧Mapを残したままの見かけ上の停止にしない。
+    // nodes=[] や layer 1 の無い壊れた応答は、従来どおり復旧面へ送る。
+    if (d && Array.isArray(d.nodes) && d.nodes.length >= 1 && d.nodes.some(n => n.layer === 1)) {
+      if (d.qid) OZ.qid = d.qid;
+      return { data: d, term: d.query || v, asked: q };
+    }
+  }
+  return null;
+}
+async function originExplore(q, opts) {
   opts = opts || {};
-  const tok = originClaim(q);            // this selection becomes THE subject (single source of truth)
-  const inp = document.querySelector('.searchbox input[name=q]');
-  if (inp) inp.value = q;
+  const tok = (opts.tok != null) ? opts.tok : originClaim(q);
+  const jp = LANG === "ja";
   gBusy(true, "「" + q + "」を探索中…", G && G.lastX, G && G.lastY);   // 選んだ付近に処理中を表示
-  // graph と cards を同じトークンで並行再構築。両方 settle して初めて再中心「完了」。
-  await Promise.all([originGraph(q, tok), originRun(q, tok)]);
-  if (originStale(tok)) return;          // 別の語に上書きされた＝この古い語のためにスクロール/確定しない
-  // 中心語の変更はパネル/組合せを閉じる文脈。dispatch経由は txn で抑止され、dispatcher が確定commit。
-  // dispatch外の直接呼出し（本文リンク以外の内部再中心等）はここで確実にcommitされる（1操作1commit）。
-  if (!opts.nav) { PANEL_CTX = null; COMBINE_CTX = null; navCommit(currentViewState()); }
+  const res = await originResolveGraph(q, tok);                        // ①②
+  if (originStale(tok)) { gBusy(false); return false; }
+  if (!res) {
+    gBusy(false);
+    if (opts.initial) {
+      // 初回ロード＝保持すべき Map/Context がまだ無い。空canvasへは遷移させず、操作帯は残し、
+      // 取得できた実データで Context を出す（行き止まりにしない・否定文言で停止しない）。
+      originShellShow(q);
+      graphThin(jp ? `「${q}」は、上の入口からこの語のまま探索を続けられます。`
+                   : `Continue exploring “${q}” from the entry points above.`, q);
+      // 結果カードの取得を待たず、Contextの読み込み面と常設の次アクションを先に出す。
+      // 重い外部源が遅くても、ユーザーの操作面を空白にしない。
+      const contextPromise = !opts.noContext
+        ? surfaceContextFor(q, null).catch(e => { console.error("context while exploring", e); })
+        : null;
+      await originRun(q, tok);
+      if (contextPromise && !originStale(tok)) await contextPromise;
+      return false;
+    }
+    // 既存の Map + Context を完全保持し、target の標準操作メニューを出す（検索欄も書き換えない）
+    const a = opts.anchor || SURF.anchor.menu || surfAnchorDefault();
+    gMenu(a.x, a.y, { id: "word:" + q, label: q, q: q, kind: "word", layer: 2 });
+    return false;
+  }
+  // ③ ここから先だけが「成功後の更新」
+  const term = res.term;
+  const thinResult = res.data.nodes.length === 1;
+  const inp = document.querySelector('.searchbox input[name=q]');
+  if (inp) inp.value = term;
+  originShellShow(term);
+  graphThin(null);
+  gApplyGraph(res.data);
+  if (thinResult) {
+    // root-onlyでも主語・カード・履歴は新語へ進める。ただし、情報量の少ない
+    // Mapを豊富な地図のように見せず、薄い表示と常設の次入口を残す。
+    graphThin(jp ? `「${term}」の地図は薄い状態ですが、この語から探索を続けられます。`
+                 : `The map for “${term}” is thin, but exploration can continue from this term.`, term);
+  }
+  // Mapが構築できた時点でContextの読み込み面を出し、カード取得と並行して次の入口を見せる。
+  const contextPromise = !opts.noContext
+    ? surfaceContextFor(term).catch(e => { console.error("context while loading", e); })
+    : null;
+  await originRun(term, tok);
+  if (originStale(tok)) { gBusy(false); return false; }
+  if (contextPromise) await contextPromise;                  // 検索成功＝Contextを自動表示
+  // 中心語の変更はAction/組合せを閉じる文脈。dispatch経由は txn で抑止され、dispatcher が確定commit。
+  if (!opts.nav && !opts.initial) { PANEL_CTX = null; COMBINE_CTX = null; navCommit(currentViewState()); }
   gBusy(false);                          // 完了＝インジケータを消す
   const id = opts && opts.scrollTo;
   const el = id && $(id);
-  if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+  if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); return true; }
   if (id) {                 // the requested aspect doesn't exist for THIS word — honest
     const wc = document.querySelector(".word-card");
     if (wc) wc.scrollIntoView({ behavior: "smooth", block: "start" });
-    return;
+    return true;
   }
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (!opts.initial) window.scrollTo({ top: 0, behavior: "smooth" });
+  return true;
 }
+// UNIVERSAL rule: selecting a word (a node / an in-page link) makes THAT word the
+// new subject — the whole exploration (search box, cards, graph) is rebuilt FRESH
+// from it. 実体は上の正典 transaction 1本（作用を再実装しない）。
+async function originRecenter(q, opts) { return originExplore(q, opts || {}); }
 
 // Attribute string for an internal word link — a new tab (keeping the current
 // result) or in-place, per the user's choice (#6: don't silently overwrite).
@@ -1054,7 +1176,7 @@ function originLinkAttr() {
 function noMiss(term, opts) {
   opts = opts || {};
   const jp = LANG === "ja";
-  const lead = opts.lead || (jp
+  const lead = opts.lead ? esc(opts.lead) : (jp
     ? `「${esc(term)}」は、次の入り口から探索を続けられます。`
     : `Continue exploring “${esc(term)}” from these entry points.`);
   const acts = [
@@ -1068,24 +1190,33 @@ function noMiss(term, opts) {
     + acts.map(([a, l]) => `<button type="button" class="nomiss-b" data-a="${a}" data-w="${esc(term)}">${esc(l)}</button>`).join("")
     + `</div></div>`;
 }
-// パネル内（下部に共通フッターが在る）用: ボタン無しの建設的一文だけ（否定語を使わない）。
+// パネル内・カード内を問わず、文章だけで終わらせない。softLineも同じ実行可能な入口を返す。
 function softLine(term, opts) {
   opts = opts || {};
   const jp = LANG === "ja";
-  return `<p class="nomiss-lead">${opts.lead ? esc(opts.lead) : (jp
-    ? `「${esc(term)}」は、下の入り口から別の見方で探索を続けられます。`
-    : `Continue with “${esc(term)}” via the options below.`)}</p>`;
+  return noMiss(term, { lead: opts.lead || (jp
+    ? `「${term}」は、下の入り口から別の見方で探索を続けられます。`
+    : `Continue with “${term}” via the options below.`) });
 }
 // nomiss ボタンの委譲ハンドラ（一度だけbind）。どのパネル/グラフ領域に現れても同じ作用（普遍）。
 function bindNoMiss() {
   if (document._noMissBound) return;
   document._noMissBound = 1;
-  const MAP = { center: "center", lang: "multilingual", ext: "external", combine: "combine", lens: "lens" };
-  document.addEventListener("click", (e) => {
+  document.addEventListener("click", async (e) => {
     const btn = e.target.closest(".nomiss-b"); if (!btn) return;
     e.preventDefault();
-    const a = MAP[btn.dataset.a], w = btn.dataset.w; if (!w || !a) return;
-    dispatchAction(a, { term: w }, currentViewState(), { surface: "nomiss" });   // 単一Dispatcher経由（作用を再実装しない）
+    const a = UI_ACTION_MAP.nomiss[btn.dataset.a], w = btn.dataset.w; if (!w || !a) return;
+    if (btn.disabled || btn.dataset.running === "1") return;
+    const group = btn.closest(".nomiss-acts");
+    if (group) group.querySelectorAll(".nomiss-b").forEach(x => { x.disabled = true; x.dataset.running = "1"; });
+    const r = btn.getBoundingClientRect();
+    try {
+      await dispatchAction(a, { term: w }, currentViewState(), { surface: "nomiss", anchor: { x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom + 6) } });   // 単一Dispatcher経由（作用を再実装しない）
+    } catch (err) {
+      console.error("nomiss action", err);
+    } finally {
+      if (group && group.isConnected) group.querySelectorAll(".nomiss-b").forEach(x => { x.disabled = false; delete x.dataset.running; });
+    }
   });
 }
 
@@ -1105,6 +1236,7 @@ function altFromOrigin(o, word) {
   const jp = LANG === "ja"; let h = ""; if (!o) return "";
   const gm = (o.general_meaning || []).slice(0, 5);
   if (gm.length) h += `<ul class="gp-ul">${gm.map(s => `<li>${esc(s.length > 200 ? s.slice(0, 200) + "…" : s)}</li>`).join("")}</ul>`;
+  h += segmentLayersHtml(o.segment_layers, { includeCharacter: true });
   const br = (o.breadth || []).slice(0, 24);
   if (br.length) h += `<div class="breadth-chips">` + br.map(b => `<span class="breadth-chip">${esc(b.name)}${b.term ? "：<a href=\"#\" class=\"ext-term\" data-w=\"" + esc(b.term) + "\">" + esc(b.term) + "</a>" : ""}</span>`).join("") + `</div>`;
   const co = (o.concept_origin || []).slice(0, 6);
@@ -1114,6 +1246,7 @@ function altFromOrigin(o, word) {
 // /api/anatomy の実データから代替表示（Wiktionaryの構成要素・変容連鎖）。
 function altFromAnatomy(a, word) {
   const jp = LANG === "ja"; let h = ""; if (!a || !a.term) return "";
+  h += segmentLayersHtml(a.segment_layers, { includeCharacter: false });
   if ((a.components || []).length) h += `<div class="anat-comp">` + a.components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}</span>`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
   if ((a.chain || []).length) h += `<div class="chain">` + a.chain.map(c => `<span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span><a href="#" class="ext-term chain-form" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `<span class="anat-gloss">「${esc(c.gloss)}」</span>` : ""}</span>`).join("<span class=\"chain-arrow\">←</span>") + `</div>`;
   if (a.summary) h += `<p class="anat-summary">${esc(a.summary.length > 300 ? a.summary.slice(0, 300) + "…" : a.summary)}</p>`;
@@ -1176,7 +1309,8 @@ async function autoFallback(word, kind, body) {
     body.innerHTML = `<div class="fallback"><p class="fb-note">${jp ? "主要な源では十分な結果が得られなかったため、別の情報源に自動で切り替えて取得しました。" : "Auto-switched to an alternative source."}</p>${html}${srcline}</div>`
       + softLine(word);
   } else if (body) {
-    body.innerHTML = softLine(word);   // 第三経路なし/空/失敗＝虚偽の切替文言を出さず、続行操作を直ちに表示（捏造で埋めない・P6）
+    body.innerHTML = `<p class="fb-note">${jp ? "主要な情報源と代替経路から表示できるデータが返らなかったため、結果を作らず次の入口を残します。" : "No grounded data was returned from the primary or alternative source; the next entry points remain available."}</p>`
+      + softLine(word);   // 第三経路なし/空/失敗＝虚偽の切替文言を出さず、続行操作を直ちに表示（捏造で埋めない・P6）
   }
   return outcome;
 }
@@ -1199,56 +1333,302 @@ function normTarget(t) {
 }
 
 // 現在開いているパネル/組合せ（ViewStateに含める確定状態＝戻る/進むで復元）
-let PANEL_CTX = null;    // { action, term }
+let PANEL_CTX = null;    // { action, term } ＝ Action面
+let CONTEXT_CTX = null;  // { term }         ＝ Context面（右側の概念全景・永続）
 let COMBINE_CTX = null;  // { a, b, op }
-let _lastDispatch = null; // 最後に dispatch した {actionId, target, surface}（操作同値性テスト用）
+let _lastDispatch = null; // 最後に dispatch した {actionId, target, surface, effect, seq, outcome}（操作同値性テスト用）
+let _dispatchSeq = 0;     // dispatch の単調増加連番（同じ操作の反復も外部から区別できる）
 
+/* ═══════════ 表示面の中央管理（Surface Manager・半田様2026-08-02）═══════════
+   面は3種に固定する:
+     Context (#dx-context)  右側の概念全景。×で閉じるか別全景へ置換するまで残る（永続）。
+     Menu    (#graph-menu)  選択語の標準操作メニュー。
+     Action  (#graph-panel) 意味・解剖・比較・多言語等の操作結果。
+   create / replace / destroy / place をここへ集約する（各関数が個別に document.body.appendChild /
+   remove しない）。不変条件:
+     ・Menu と Action は排他で合計1個まで／同種を積層しない
+     ・後から開いた面が古い面の背後に出ない（DOM順とz-indexの両方をmanagerが保証）
+     ・Menu / Action は Context の占有領域と矩形交差0・全体がviewport内・超過分は面内部スクロール
+   個別の語・個別Actionごとの座標指定は禁止（配置は surfPlace だけが行う）。 */
+const SURFACE_ID = { context: "dx-context", menu: "graph-menu", action: "graph-panel" };
+const SURF_MARGIN = 8;
+const SURF = { z: 200, anchor: { menu: null, action: null }, menuCloser: null };
+
+function surfEl(kind) { return document.getElementById(SURFACE_ID[kind]); }
+function surfRect(kind) {
+  const el = surfEl(kind); if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+}
+// Context が占有していない利用可能領域（viewport座標）。Menu/Action はこの中だけに置く。
+function surfAvail() {
+  const box = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+  const r = surfRect("context");
+  if (r && r.width > 0 && r.height > 0) {
+    if (r.right >= window.innerWidth - 2) box.right = Math.max(0, r.left);        // 右ドック
+    else if (r.left <= 2) box.left = Math.min(box.right, r.right);                // 左ドック（将来）
+  }
+  return box;
+}
+function surfAnchorDefault() {
+  const av = surfAvail();
+  return { x: (av.left + av.right) / 2, y: av.top + Math.min(120, Math.max(40, (av.bottom - av.top) / 4)) };
+}
+// 面の配置。Context は右ドック（CSS）。Menu/Action は利用可能領域内へ収める。
+function surfPlace(kind) {
+  const el = surfEl(kind); if (!el || kind === "context") return;
+  const av = surfAvail();
+  const availW = Math.max(200, av.right - av.left - SURF_MARGIN * 2);
+  const availH = Math.max(160, av.bottom - av.top - SURF_MARGIN * 2);
+  el.style.position = "fixed";
+  el.style.transform = "none";
+  el.style.right = "auto"; el.style.bottom = "auto";
+  el.style.boxSizing = "border-box";
+  el.style.maxWidth = availW + "px";
+  el.style.maxHeight = availH + "px";      // 高さがviewportを超えるときは面内部をスクロール可能に
+  el.style.overflowY = "auto";
+  el.style.overflowX = "hidden";
+  const w = Math.min(el.offsetWidth || 300, availW);
+  el.style.width = w + "px";
+  const a = SURF.anchor[kind] || surfAnchorDefault();
+  let x = a.x + 20;
+  if (x + w > av.right - SURF_MARGIN) x = a.x - w - 20;
+  x = Math.max(av.left + SURF_MARGIN, Math.min(x, av.right - w - SURF_MARGIN));
+  let y;
+  if (kind === "action") {
+    y = av.top + SURF_MARGIN;              // Actionは内容が後から伸びる＝上端固定＋maxHeightで必ず収まる
+  } else {
+    const h = Math.min(el.offsetHeight || 200, availH);
+    y = Math.max(av.top + SURF_MARGIN, Math.min(a.y - 12, av.bottom - h - SURF_MARGIN));
+  }
+  el.style.left = Math.round(x) + "px";
+  el.style.top = Math.round(y) + "px";
+}
+// Context の占有幅をページ本体へ反映（地図がドロワーの下に隠れない＝実クリック座標が常に有効になる）
+function surfSyncLayout() {
+  const r = surfRect("context");
+  const w = r ? Math.round(r.width) : 0;
+  document.body.style.paddingRight = w ? w + "px" : "";
+  if (typeof gResize === "function") gResize();
+  surfPlace("menu"); surfPlace("action");
+}
+function surfDestroy(kind) {
+  const el = surfEl(kind); if (!el) return false;
+  if (kind === "menu") {
+    if (SURF.menuCloser) { document.removeEventListener("pointerdown", SURF.menuCloser); SURF.menuCloser = null; }
+    if (G) G.menuNode = null;
+  }
+  el.remove();
+  if (kind === "context") { CONTEXT_CTX = null; surfSyncLayout(); }
+  return true;
+}
+// Action を閉じる＝「Action無し」も1つの確定状態（A2）。PANEL_CTXを消して1回だけcommitする。
+function surfCloseAction(commit) {
+  const had = surfDestroy("action");
+  if (had && PANEL_CTX) { PANEL_CTX = null; if (commit && !NAV.txn && !NAV.restoring) navCommit(currentViewState()); }
+  return had;
+}
+function surfCreate(kind, el, anchor) {
+  if (kind === "menu") { surfCloseAction(true); surfDestroy("menu"); }              // Menu/Action は排他
+  else if (kind === "action") { surfDestroy("menu"); surfDestroy("action"); }       // 同種は積層しない
+  else if (kind === "context") { surfDestroy("menu"); surfCloseAction(true); surfDestroy("context"); }
+  el.id = SURFACE_ID[kind];
+  el.classList.add("dx-surface");
+  document.body.appendChild(el);          // DOM順で常に最後＝後から開いた面が古い面の背後に出ない
+  el.style.zIndex = String(++SURF.z);     // z-indexでも最前面
+  if (kind === "context") surfSyncLayout();
+  else { SURF.anchor[kind] = anchor || SURF.anchor[kind] || surfAnchorDefault(); surfPlace(kind); }
+  return el;
+}
+
+// ── Action registry ────────────────────────────────────────────────────────────
+// 各Actionは effect（面への作用）を**宣言**する。テストは文言から推測せず registry と照合する。
+//   context = Contextを置換（Menu/Actionを閉じる）
+//   center  = Map中心を移し Context を同じ語へ更新
+//   map     = 地図を描き替える（Contextは保持）
+//   action  = Contextを保持し Action を置換
+//   store   = 宣言された保存状態のみ（面を変えない）
+//   newpage = 新規ページを開く（元画面のContext・履歴を変えない）
+const EFFECTS = ["context", "center", "map", "action", "store", "newpage"];
 // Action ID → 正規作用。run は状態変更関数（originRecenter/gWordAspect/…）を呼ぶ唯一の場所。
-// changesCenter=中心語を変える／opensPanel=パネルを開く（それ以外はパネルを閉じるグラフ操作）。
 const ACTIONS = {
-  center:       { label: "中心に据える", changesCenter: true, run: (t) => originRecenter(t.term) },
-  meaning:      { label: "意味", opensPanel: true, run: (t) => gWordAspect(t.term, "meaning") },
-  multilingual: { label: "多言語", opensPanel: true, run: (t) => gWordAspect(t.term, "breadth") },   // 中心を変えない（Aの是正・全入口統一）
-  collapse:     { label: "埋没原語", opensPanel: true, run: (t) => gWordAspect(t.term, "collapse") },
-  anatomy:      { label: "解剖", opensPanel: true, run: (t) => gAnatomyPanel(t.term) },
-  contrast:     { label: "並置", opensPanel: true, run: (t) => gContrastPanel(t.term) },
-  colloc:       { label: "共起", opensPanel: true, run: (t) => gColloc(t.term) },
-  lens:         { label: "見方", opensPanel: true, run: (t) => gLensMenu(t.term) },
-  applyLens:    { label: "見方を適用", run: (t, ctx) => applyLensFor(t.term, ctx.lensKey) },
-  combine:      { label: "組み合わせ", opensPanel: true, run: (t, ctx) => (ctx && ctx.b) ? gCombineRun(t.term, ctx.b, ctx.op || "and") : gCombinePanel(t.term) },
-  external:     { label: "外部で調べる", opensPanel: true, run: (t) => gExtPanel(t.term) },
-  shelf:        { label: "棚に追加", run: (t) => shelfAdd(t.term) },
-  deepsearch:   { label: "深掘り", opensPanel: true, run: (t) => gPerspectivePanel(t.term) },
-  newtab:       { label: "新タブ", run: (t) => window.open(`/origin?q=${encodeURIComponent(t.term)}&lang=${LANG}`, "_blank") },
-  author:       { label: "著者を調べる", opensPanel: true, run: (t, ctx) => gAuthorInvestigate((ctx && ctx.search) || t.term, t.label) },
-  authorNote:   { label: "系譜メモ", opensPanel: true, run: (t, ctx) => gAuthorPanel(ctx.node || { label: t.label }) },
-  dimension:    { label: "探究の次元", opensPanel: true, run: (t, ctx) => gDimAct(ctx.dm) },   // 探究の次元カード（.dim）
-  panorama:     { label: "概念全景", opensPanel: true, run: (t, ctx) => gPanorama({ term: t.term, node: ctx && ctx.node, secHint: ctx && ctx.secHint }) },   // 語ノード選択→広い詳細ドロワー
-  focus:        { label: "この分岐を中心に", run: (t, ctx) => gFocusSubtree(ctx.nodeIdx) },
-  hl:           { label: "経路を強調", run: (t, ctx) => { G.hl = gHl(ctx.nodeIdx); gDraw(); } },
-  resetFocus:   { label: "全体に戻す", run: () => { if (G) originGraph(G.rootQ); } },
+  center:       { label: "中心に据える", effect: "center", changesCenter: true, run: (t, ctx) => originRecenter(t.term, { anchor: ctx && ctx.anchor }) },
+  meaning:      { label: "意味", effect: "action", run: (t) => gWordAspect(t.term, "meaning") },
+  multilingual: { label: "多言語", effect: "action", run: (t) => gWordAspect(t.term, "breadth") },   // 中心を変えない（Aの是正・全入口統一）
+  collapse:     { label: "埋没原語", effect: "action", run: (t) => gWordAspect(t.term, "collapse") },
+  anatomy:      { label: "解剖", effect: "action", run: (t) => gAnatomyPanel(t.term) },
+  contrast:     { label: "並置", effect: "action", run: (t) => gContrastPanel(t.term) },
+  colloc:       { label: "共起", effect: "action", run: (t) => gColloc(t.term) },
+  lens:         { label: "見方", effect: "action", run: (t) => gLensMenu(t.term) },   // 見方の一覧＝Action、適用は applyLens
+  // 見方の適用は条件付き作用（宣言を実装に一致させる・A3）: 対象語が既に中心なら地図の描き替えだけ（map・
+  // Contextは保持）、中心でない語なら applyLensFor が先に再中心するので中心語とContextが変わる（center）。
+  applyLens:    { label: "見方を適用", effect: "map", effectWithArg: "center", arg: "recenter",
+                  run: (t, ctx) => applyLensFor(t.term, ctx.lensKey) },
+  // 語入力フォーム＝Action／第2語(b)を伴う実行＝地図の置換（effectWithArg で宣言）
+  combine:      { label: "組み合わせ", effect: "action", effectWithArg: "map", arg: "b",
+                  run: (t, ctx) => (ctx && ctx.b)
+                    ? gCombineRun(t.term, ctx.b, ctx.op || "and")
+                    : gCombinePanel(t.term, (ctx && ctx.retryB) || "", (ctx && ctx.retryOp) || "and") },
+  external:     { label: "外部で調べる", effect: "action", newPage: true, transient: true, commits: false, run: (t) => gExtPanel(t.term) },
+  shelf:        { label: "棚に追加", effect: "store", commits: false, run: (t) => shelfAdd(t.term) },
+  deepsearch:   { label: "深掘り", effect: "action", run: (t) => gPerspectivePanel(t.term) },
+  newtab:       { label: "新タブ", effect: "newpage", transient: true, commits: false, run: (t) => {
+    const w = window.open(`/origin?q=${encodeURIComponent(t.term)}&lang=${LANG}`, "_blank");
+    return !!w;   // popup blocker等で開けない時はdispatcherがMenuを再提示する
+  } },
+  author:       { label: "著者を調べる", effect: "action", run: (t, ctx) => gAuthorInvestigate((ctx && ctx.search) || t.term, t.label) },
+  authorNote:   { label: "系譜メモ", effect: "action", run: (t, ctx) => gAuthorPanel((ctx && ctx.node) || { label: t.label }) },
+  dimension:    { label: "探究の次元", effect: "action", run: (t, ctx) => gDimAct(ctx.dm) },   // 探究の次元カード（.dim）
+  panorama:     { label: "概念全景", effect: "context", run: (t, ctx) => gPanorama({ term: t.term, node: ctx && ctx.node, secHint: ctx && ctx.secHint }) },
+  focus:        { label: "この分岐を中心に", effect: "map", run: (t, ctx) => gFocusSubtree(ctx.nodeIdx) },
+  hl:           { label: "経路を強調", effect: "map", run: (t, ctx) => { G.hl = gHl(ctx.nodeIdx); gDraw(); } },
+  resetFocus:   { label: "全体に戻す", effect: "map", run: () => { if (G) return originGraph(G.rootQ); } },
 };
+// 各表示面が使う Action ID の宣言（テストが registry と照合し「未宣言のユーザー操作」を0にする）。
+// 実装側の各面はこの定義を参照する（文言から推測しない・面ごとに作用を再実装しない）。
+const UI_ACTION_MAP = {
+  panelFooter: { center: "center", lens: "lens", lang: "multilingual", ext: "external", combine: "combine", new: "newtab" },
+  nomiss:      { center: "center", lang: "multilingual", ext: "external", combine: "combine", lens: "lens" },
+};
+const UI_ACTION_IDS = {
+  topbar:      null,   // gActions（中心語）— 実行時に列挙
+  popup:       null,   // gActions（選択ノード）— 実行時に列挙
+  edge:        ["hl", "focus", "combine", "deepsearch", "center", "resetFocus"],
+  node:        ["panorama"],
+  panelFooter: Object.values(UI_ACTION_MAP.panelFooter),
+  nomiss:      Object.values(UI_ACTION_MAP.nomiss),
+  lensMenu:    ["applyLens"],
+  textLink:    ["center"],
+  card:        ["dimension", "author", "external"],
+  play:        ["center", "combine"],
+  shelfPanel:  ["shelf", "center", "combine"],
+  scrollCard:  ["center"],
+  contextEnt:  ["panorama"],   // Context内の実体クリック＝標準メニューを開く（対象はそのentity）
+};
+
+function _activeTerm(fallback) {
+  const input = document.querySelector('.searchbox input[name="q"]');
+  return String(fallback || (G && G.rootQ) || (input && input.value) || "").trim();
+}
+
+// 非同期Actionが予期せず失敗しても、空の面だけを残さない。失敗理由はコンソールに記録し、
+// ユーザーには同じ語から再開できる実行可能な入口を必ず残す。
+function _dispatchRecovery(t, eff, ctx, actionId) {
+  const term = _activeTerm(t && t.term);
+  if (!term) return;
+  const jp = LANG === "ja";
+  const actionLabel = (ACTIONS[actionId] && ACTIONS[actionId].label) || (actionId || "選択した操作");
+  const lead = jp
+    ? `「${term}」から、次の操作を選んで探索を続けられます。`
+    : `Continue exploring “${term}” from the next actions.`;
+  const bodyHtml = `<p class="muted">${esc(jp
+    ? `操作結果：${actionLabel}。外部情報の取得・入力条件・画面構築のいずれかに追加確認が必要です。元のMapとContextは保持しました。`
+    : `Result: ${actionLabel}. The external source, input condition, or view construction needs another check. The current map and context were kept.`)}</p>${noMiss(term, { lead })}`;
+
+  if (eff === "action") {
+    const p = surfEl("action");
+    if (p && p.querySelector(".gp-body")) {
+      p.querySelector(".gp-body").innerHTML = bodyHtml;
+      surfPlace("action");
+    } else {
+      PANEL_CTX = null;
+      try { gPanel(jp ? "探索を続ける" : "Continue exploring", bodyHtml, term); } catch (e) { console.error("action recovery panel", e); }
+    }
+    PANEL_CTX = null;   // recovery面は一時面。途中状態を履歴の確定状態として残さない。
+    gToast(jp
+      ? `「${actionLabel}」の確認項目と、同じ語から続ける操作を表示しました。`
+      : `The check items and next actions for “${actionLabel}” are shown.`);
+    return;
+  }
+
+  if (eff === "context") {
+    const p = surfEl("context");
+    if (p && p.querySelector(".gp-body")) {
+      p.querySelector(".gp-body").innerHTML = bodyHtml;
+      CONTEXT_CTX = { term };
+      gToast(jp
+        ? `「${actionLabel}」の確認項目と、同じ語から続ける操作を表示しました。`
+        : `The check items and next actions for “${actionLabel}” are shown.`);
+      return;
+    }
+    try {
+      const cp = _panoShell(term, term);
+      cp.querySelector(".gp-body").innerHTML = bodyHtml;
+      CONTEXT_CTX = { term };
+      gToast(jp
+        ? `「${actionLabel}」の確認項目と、同じ語から続ける操作を表示しました。`
+        : `The check items and next actions for “${actionLabel}” are shown.`);
+      return;
+    } catch (e) { console.error("context recovery panel", e); }
+  }
+
+  // center/map/newpage の失敗は、現在の地図やContextを消さず、対象語の標準Menuを再提示する。
+  const a = (ctx && ctx.anchor) || SURF.anchor.menu || surfAnchorDefault();
+  gToast(jp
+    ? `「${actionLabel}」を確定できなかったため、元の画面を保持してMenuを再表示しました。`
+    : `“${actionLabel}” could not be completed; the current screen was kept and the Menu was restored.`);
+  if (!surfEl("menu")) {
+    gMenu(a.x, a.y, { id: t.id || ("word:" + term), label: t.label || term, q: term,
+      kind: t.kind || "word", lang: t.lang || null, layer: t.layer == null ? 2 : t.layer });
+  }
+  gToast(jp
+    ? `「${actionLabel}」の結果面を確定するため、確認項目と次の操作を表示しました。`
+    : `The check items and next actions for “${actionLabel}” are shown.`);
+}
 
 // 単一Dispatcher: どの表示面も (actionId, target) だけを渡す。中間push抑止→settle後に一度だけcommit。
 async function dispatchAction(actionId, target, currentState, surfaceContext) {
   const a = ACTIONS[actionId];
-  if (!a) { console.error("unknown action", actionId); return; }
-  const t = normTarget(target); t.surface = (surfaceContext && surfaceContext.surface) || t.surface;
-  _lastDispatch = { actionId, target: t, surface: t.surface };
-  const prevPanel = PANEL_CTX, prevCombine = COMBINE_CTX;   // 失敗時に元へ戻すためのスナップショット（A2）
-  if (a.opensPanel) PANEL_CTX = { action: actionId, term: t.term };
-  else if (actionId !== "shelf" && actionId !== "newtab") PANEL_CTX = null;   // グラフ操作はパネルを閉じる
-  NAV.txn = true;
-  let ok = true;
-  try { await a.run(t, surfaceContext || {}); }
-  catch (e) { ok = false; console.error("action error", actionId, e); }
-  finally { NAV.txn = false; }
-  if (!ok) {                                       // 予期せぬ失敗＝存在しない確定状態をcommitしない（A2）
-    PANEL_CTX = prevPanel; COMBINE_CTX = prevCombine;   // 開かなかったpanel/幻の状態を残さない
-    return;
+  if (!a) {
+    console.error("unknown action", actionId);
+    const t0 = normTarget(target);
+    _dispatchRecovery(t0, "map", surfaceContext || {}, actionId);
+    return { ok: false, outcome: "unknown", actionId, target: t0 };
   }
-  if (actionId === "newtab") return;               // 新タブは状態遷移でない
+  if (!a.effect || EFFECTS.indexOf(a.effect) < 0) {
+    console.error("undeclared effect", actionId);
+    const t0 = normTarget(target);
+    _dispatchRecovery(t0, "map", surfaceContext || {}, actionId);
+    return { ok: false, outcome: "undeclared", actionId, target: t0 };
+  }
+  const t = normTarget(target); t.surface = (surfaceContext && surfaceContext.surface) || t.surface;
+  const ctx = surfaceContext || {};
+  const eff = (a.effectWithArg && a.arg && ctx[a.arg]) ? a.effectWithArg : a.effect;
+  _lastDispatch = { actionId, target: t, surface: t.surface, effect: eff, seq: ++_dispatchSeq, outcome: "running" };   // seq＝同一操作の反復も区別できる単調増加
+  const prevPanel = PANEL_CTX, prevCombine = COMBINE_CTX, prevContext = CONTEXT_CTX;   // 失敗時に元へ戻す（A2）
+  if (eff === "action") { PANEL_CTX = a.transient ? null : { action: actionId, term: t.term }; }   // run が surfCreate で置換する
+  else if (eff === "store" || eff === "newpage") { /* 現在の画面の面も履歴も変えない */ }
+  else { PANEL_CTX = null; surfDestroy("action"); }   // context / center / map は Action を確実に閉じる（面と状態を一致させる）
+  NAV.txn = true;
+  let ok = true, runResult;
+  try { runResult = await a.run(t, ctx); }
+  catch (e) { ok = false; console.error("action error", actionId, e); }
+  finally {
+    NAV.txn = false;
+    _lastDispatch.outcome = !ok ? "error" : (runResult === false ? "fallback" : "success");
+  }
+  if (!ok) {                                       // 予期せぬ失敗＝存在しない確定状態をcommitしない（A2）
+    PANEL_CTX = eff === "action" ? prevPanel : null;
+    COMBINE_CTX = prevCombine; CONTEXT_CTX = prevContext;
+    _dispatchRecovery(t, eff, ctx, actionId);
+    return { ok: false, outcome: "error", actionId, target: t };
+  }
+  if (runResult === false) {                       // 構築不能時も入口を残し、履歴へはcommitしない
+    // run 自身が理由つきの結果面を構築した場合、それを Menu の汎用復旧面で
+    // 上書きしない。失敗後の説明と同じ条件での再実行入口を保持する。
+    if (!surfEl("menu") && !surfEl("action") && !surfEl("context")) _dispatchRecovery(t, eff, ctx, actionId);
+    gToast(LANG === "ja"
+      ? `「${a.label}」の結果説明と、同じ語から続ける操作を表示しました。`
+      : `The result explanation and next actions for “${a.label}” are shown.`);
+    return { ok: true, outcome: "fallback", actionId, target: t };
+  }
+  if (a.commits === false) {
+    gToast(LANG === "ja" ? `「${a.label}」を実行しました。` : `“${a.label}” executed.`);
+    return { ok: true, outcome: "success", actionId, target: t };  // 棚・新タブ・外部リンク集は状態遷移でない
+  }
   navCommit(currentViewState());                   // 1ユーザー操作＝1回のcommit（確定状態）
+  gToast(LANG === "ja" ? `「${a.label}」を実行しました。次の操作を選べます。` : `“${a.label}” executed. Choose the next action.`);
+  return { ok: true, outcome: "success", actionId, target: t };
 }
 
 // 正規 ViewState（復元に必要な確定状態のみ。hover/loading等の一時状態は含めない）
@@ -1257,9 +1637,15 @@ function currentViewState() {
     q: (G && G.rootQ) || null,
     lens: G_lens || "all",
     focus: (G && (G.focusId || G.focusLabel)) || null,   // stable ID優先（表示labelはfallback・A2）
+    context: CONTEXT_CTX ? { term: CONTEXT_CTX.term } : null,
     panel: PANEL_CTX ? { action: PANEL_CTX.action, term: PANEL_CTX.term } : null,
     combine: COMBINE_CTX ? { a: COMBINE_CTX.a, b: COMBINE_CTX.b, op: COMBINE_CTX.op } : null,
   };
+}
+// SEARCH / center 成功時の Context 自動表示（履歴は呼び元が1回だけ commit する）
+async function surfaceContextFor(term, node) {
+  if (!term) return;
+  await gPanorama({ term, node: node || (G && (G.nodes || []).find(n => n.layer === 1)) || null });
 }
 
 /* ---------- 言語空間の重力グラフ（canvas force-directed・階層/展開/俯瞰） ---------- */
@@ -1388,8 +1774,23 @@ async function applyLensBuild(key) {
   const vlabel = (jp ? "見方：" : "view: ") + (jp ? L.label : L.en);   // アクティブな見方を常に明示（旧レンズchipのon表示の代替）
   const setNote = t => { if (note) note.textContent = vlabel + (t ? " — " + t : ""); };
   const mode = L.mode || "filter";
-  if (mode === "filter") { showCanvas(); const pd = applyLens(G_raw, key); setNote(pd.note || G_raw.note || ""); gBuild(pd); return; }
-  if (mode === "region") { showCanvas(); const pd = applyRegion(G_raw); setNote(pd.note); gBuild(pd); return; }
+  // filter/region も lazy-graph と同じ「空になったら行き止まりにしない」規律を適用する（半田様2026-08-08）。
+  // その語に該当kindのノードが無い見方（例: 著者ノードの無い語で「思想家と著作」）を選ぶと、
+  // applyLens/applyRegion は root 1個だけを返し、そのまま gBuild すると**空canvas＝行き止まり**になる。
+  // 従来この防御は lazy-graph mode にしか無く、filter/region に無いのが非対称＝欠落だった
+  // （実測: panorama_live [1128] emptyGraph=43 の "L3 lens/ui/思想家と著作…:空グラフ"）。
+  // 空のときは既存の地図を壊さず（gBuild しない＝G を保持）、noMiss の建設的な入口を出す（否定文言は使わない）。
+  const lensThin = (pd) => !pd || !pd.nodes || pd.nodes.length <= 1;
+  if (mode === "filter") {
+    const pd = applyLens(G_raw, key);
+    if (lensThin(pd)) { setNote(vlabel); showAlt(); $("graph-alt").innerHTML = noMiss(G_raw.query); return; }
+    showCanvas(); setNote(pd.note || G_raw.note || ""); gBuild(pd); return;
+  }
+  if (mode === "region") {
+    const pd = applyRegion(G_raw);
+    if (lensThin(pd)) { setNote(vlabel); showAlt(); $("graph-alt").innerHTML = noMiss(G_raw.query); return; }
+    showCanvas(); setNote(pd.note); gBuild(pd); return;
+  }
   // 遅延レンズ（応用/使用例/時代変遷）: エンドポイントを取得（語ごとキャッシュ）して描画
   const ck = `${L.key}:${G_raw.query}`;
   let data = G_lenscache[ck];
@@ -1397,7 +1798,7 @@ async function applyLensBuild(key) {
     setNote((jp ? "読み込み中… " : "loading… ") + L.cap);
     if (mode === "cards" || mode === "timeline") { showAlt(); $("graph-alt").innerHTML = `<p class="lens-empty">${jp ? "読み込み中…" : "loading…"}</p>`; }
     try { data = await api(`${L.endpoint}?q=${encodeURIComponent(G_raw.query)}&lang=${LANG}`); G_lenscache[ck] = data; }
-    catch (e) { if (G_lens === key) { setNote(vlabel); if (mode !== "lazy-graph") { showAlt(); $("graph-alt").innerHTML = noMiss(G_raw.query); } } return; }   // 否定表示を出さず建設的代替へ
+    catch (e) { if (G_lens === key) { setNote(vlabel); showAlt(); $("graph-alt").innerHTML = noMiss(G_raw.query); } return; }   // どの遅延レンズでも空canvasで止めず続行入口を残す
     if (G_lens !== key) return;   // 読み込み中に別レンズへ切替＝古い結果を捨てる（状態一貫性）
   }
   setNote(data.note || L.cap);
@@ -1463,7 +1864,15 @@ function drawTimeline(cv, series, cols) {
 // 上書きする競合（stale-response）を構造的に排除する。同じ語＋同じメニュー＝どこでも同じ作用（P11）。
 const OZ = { q: null, qid: null, token: 0 };
 function originClaim(q) { OZ.q = q; OZ.qid = null; return ++OZ.token; }
-function originStale(tok) { return tok !== OZ.token; }
+function originStale(tok) {
+  // 実行時の回帰試験や診断からガードの観測点を差し替えられるようにする。
+  // 通常運用では自分自身がwindow.originStaleなので、必ず単調token判定へ戻る。
+  const hook = typeof window !== "undefined" && window.originStale;
+  if (typeof hook === "function" && hook !== originStale) {
+    try { return !!hook(tok); } catch (e) { console.error("origin stale hook", e); }
+  }
+  return tok !== OZ.token;
+}
 function originCurrent(q) { return OZ.q === q; }
 
 // dispatch a dimension-of-inquiry entry to its data path (or 整備中 note).
@@ -1471,7 +1880,7 @@ function originCurrent(q) { return OZ.q === q; }
 // 一操作一commitを守る。returnしないと取得完了前に先行commitし、gCombineRun等の完了時に再commitして履歴が
 // 2件になる回帰＝Codex対審E2・半田様2026-07-30の保持指示に違反する）。
 function gDimAct(dm) {
-  if (!dm) return;
+  if (!dm) return false;
   const act = dm.act || "";
   const w = (G && G.rootQ) || (($("origin-results") || {}).dataset || {}).q || "";   // この探索の中心語
   // soon次元＝説明だけで止めない。現在語と次元名を既存の組合せ探索(実データ)へ渡し、同一操作内で実行する
@@ -1479,11 +1888,17 @@ function gDimAct(dm) {
   if (dm.status === "soon") { return gCombineRun(w, dm.label, "and"); }
   if (act.startsWith("scroll:")) {
     const el = $(act.slice(7));
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-    else gPanel(dm.label, softLine(w), w);   // 否定表示を出さず続行フッターへ（逆側logic）
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      return gPanel(dm.label, `<p class="muted">「${esc(dm.label)}」の該当箇所へ移動しました。</p>${softLine(w)}`, w);
+    }
+    else return gPanel(dm.label, softLine(w), w);   // 否定表示を出さず続行フッターへ（逆側logic）
   } else if (act.startsWith("colloc:")) return gColloc(act.slice(7), "de");
   else if (act.startsWith("counter:")) return gCounter(act.slice(8));
-  else if (act === "graph") { const gw = $("origin-graph-wrap"); if (gw) gw.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  else if (act === "graph") {
+    const gw = $("origin-graph-wrap"); if (gw) gw.scrollIntoView({ behavior: "smooth", block: "start" });
+    return gPanel(dm.label, `<p class="muted">地図の該当箇所へ移動しました。</p>${softLine(w)}`, w);
+  }
   else return gCombineRun(w, dm.label, "and");   // 未知のact＝「準備中」で止めず、既存の組合せ実データ経路へ（P6/P11）
 }
 
@@ -1494,7 +1909,7 @@ async function gCounter(claim) {
   const p = gPanel((jp ? "批判・異論：" : "Critique: ") + claim, `<p class="muted">${jp ? "読み込み中…" : "loading…"}</p>`, claim);
   let d;
   try { d = await api("/api/counter", { method: "POST", body: { claim, lang: LANG } }); }
-  catch (e) { console.error(e); p.querySelector(".gp-body").innerHTML = softLine(claim); return; }   // 生エラーを出さず続行フッターへ
+  catch (e) { console.error(e); p.querySelector(".gp-body").innerHTML = softLine(claim, { lead: jp ? `「${claim}」の検証データ取得を見送りました。下の入口から別の経路で続けられます。` : `The verification data for “${claim}” was deferred. Continue below.` }); return; }   // 生エラーを出さず続行フッターへ
   let html = `<p class="muted">${jp ? "この語・主張を、複数の視点から検証する問い（steelman）。加えて、この主張に関連する実在の文献を示します（賛成か反対かは判定していません）。" : "Counter-questions from multiple perspectives, plus related real literature (stance NOT judged)."}</p>`;
   (d.level0 || []).forEach(pv => { html += `<h4 class="gp-h">${esc(pv.perspective)}</h4><ul class="gp-ul">${(pv.questions || []).map(q => `<li>${esc(q)}</li>`).join("")}</ul>`; });
   const lit = d.opposing_literature_search;
@@ -1512,30 +1927,22 @@ function originShellShow(q) {
   renderTopMenu({ query: q });
 }
 // グラフ本体と「薄い/失敗」代替表示の切替。msg=null でグラフ表示、msg文字列で代替表示（メニューは常設のまま）。
-function graphThin(msg) {
+function graphThin(msg, term) {
   const wrap = $("origin-graph-wrap"), thin = $("graph-thin");
   if (msg) {
     if (wrap) wrap.style.display = "none";
-    if (thin) { thin.style.display = "block"; thin.innerHTML = `<p class="lens-empty">${esc(msg)}</p>`; }
+    if (thin) {
+      thin.style.display = "block";
+      thin.innerHTML = `<p class="lens-empty">${esc(msg)}</p>` + (term ? noMiss(term) : "");
+    }
   } else {
     if (wrap) wrap.style.display = "block";
     if (thin) { thin.style.display = "none"; thin.innerHTML = ""; }
   }
 }
 
-async function originGraph(q, tok) {
-  if (tok == null) tok = originClaim(q);   // standalone caller (e.g. 全体に戻す) claims its own token
-  const wrap = $("origin-graph-wrap"), cv = $("origin-graph");
-  if (!wrap || !cv) return;
-  const jp = LANG === "ja";
-  originShellShow(q);   // 取得の成否に関わらず、まず操作帯（ナビ＋共通メニュー）を出す
-  let d;
-  try { d = await api(`/api/origin/graph?q=${encodeURIComponent(q)}&lang=${LANG}`); }
-  catch (e) { if (!originStale(tok)) graphThin(jp ? `「${q}」は、上のメニューの解剖・並置・外部情報・組み合わせ・見方から、この語のまま探索を続けられます。` : `Explore “${q}” via the menu above (anatomy, contrast, external, combine, views).`); return; }
-  if (originStale(tok)) return;            // 古い語の応答＝現在の語のグラフを壊さない（stale破棄）
-  if (d.qid) OZ.qid = d.qid;               // 既存qidをノードから単一真実源へ伝播（後段のP11強化用）
-  if (!d.nodes || d.nodes.length <= 1) { graphThin(jp ? `「${q}」は、上のメニューの解剖・並置・外部情報・組み合わせ・見方から、この語のまま探索を続けられます。` : `Explore “${q}” via the menu above (anatomy, contrast, external, combine, views).`); return; }
-  graphThin(null);   // グラフ本体を表示（薄い/失敗表示を隠す）
+// 取得済みグラフデータを Map へ適用する唯一の場所（取得と適用を分離＝正典transactionの③で使う）
+function gApplyGraph(d) {
   G_raw = d;
   // 選んでいたレンズをこの語でも保つ（見方の連続性）。ただし新しい語でそのフィルタが空なら俯瞰へ。
   const cur = LENSES.find(x => x.key === G_lens) || LENSES[0];
@@ -1547,9 +1954,23 @@ async function originGraph(q, tok) {
     const pd = applyLens(d, G_lens);
     const note = $("graph-note"); if (note) note.textContent = pd.note || d.note || "";
     gBuild(pd);
-  } else {
-    applyLensBuild(G_lens);   // region/応用/使用例/時代変遷は新しい語で再描画（遅延取得は語ごとキャッシュ）
+    return null;
   }
+  return applyLensBuild(G_lens);   // region/応用/使用例/時代変遷は新しい語で再描画（遅延取得は語ごとキャッシュ）
+}
+
+async function originGraph(q, tok) {
+  if (tok == null) tok = originClaim(q);   // standalone caller (e.g. 全体に戻す) claims its own token
+  const wrap = $("origin-graph-wrap"), cv = $("origin-graph");
+  if (!wrap || !cv) return false;
+  const jp = LANG === "ja";
+  originShellShow(q);   // 取得の成否に関わらず、まず操作帯（ナビ＋共通メニュー）を出す
+  const res = await originResolveGraph(q, tok);
+  if (originStale(tok)) return false;      // 古い語の応答＝現在の語のグラフを壊さない（stale破棄）
+  if (!res) { graphThin(jp ? `「${q}」は、上の入口からこの語のまま探索を続けられます。` : `Continue exploring “${q}” from the entry points above.`, q); return false; }
+  graphThin(null);   // グラフ本体を表示（薄い/失敗表示を隠す）
+  await gApplyGraph(res.data);
+  return true;
 }
 
 function gBuild(d) {
@@ -1715,7 +2136,7 @@ async function gAuthorInvestigate(searchName, label) {
     `<p class="muted">${jp ? "取得中…" : "loading…"}</p>`, searchName);
   let d;
   try { d = await api(`/api/author?name=${encodeURIComponent(searchName)}&lang=${LANG}`); }
-  catch (e) { console.error(e); p.querySelector(".gp-body").innerHTML = softLine(searchName); return; }   // 生エラーを出さず続行フッターへ
+  catch (e) { console.error(e); p.querySelector(".gp-body").innerHTML = softLine(searchName, { lead: jp ? `「${searchName}」の著者情報取得を見送りました。下の入口から別の経路で続けられます。` : `Author data for “${searchName}” was deferred. Continue below.` }); return; }   // 生エラーを出さず続行フッターへ
   if (!d.found) {
     p.querySelector(".gp-body").innerHTML = softLine(searchName) + `<p class="srcline">${jp ? "入り口：" : "entry:"} <a href="https://ja.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(searchName)}" target="_blank">Wikipedia検索</a></p>`;   // 否定表示を出さず続行フッター＋入口へ
     return;
@@ -1816,6 +2237,7 @@ async function gWordAspect(word, aspect) {
   if (aspect === "meaning") {
     const gm = d.general_meaning || [];
     if (gm.length) h += `<ul class="gp-ul">${gm.map(s => `<li>${esc(s)}</li>`).join("")}</ul>`;
+    h += segmentLayersHtml(d.segment_layers, { includeCharacter: true });
     const wo = d.word_origin, co = d.concept_origin || [];
     if (wo && wo.name) h += `<p class="srcline">${jp ? "語源の原点（推定）：" : "origin: "}${esc(wo.name)}</p>`;
     if (co.length) h += `<p class="srcline">${jp ? "原語の候補：" : "original: "}${co.map(o => `<a href="#" class="ext-term" data-w="${esc(o.term)}">${esc(o.term)}</a>${o.name ? "（" + esc(o.name) + "）" : ""}`).join("　")}</p>`;
@@ -1839,15 +2261,23 @@ async function gAnatomyPanel(word) {
   let d; try { d = await api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`); } catch (e) { console.error(e); await autoFallback(word, "anatomy", p.querySelector(".gp-body")); return; }   // A3: 別源を実走行
   const body = p.querySelector(".gp-body");
   if (!d.term) { await autoFallback(word, "anatomy", body); return; }   // A3: 空なら別源（/api/origin）を実走行
+  // 外部sourceの部分応答でも画面構築を止めない。termだけ返る場合は、空の
+  // 配列として扱い、語全体・次の操作・出所の面を維持する。
+  const components = Array.isArray(d.components) ? d.components : [];
+  const chain = Array.isArray(d.chain) ? d.chain : [];
   let h = `<p class="muted">${jp ? "日本語の字面には現れにくい、原語の構成要素と意味の連鎖です。翻訳で削ぎ落とされた原義を、原語の実文書（Wiktionary）に接地して復元します。" : ""}</p>`;
-  if (d.components.length) {
-    h += `<h4 class="gp-h">${jp ? "構成要素（この語は元々このパーツの組み合わせ・クリックで探索）" : "Components"}</h4><div class="anat-comp">`
-      + d.components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}</span>`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
+  h += segmentLayersHtml(d.segment_layers, { includeWhole: true, includeCharacter: false });
+  if (components.length) {
+    const hasChars = (d.segment_layers || []).some(x => x && x.level === "character");
+    const comp = components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}</span>`).join(`<span class="anat-plus">＋</span>`);
+    h += hasChars
+      ? `<details class="segment-secondary"><summary>${jp ? "文字辞書義（補助）を開く" : "Open character glosses (secondary)"}</summary><p class="segment-note">${jp ? "意味のまとまりを確認した後に、各文字の辞書義を補助情報として参照できます。" : "Refer to character dictionary glosses after reading the meaningful units."}</p><div class="anat-comp">${comp}</div></details>`
+      : `<h4 class="gp-h">${jp ? "語源的な構成要素（クリックで探索）" : "Components"}</h4><div class="anat-comp">${comp}</div>`;
   }
-  if (d.chain.length) {
+  if (chain.length) {
     h += `<h4 class="gp-h">${jp ? "変容の連鎖（原語へさかのぼる・クリックで探索）" : "Chain"}</h4><div class="chain">`
       + `<span class="chain-now">「${esc(word)}」</span>`
-      + d.chain.map(c => `<span class="chain-arrow">←</span><span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span><a href="#" class="ext-term chain-form" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `<span class="anat-gloss">「${esc(c.gloss)}」</span>` : ""}</span>`).join("") + `</div>`;
+      + chain.map(c => `<span class="chain-arrow">←</span><span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span><a href="#" class="ext-term chain-form" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `<span class="anat-gloss">「${esc(c.gloss)}」</span>` : ""}</span>`).join("") + `</div>`;
   }
   if (d.summary) {   // 語自身の語源の散文（矛盾＝韓非子の故事 等）。字ごとの分解に加えて語の由来を示す。
     h += `<h4 class="gp-h">${jp ? "語源（この語の由来）" : "Etymology"}</h4><p class="anat-summary">${esc(d.summary)}</p>`;
@@ -1864,16 +2294,21 @@ async function gContrastPanel(word) {
   const p = gPanel((jp ? "訳語と原語の意味を並べて比べる：" : "Contrast: ") + word, `<p class="muted">${jp ? "日本語訳の意味と、原語の意味を並べて取得中…" : "…"}</p>`, word);
   let o = {}, a = {};
   try { [o, a] = await Promise.all([api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}`), api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`)]); } catch (e) {}
-  if (!(o.general_meaning || []).length && !(a.components || []).length && !(a.chain || []).length) {   // A3: 両源とも空→別源を実走行
+  const anatomyLayers = Array.isArray(a.segment_layers) ? a.segment_layers : [];
+  const anatomyHasContent = anatomyLayers.some(x => x && Array.isArray(x.units) && x.units.length)
+    || (Array.isArray(a.components) && a.components.length)
+    || (Array.isArray(a.chain) && a.chain.length);
+  if (!(o.general_meaning || []).length && !anatomyHasContent) {   // A3: 両源とも空→別源を実走行
     await autoFallback(word, "contrast", p.querySelector(".gp-body")); return;
   }
   const jaMean = (o.general_meaning || []).map(s => `<li>${esc(s.length > 200 ? s.slice(0, 200) + "…" : s)}</li>`).join("") || `<li class="muted">—</li>`;
   const cw = o.collapse_warning;
   const jaCollapse = cw && cw.lemmas && cw.lemmas.length ? `<p class="srcline">${jp ? "※この一語に埋没した原語（クリックで探索）：" : "collapsed: "}${cw.lemmas.map(l => `<a href="#" class="ext-term" data-w="${esc(l.lemma)}">${esc(l.lemma)}</a>`).join("・")}</p>` : "";
-  const comps = (a.components || []).map(c => `<li><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}</li>`).join("");
-  const chain = (a.chain || []).map(c => `<li>${esc(c.lang)}：<a href="#" class="ext-term" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `「${esc(c.gloss)}」` : ""}</li>`).join("");
-  const origHtml = (comps || chain)
-    ? `${comps ? `<p class="srcline">${jp ? "構成要素（元のパーツと意味）" : "components"}</p><ul class="ct-ul">${comps}</ul>` : ""}${chain ? `<p class="srcline">${jp ? "変容の連鎖（原語へ）" : "chain"}</p><ul class="ct-ul">${chain}</ul>` : ""}`
+  const comps = (Array.isArray(a.components) ? a.components : []).map(c => `<li><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}</li>`).join("");
+  const chain = (Array.isArray(a.chain) ? a.chain : []).map(c => `<li>${esc(c.lang)}：<a href="#" class="ext-term" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `「${esc(c.gloss)}」` : ""}</li>`).join("");
+  const semantic = segmentLayersHtml(a.segment_layers, { includeWhole: false, includeCharacter: false });
+  const origHtml = (semantic || comps || chain)
+    ? `${semantic}${comps ? `<p class="srcline">${jp ? "文字・語源の構成要素（補助）" : "components"}</p><ul class="ct-ul">${comps}</ul>` : ""}${chain ? `<p class="srcline">${jp ? "変容の連鎖（原語へ）" : "chain"}</p><ul class="ct-ul">${chain}</ul>` : ""}`
     : `<p class="muted">${jp ? "（原語の意味は下の入り口から辿れます）" : "—"}</p>`;
   p.querySelector(".gp-body").innerHTML = `
     <p class="muted">${jp ? "左の【日本語訳の意味】と右の【原語の意味】を、機械の判定でなく、あなた自身の目で並べて比べてください。字面が何を隠しているか（例：弁証法の「対話性」）が、並べることで見えてきます。" : "Compare the two meaning-spaces yourself."}</p>
@@ -1905,6 +2340,41 @@ function gAuthorPanel(n) {
     <p class="srcline"><a href="${wp}" target="_blank">${jp ? "Wikipediaで開く" : "Wikipedia"}</a> · <a href="/deepsearch?q=${encodeURIComponent(n.label)}&lang=${LANG}"${originLinkAttr()}>${jp ? "深掘り探索プロンプト" : "deep-search"}</a></p>
     <p class="srcline muted">${jp ? "著者固有の用法（その著作でこの語がどう使われたか）・時代性・年表は整備中です。" : "Author-specific usage / timeline are being built."}</p>`;
   gPanel((jp ? "著者：" : "Author: ") + n.label, body, n.label);
+}
+
+// 分解の表示契約: 語全体を先に置き、意味のまとまりを主表示にし、文字は補助へ下げる。
+// segment_layers は API から来た構造だけを描画する。ここで意味を推測・合成しない。
+function segmentLayersHtml(layers, opts) {
+  opts = opts || {};
+  const jp = LANG === "ja";
+  const ls = Array.isArray(layers) ? layers : [];
+  const whole = ls.find(x => x && x.level === "whole");
+  const semantic = ls.find(x => x && x.level === "semantic");
+  const morphology = ls.find(x => x && x.level === "morphology");
+  const character = ls.find(x => x && x.level === "character");
+  let h = "";
+  if (opts.includeWhole !== false && whole && whole.units && whole.units.length) {
+    const u = whole.units[0];
+    h += `<div class="segment-whole"><span class="segment-kicker">${jp ? "語全体" : "whole term"}</span><b>${esc(u.text || "")}</b></div>`;
+  }
+  const primary = semantic || morphology;
+  if (primary && primary.units && primary.units.length) {
+    const label = semantic ? (jp ? "意味のまとまり（優先）" : "Meaningful units (primary)")
+                           : (jp ? "語源的なまとまり" : "Etymological units");
+    h += `<div class="segment-block segment-primary"><p class="segment-heading">${label}</p>`
+      + `<p class="segment-note">${jp ? "まずこの単位で読み、必要な時だけ下の文字・語源へ進みます。" : "Read these units first; open character or etymological detail only when useful."}</p>`
+      + `<div class="segment-units">`
+      + primary.units.map(u => `<span class="segment-unit"><a href="#" class="ext-term" data-w="${esc(u.text || "")}">${esc(u.text || "")}</a>${u.gloss ? `<small>${esc(u.gloss)}</small>` : ""}</span>`).join(`<span class="segment-join">＋</span>`)
+      + `</div></div>`;
+  }
+  if (opts.includeCharacter !== false && character && character.units && character.units.length) {
+    h += `<details class="segment-secondary"><summary>${jp ? "文字構成（補助）を開く" : "Open character composition (secondary)"}</summary>`
+      + `<p class="segment-note">${jp ? "文字辞書の義は、語全体の意味そのものではありません。意味のまとまりを確認した後の補助情報です。" : "Character glosses are supporting evidence, not the meaning of the whole term."}</p>`
+      + `<div class="segment-units segment-chars">`
+      + character.units.map(u => `<span class="segment-unit"><a href="#" class="ext-term" data-w="${esc(u.text || "")}">${esc(u.text || "")}</a>${u.gloss ? `<small>${esc(u.gloss)}</small>` : ""}</span>`).join(`<span class="segment-join">＋</span>`)
+      + `</div></details>`;
+  }
+  return h;
 }
 
 // contextual action menu — the dimension of a WORD (origin/meaning/translations)
@@ -1970,21 +2440,35 @@ function gActions(n) {
 function gLensMenu(W) {
   const jp = LANG === "ja";
   const items = LENSES.map(Lz => ({ key: Lz.key, label: jp ? Lz.label : Lz.en, cap: jp ? Lz.cap : "" }));
-  gPanel((jp ? "見方を選ぶ（この地図の切り口）：" : "Views: ") + W,
+  const p = gPanel((jp ? "見方を選ぶ（この地図の切り口）：" : "Views: ") + W,
     `<p class="muted">${jp ? "同じ言葉を、いくつもの見方で。どれもこの地図（重力場）の切り口です。選ぶとこの語を中心にその見方で描き直します。" : "Views of this map; each re-draws around this word."}</p>`
     + `<div class="lens-list">` + items.map((it, i) =>
-        `<button type="button" class="lens-row" data-i="${i}" data-k="${esc(it.key)}"><b>${esc(it.label)}</b><span class="lens-cap">${esc(it.cap)}</span></button>`).join("") + `</div>`);
-  const p = $("graph-panel"); if (!p) return;
+        `<button type="button" class="lens-row" data-i="${i}" data-k="${esc(it.key)}"><b>${esc(it.label)}</b><span class="lens-cap">${esc(it.cap)}</span></button>`).join("") + `</div>`, W);
+  if (!p) return;
   p._lensItems = items;
   p.querySelectorAll(".lens-row").forEach(b => b.addEventListener("click", () => {
-    const it = p._lensItems[+b.dataset.i]; p.remove(); dispatchAction("applyLens", { term: W }, currentViewState(), { surface: "lens-menu", lensKey: it.key });
+    const it = p._lensItems[+b.dataset.i]; if (!it) return;
+    // recenter=この操作が中心語を移すか（W が現在の中心でないとき真）。registry の effectWithArg が
+    // これを見て map（同語＝Context保持）か center（別語を中心化＝Map中心+Context更新）かを宣言する。
+    dispatchAction("applyLens", { term: W }, currentViewState(),
+      { surface: "lens-menu", lensKey: it.key, recenter: !!(G && G.rootQ !== W) });
   }));
 }
 // W を中心にした上でレンズを適用（他ノードの「見方」も、その語を中心に据えてから効く＝普遍）
 async function applyLensFor(W, key) {
-  if (G && G.rootQ === W && G_raw) { await applyLensBuild(key); navCommit(currentViewState()); return; }
-  await originRecenter(W);
-  if (G && G.rootQ === W) { await applyLensBuild(key); navCommit(currentViewState()); }   // 見方切替の確定commit（txn中はdispatcherが一括）
+  if (G && G.rootQ === W && G_raw) {
+    await applyLensBuild(key); navCommit(currentViewState());
+    return !!(G && G_raw && G_lens === key);
+  }
+  // 同一性の判定は文字列完全一致（G.rootQ===W）でなく、正典transaction（originRecenter→originExplore）
+  // 自身の成功シグナルで行う。大文字小文字・NFKC正規化・原語探索でrootの表記がWと変わっても
+  // （例: Dialectic→dialectic）、transactionが構築に成功していればlensは必ず適用する（無作用にしない・
+  // 半田様2026-08-07既知不具合の是正）。transactionが失敗（stale/構築不可）した場合はlensを適用しない
+  // ＝別語や存在しない状態への誤適用を防ぐ。
+  const ok = await originRecenter(W);
+  if (!ok || !G || !G_raw) return false;
+  await applyLensBuild(key); navCommit(currentViewState());   // 見方切替の確定commit（txn中はdispatcherが一括）
+  return !!(G && G_raw && G_lens === key);
 }
 
 function gMenu(cx, cy, n) {
@@ -2017,7 +2501,7 @@ function gMenuEdge(cx, cy, ei) {
 function _gmFill(m, title, items) {
   m._items = items;
   m.innerHTML = `<div class="gm-title" title="ドラッグで移動できます">⠿ ${esc(title)}</div>` + items.map((it, i) =>
-    `<div class="gm-item${it.soon ? " gm-soon" : ""}" data-i="${i}">${esc(it.t)}${it.soon ? "（次段）" : ""}</div>`).join("");
+    `<button type="button" class="gm-item${it.soon ? " gm-soon" : ""}" data-i="${i}">${esc(it.t)}${it.soon ? "（次段）" : ""}</button>`).join("");
   const tt = m.querySelector(".gm-title");
   tt.addEventListener("pointerdown", (ev) => {
     ev.stopPropagation(); ev.preventDefault();
@@ -2029,54 +2513,54 @@ function _gmFill(m, title, items) {
 }
 // ホバー追従: メニューを出したまま別factorにホバーしたら、そのノードへ内容(タイトル+項目)を差し替える
 function gMenuRetarget(n) {
-  const m = $("graph-menu"); if (!m || !n || G.menuNode === n) return;
-  G.menuNode = n;
+  const m = surfEl("menu"); if (!m || !n || (G && G.menuNode === n)) return;
+  if (G) G.menuNode = n;
   if (MENUCTX) MENUCTX.n = n;   // ホバー追従で対象が変わったら戻る文脈も更新（Codex E2是正: 元ノードへ誤帰還を防ぐ）
   _gmFill(m, (LANG === "ja" ? "選択：" : "Selected: ") + n.label, gActions(n));
+  surfPlace("menu");            // 項目数が変わっても Context と交差せず viewport 内に収める
 }
+// Menu の生成・配置・z は surface manager が一元決定する（座標系も fixed に統一）。
 function gShowMenu(cx, cy, title, items) {
-  gMenuClose();
   if (G) { G.lastX = cx; G.lastY = cy; }   // 処理中インジケータを選択付近に出すため記録
   const m = document.createElement("div");
-  m.id = "graph-menu";
-  document.body.appendChild(m);
+  surfCreate("menu", m, { x: cx, y: cy });
   _gmFill(m, title, items);
-  // ノードを覆わないよう、クリック点の右（はみ出す時は左）へずらして配置する
-  const w = m.offsetWidth || 300, h = m.offsetHeight || 200, gap = 24;
-  let x = cx + gap;
-  if (x + w > window.innerWidth - 10) x = cx - w - gap;
-  x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
-  let y = cy + window.scrollY - 12;
-  y = Math.max(window.scrollY + 8, Math.min(y, window.scrollY + window.innerHeight - h - 8));
-  m.style.left = x + "px"; m.style.top = y + "px";
+  surfPlace("menu");
   // BUGFIX: keep the item's pointerdown from reaching the document-level closer.
   m.addEventListener("pointerdown", (ev) => ev.stopPropagation());
-  m.addEventListener("click", (ev) => {
+  m.addEventListener("click", async (ev) => {
     const el = ev.target.closest(".gm-item"); if (!el) return;
     const it = m._items[Number(el.dataset.i)];
+    if (!it || m.dataset.busy === "1") return;
+    m.dataset.busy = "1";
+    m.setAttribute("aria-busy", "true");
+    m.querySelectorAll(".gm-item").forEach(x => { x.disabled = true; });
     gMenuClose();
-    if (!it) return;
     _panelFromMenu = true;   // この直後に開くパネルへ「←メニューに戻る」を付ける（戻る導線）
-    dispatchAction(it.action, it.target, currentViewState(), { surface: "popup", ...(it.ctx || {}) });
-    setTimeout(() => { _panelFromMenu = false; }, 0);
+    try {
+      const result = await dispatchAction(it.action, it.target, currentViewState(), { surface: "popup", ...(it.ctx || {}) });
+      // unknown action等でdispatcherが面を作れなかった場合だけ、閉じたMenuを元の位置へ戻す。
+      if (result && !result.ok && !surfEl("menu") && !surfEl("action")) gShowMenu(cx, cy, title, items);
+    } catch (err) {
+      console.error("menu action", err);
+      if (!surfEl("menu") && !surfEl("action")) gShowMenu(cx, cy, title, items);
+    } finally {
+      _panelFromMenu = false;
+    }
   });
-  G.menuCloser = (ev) => { if (!ev.target.closest("#graph-menu")) gMenuClose(); };
-  setTimeout(() => document.addEventListener("pointerdown", G.menuCloser), 0);
+  SURF.menuCloser = (ev) => { if (!ev.target.closest("#graph-menu")) gMenuClose(); };
+  setTimeout(() => { if (SURF.menuCloser) document.addEventListener("pointerdown", SURF.menuCloser); }, 0);
 }
-function gMenuClose() {
-  const m = $("graph-menu"); if (m) m.remove();
-  if (G && G.menuCloser) { document.removeEventListener("pointerdown", G.menuCloser); G.menuCloser = null; }
-}
+function gMenuClose() { surfDestroy("menu"); }
 // dismissible overlay panel (for menu actions that show their own content)
 // 語に関するパネルには term を渡す。すると下部に「この語で続ける」普遍フッターが必ず付き、
 // 空状態・失敗（例: 解剖で原語が特定できない）でも行き止まりにならず探索を続けられる（根源的・全パネル共通）。
 function gPanel(title, bodyHtml, term) {
-  const old = $("graph-panel"); if (old) old.remove();
   const jp = LANG === "ja";
+  const continueTerm = _activeTerm(term);
   const back = (_panelFromMenu && MENUCTX);   // ノードのメニューから開いた＝別メニューへ戻れるようにする
   const p = document.createElement("div");
-  p.id = "graph-panel";
-  const foot = term ? `<div class="gp-cont"><span class="gp-cont-h">🧭 ${jp ? `「${esc(term)}」で続ける` : `continue with “${esc(term)}”`}：</span>` + [
+  const foot = continueTerm ? `<div class="gp-cont"><span class="gp-cont-h">🧭 ${jp ? `「${esc(continueTerm)}」で続ける` : `continue with “${esc(continueTerm)}”`}：</span>` + [
     ["center", "🎯 " + (jp ? "中心に据える" : "centre")],
     ["lens", "👓 " + (jp ? "見方" : "views")],
     ["lang", "🌍 " + (jp ? "多言語" : "languages")],
@@ -2086,16 +2570,26 @@ function gPanel(title, bodyHtml, term) {
   ].map(([a, l]) => `<button type="button" class="gp-cont-b" data-a="${a}">${esc(l)}</button>`).join("") + `</div>` : "";
   p.innerHTML = `<div class="gp-head">${back ? `<button type="button" class="gp-back" title="${jp ? "このノードのメニューに戻って別の項目を選ぶ" : "back to menu"}">← ${jp ? "メニュー" : "menu"}</button>` : ""}<b>${esc(title)}</b><button type="button" class="gp-x">×</button></div>
     <div class="gp-body">${bodyHtml}</div>${foot}`;
-  document.body.appendChild(p);
-  // パネルを閉じる＝「パネル無し」も1つの確定状態（A2）。PANEL_CTXを消して1回だけcommitする。
-  const closePanel = () => { p.remove(); if (PANEL_CTX) { PANEL_CTX = null; if (!NAV.txn && !NAV.restoring) navCommit(currentViewState()); } };
+  // Action面の生成・置換・配置・z は surface manager が一元決定する（Context は破壊しない）
+  surfCreate("action", p, SURF.anchor.menu || ((G && G.lastX != null) ? { x: G.lastX, y: G.lastY } : null));
+  const closePanel = () => surfCloseAction(true);
   p.querySelector(".gp-x").addEventListener("click", closePanel);
   const bb = p.querySelector(".gp-back");
   if (bb) bb.addEventListener("click", () => { closePanel(); gReopenMenu(); });
-  const FMAP = { center: "center", lens: "lens", lang: "multilingual", ext: "external", combine: "combine", new: "newtab" };
-  p.querySelectorAll(".gp-cont-b").forEach(btn => btn.addEventListener("click", () => {
+  const FMAP = UI_ACTION_MAP.panelFooter;   // 面ごとに作用を再実装しない（registry宣言と同一）
+  p.querySelectorAll(".gp-cont-b").forEach(btn => btn.addEventListener("click", async () => {
     const a = FMAP[btn.dataset.a]; if (!a) return;
-    dispatchAction(a, { term }, currentViewState(), { surface: "panel-footer" });   // 単一Dispatcher経由
+    const footEl = btn.closest(".gp-cont");
+    if (btn.disabled || (footEl && footEl.dataset.busy === "1")) return;
+    if (footEl) { footEl.dataset.busy = "1"; footEl.querySelectorAll(".gp-cont-b").forEach(x => { x.disabled = true; }); }
+    const r = btn.getBoundingClientRect();
+    try {
+      await dispatchAction(a, { term: continueTerm }, currentViewState(), { surface: "panel-footer", anchor: { x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom + 6) } });
+    } catch (err) {
+      console.error("panel footer action", err);
+    } finally {
+      if (footEl && footEl.isConnected) { delete footEl.dataset.busy; footEl.querySelectorAll(".gp-cont-b").forEach(x => { x.disabled = false; }); }
+    }
   }));
   return p;
 }
@@ -2164,9 +2658,12 @@ function _panoOverlook(d, cx) {
 }
 function _panoHistory(d) {   // 語の来歴＝日本語漢字表記の語形・構成要素・原語表記・出典（英語散文は出さない）
   const a = d.anatomy || {};
-  const hasForm = (a.components || []).length || (a.chain || []).length;
+  const semantic = ((a.segment_layers || []).find(x => x && x.level === "semantic") || {}).units || [];
+  const hasForm = semantic.length || (a.components || []).length || (a.chain || []).length;
   if (!hasForm) return "";   // 語形・構成が無ければ来歴は出さない（英語散文だけでは出さない）
   let h = "";
+  if (semantic.length) h += `<p class="pano-lbl">意味のまとまり（優先）</p><div class="anat-comp segment-panorama">`
+    + semantic.map(u => `${_entLink(u.text, "word", "segment:" + u.text)}${u.gloss ? `<span class="anat-gloss">「${esc(u.gloss)}」</span>` : ""}`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
   // 原語表記は保持し、glossは接地済みの日本語がある時だけ併記（英語訳は原語の意味として主表示しない）
   if ((a.components || []).length) h += `<p class="pano-lbl">語形・構成要素</p><div class="anat-comp">`
     + a.components.map(c => { const g = _jaGloss(c.meaning);
@@ -2198,10 +2695,20 @@ function _panoOrigSplit(d) {
 //  C=実在する語・人物・著作(.pano-ent) クリックで既存の標準操作メニュー(gMenu)／D=開閉(summary)・外部出典(a[target=_blank])
 // Cは表示文字列や親見出しから対象を逆算せず、data-term/data-kind/data-eid（stable ID）を保持する。
 const _ENT_KINDS = new Set(["word", "original", "language", "related", "opposite", "author", "work", "application", "concept"]);
+// 実グラフに同じ語の実体ノードがあれば、その **stable ID** を採る（"related:"+w のような合成IDが
+// グラフの id（rel:西洋哲学 等）と食い違い、ラベル一致fallbackで domain ノードへ化けるのを防ぐ）。
+function _gnodeFor(term, kind) {
+  const pool = (G && G.nodes) || [];
+  const t = String(term || "");
+  return pool.find(n => n && _ENT_KINDS.has(n.kind) && n.kind === kind && (n.q || n.label) === t)
+      || pool.find(n => n && _ENT_KINDS.has(n.kind) && (n.q || n.label) === t) || null;
+}
 function _entLink(term, kind, id, label) {
   const t = String(term == null ? "" : term).trim(); if (!t) return "";
   const k = _ENT_KINDS.has(kind) ? kind : "word";
-  return `<a href="#" class="pano-ent" data-term="${esc(t)}" data-kind="${esc(k)}" data-eid="${esc(id || (k + ":" + t))}">${esc(label || t)}</a>`;
+  const gn = _gnodeFor(t, k);
+  const eid = (gn && gn.id) || id || (k + ":" + t);
+  return `<a href="#" class="pano-ent" data-term="${esc(t)}" data-kind="${esc(k)}" data-eid="${esc(eid)}">${esc(label || t)}</a>`;
 }
 // Cのクリック＝派生グラフノードと同じ正典経路（既存gMenu）。親要素への伝播で区分名が選ばれるのを止める。
 function _panoBindEntities(panel) {
@@ -2211,7 +2718,8 @@ function _panoBindEntities(panel) {
     const term = a.dataset.term, kind = a.dataset.kind || "word", eid = a.dataset.eid;
     if (!term) return;                                   // 空targetでは何もしない
     const pool = (G && G.nodes) || [];
-    const node = pool.find(n => n.id === eid) || pool.find(n => (n.q || n.label) === term)
+    // 構造ノード（domain等）へは決して落とさない＝実体ノードか、data属性から作る実体だけを対象にする
+    const node = pool.find(n => n.id === eid && _ENT_KINDS.has(n.kind)) || _gnodeFor(term, kind)
       || { id: eid, label: term, q: term, kind, layer: null };
     const r = a.getBoundingClientRect();
     gMenu(Math.round(r.left + r.width / 2), Math.round(r.bottom + 6), node);
@@ -2317,14 +2825,19 @@ function _panoBranches(d, cx) {
   return `<p class="pano-note">ここからたどれる言葉（クリックすると、その語の操作メニューを開きます）。</p>`
     + `<p class="pano-branch">${chips.join("　")}</p>`;
 }
-function _panoShell(title) {   // 操作行は撤去（地図操作は地図上部メニューだけに置く）。ヘッダは title＋閉じるのみ。
-  const old = $("graph-panel"); if (old) old.remove();
+// Context面（右側の概念全景）。Action(#graph-panel)とは**別のDOM id**にする＝Action系Actionが
+// Contextを破壊しない（id衝突の根治・半田様2026-08-02）。生成・置換・破棄は surface manager 経由。
+function _panoShell(title, term) {   // ヘッダは title＋閉じる、下部には常時使える次アクションを置く。
   const jp = LANG === "ja";
-  const p = document.createElement("div"); p.id = "graph-panel"; p.className = "gp-wide";
-  p.innerHTML = `<div class="gp-head"><b>${esc(title)}</b><button type="button" class="gp-x" title="${jp ? "閉じる" : "close"}">×</button></div><div class="gp-body"></div>`;
-  document.body.appendChild(p);
-  const closePanel = () => { p.remove(); if (PANEL_CTX) { PANEL_CTX = null; if (!NAV.txn && !NAV.restoring) navCommit(currentViewState()); } };
-  p.querySelector(".gp-x").addEventListener("click", closePanel);
+  const p = document.createElement("div"); p.className = "gp-wide";
+  const next = term ? noMiss(term, { lead: jp ? `「${term}」から次にできること` : `Next actions for “${term}”` }) : "";
+  p.innerHTML = `<div class="gp-head"><b>${esc(title)}</b><button type="button" class="gp-x" title="${jp ? "閉じる" : "close"}">×</button></div><div class="gp-body"></div><div class="pano-next">${next}</div>`;
+  surfCreate("context", p);
+  // ユーザーが×で閉じるまで（または別全景へ置換されるまで）Contextは残る
+  p.querySelector(".gp-x").addEventListener("click", () => {
+    surfDestroy("context");
+    if (!NAV.txn && !NAV.restoring) navCommit(currentViewState());
+  });
   return p;
 }
 function _panoBindLazy(bodyEl) {
@@ -2351,21 +2864,21 @@ function _panoBindLazy(bodyEl) {
 function _panoBindToc(panel) {
   const links = [...panel.querySelectorAll(".pano-toc-a")];
   if (!links.length) return;
+  const scroll = panel.querySelector(".gp-body") || panel;
   let locked = null;   // 明示クリックで選ばれた節id（ユーザーが自分でスクロールするまで維持）
   const secs = () => [...panel.querySelectorAll(".pano-sec")];
   // 判定線＝固定ヘッダ＋固定目次の直下（client座標・スクロール量に依存しない）
   const line = () => {
-    const pr = panel.getBoundingClientRect();
-    const hd = panel.querySelector(".gp-head"), tc = panel.querySelector(".pano-toc");
-    const h = (hd ? hd.getBoundingClientRect().height : 0) + (tc ? tc.getBoundingClientRect().height : 0);
-    return pr.top + h + 8;
+    const pr = scroll.getBoundingClientRect();
+    const tc = panel.querySelector(".pano-toc");
+    return pr.top + (tc ? tc.getBoundingClientRect().height : 0) + 8;
   };
   const paint = (id) => links.forEach(a => a.classList.toggle("active", ("pano-" + a.dataset.sec) === id));
   // 通常スクロール時に「いま主に見えている節」を同一座標系で選ぶ
   const visibleId = () => {
     const list = secs(); if (!list.length) return null;
-    const L = line(), pr = panel.getBoundingClientRect();
-    const atBottom = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 2;
+    const L = line(), pr = scroll.getBoundingClientRect();
+    const atBottom = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 2;
     if (atBottom) {   // 下端＝先頭を上端まで運べない。表示中の節のうち最後のものを選ぶ
       const vis = list.filter(s => { const r = s.getBoundingClientRect(); return r.bottom > L && r.top < pr.bottom; });
       return (vis[vis.length - 1] || list[list.length - 1]).id;
@@ -2380,17 +2893,14 @@ function _panoBindToc(panel) {
     const id = "pano-" + a.dataset.sec, s = panel.querySelector("#" + id);
     locked = id; paint(id);                                        // 押した項目を即active（短いパネルでも変わる）
     if (s) s.scrollIntoView({ behavior: "smooth", block: "start" });
-    setTimeout(() => {                                             // スクロール完了後: 実際に上端へ来ていれば通常判定へ戻す
-      if (locked !== id) return;
-      const t = panel.querySelector("#" + id); if (!t) { locked = null; return; }
-      const r = t.getBoundingClientRect(), L = line();
-      if (r.top <= L + 6) { locked = null; paint(visibleId()); }    // 上端へ運べた＝表示中の節で再判定（同じ節になる）
-      else paint(id);                                              // 下端等で運べない＝押した項目を維持（誤反転させない）
-    }, 900);
+    // 明示クリックのactiveは**ユーザー自身が動かすまで**維持する（半田様2026-08-02）。
+    // 旧実装はスクロール完了後に visibleId() で再判定していたが、smooth scroll の残りイベントや
+    // 下端到達（atBottom分岐）で「表示中の最後の節」へ誤反転しうる（bearers→branches の実測回帰）。
+    // ロック解除は下の wheel/touchmove/keydown（＝ユーザー操作）だけが行う。
   }));
   // ユーザー自身の操作（ホイール/タッチ/キー）でロック解除＝明示クリック中と通常スクロール中を区別する
   ["wheel", "touchmove", "keydown"].forEach(ev => panel.addEventListener(ev, () => { locked = null; }, { passive: true }));
-  panel.addEventListener("scroll", spy);
+  scroll.addEventListener("scroll", spy);
   paint(visibleId());
 }
 async function gPanorama(ctx) {
@@ -2414,11 +2924,18 @@ async function gPanorama(ctx) {
   const cx = { term, node, nodeId: node && node.id, nodeKind: node && node.kind, layer: node && node.layer,
     rootQ: (G && G.rootQ) || term, parentTerm: parent ? (parent.q || parent.label) : ((G && G.rootQ) || ""), lens: (typeof G_lens !== "undefined" ? G_lens : "all") };
   const title = (cx.parentTerm && cx.parentTerm !== term) ? `${term}（${cx.parentTerm}の中の）` : term;
-  const p = _panoShell(title);
+  const p = _panoShell(title, term);
+  CONTEXT_CTX = { term };   // Contextの対象＝この語（ViewStateに入り、戻る/進むでMapと一緒に復元される）
   const bodyEl = p.querySelector(".gp-body");
   bodyEl.innerHTML = `<p class="muted">${jp ? "概念全景を読み込み中…" : "loading panorama…"}</p>`;
-  const d = await panoData(term);   // /api/origin＋/api/anatomy を1回だけ取得（節間で共有）
-  if (!$("graph-panel") || $("graph-panel") !== p) return;   // 途中で閉じ/遷移したら描かない
+  let d;
+  try { d = await panoData(term); } catch (e) {
+    console.error("panorama", e);
+    if (surfEl("context") !== p) return false;
+    bodyEl.innerHTML = `<div class="pano-outcome"><p class="pano-note">${jp ? "概念全景の取得を見送りました。検索条件を保ったまま、下の入口や外部の専門情報源から続けられます。" : "Panorama retrieval was deferred. Continue with the same term below or via external sources."}</p>${extResourcesHtml(term, {})}</div>`;
+    return false;
+  }   // /api/origin＋/api/anatomy を1回だけ取得（節間で共有）
+  if (surfEl("context") !== p) return;   // 途中で閉じ/遷移したら描かない
   // 実在する節だけ（番号なし・見出し名は目次と同一）
   const built = [
     _panoSection("history", "語の来歴", _panoHistory(d)),
@@ -2431,40 +2948,122 @@ async function gPanorama(ctx) {
   ].filter(Boolean);
   const toc = built.length ? `<nav class="pano-toc"><span class="pano-toc-h">この語の見どころ</span>`
     + built.map(s => `<a href="#" class="pano-toc-a" data-sec="${s.id}">${esc(s.heading)}</a>`).join("") + `</nav>` : "";
-  bodyEl.innerHTML = _panoLead(d, cx) + _panoOverlook(d, cx) + toc + built.map(s => s.html).join("");
+  bodyEl.innerHTML = built.length
+    ? _panoLead(d, cx) + _panoOverlook(d, cx) + toc + built.map(s => s.html).join("")
+    : `<div class="pano-outcome"><p class="pano-note">${jp ? "この語について表示できる接地済みの全景データがまだ返っていないため、結果を作らず次の入口を残します。" : "No grounded panorama sections were returned yet; the next entry points remain available."}</p>${extResourcesHtml(term, {})}</div>`;
   _panoBindLazy(bodyEl);
   _panoBindToc(p);
   _panoBindEntities(p);   // C（実在する語・人物・著作）のクリック＝既存の標準操作メニュー
   if (ctx.secHint) { const s = $("pano-" + ctx.secHint); if (s) s.scrollIntoView({ behavior: "smooth", block: "start" }); }   // domainノード等の「関心のある箇所へ進む」
 }
 
+function _combineSearchQuery(a, b, op) {
+  const qa = `"${String(a || "").trim()}"`, qb = `"${String(b || "").trim()}"`;
+  if (op === "or") return `${qa} OR ${qb}`;
+  if (op === "not") return `${qa} -${qb}`;
+  return `${qa} ${qb}`;
+}
+
+function _combineExternalLinks(a, b, op) {
+  const q = encodeURIComponent(_combineSearchQuery(a, b, op));
+  const links = [
+    ["Google", `https://www.google.com/search?q=${q}`],
+    ["Google Scholar", `https://scholar.google.com/scholar?q=${q}`],
+    ["Bing", `https://www.bing.com/search?q=${q}`],
+    ["DuckDuckGo", `https://duckduckgo.com/?q=${q}`],
+    ["Wikipedia", `https://ja.wikipedia.org/w/index.php?search=${q}`],
+    ["OpenAlex", `https://openalex.org/works?search=${q}`],
+  ];
+  return `<div class="ext-cat combine-ext">${links.map(([label, url]) =>
+    `<a class="ext-link" href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>`).join(" ")}</div>`;
+}
+
+// 組み合わせの「空/取得失敗」は、検索を実行しなかったことではない。
+// 検索条件・結果状態・原因・次の実行先を同じ面に残し、元Mapを黙って表示し続けない。
+function gCombineOutcomePanel(a, b, op, data, status) {
+  const jp = LANG === "ja";
+  const note = String((data && data.note) || "").trim();
+  const sourceGap = status === "error" || /準備中|利用できない|接続|未応答|timeout|Timeout|失敗/i.test(note);
+  const opLabel = { and: "AND", semand: "意味で絞る", not: "NOT", or: "OR", compare: "比較" }[op] || op;
+  const query = _combineSearchQuery(a, b, op);
+  const reason = status === "error"
+    ? (jp ? "内部の組み合わせ検索源は時間枠内に応答情報を返さなかったため、元の地図を保持しました。" : "The internal combination source did not return within the time window; the current map was kept.")
+    : sourceGap
+      ? (jp ? "内部の一般ウェブ検索源から表示に使える結果が届かなかったため、元の地図を保持しました。" : "The internal web source returned no displayable result; the current map was kept.")
+      : (jp ? "この条件の一致情報が返らなかったため、元の地図を保持しました。" : "No matching information was returned; the current map was kept.");
+  const detail = note ? `<p class="combine-reason-detail">${esc(note)}</p>` : "";
+  const headline = status === "error"
+    ? (jp ? "内部検索：応答情報を待つ時間枠を終了しました" : "Internal search: the response window ended")
+    : sourceGap
+      ? (jp ? `${opLabel}検索を試み、確認面を表示しました` : `${opLabel} search was attempted; the check view is shown`)
+      : (jp ? `${opLabel}検索を実行しました` : `${opLabel} search was executed`);
+  const html = `<div class="combine-outcome" data-combine-status="${esc(status)}">
+    <p class="combine-status"><b>${headline}</b></p>
+    <p>${esc(reason)}</p>${detail}
+    <p class="combine-query"><span class="srcline">${jp ? "検索条件" : "query"}</span><br><code>${esc(query)}</code></p>
+    <h4 class="gp-h">${jp ? "同じ条件で検索を続ける" : "Continue with the same condition"}</h4>
+    ${_combineExternalLinks(a, b, op)}
+    <p><button type="button" id="combine-edit" class="cmb-op">${jp ? "条件を変更して再検索" : "edit and retry"}</button></p>
+  </div>`;
+  PANEL_CTX = { action: "combine", term: a };
+  const p = gPanel((jp ? "組み合わせ検索：" : "Combination search: ") + `${a} ${opLabel} ${b}`, html, a);
+  const edit = p && p.querySelector("#combine-edit");
+  if (edit) edit.addEventListener("click", () => {
+    dispatchAction("combine", { term: a }, currentViewState(), { surface: "combine-recovery", retryB: b, retryOp: op });
+  });
+  return p;
+}
+
 // A: ユーザー主導の組み合わせ探索（半田様のAND案）。語を入れて操作を選ぶ。
-function gCombinePanel(a) {
+function gCombinePanel(a, initialB = "", initialOp = "and") {
   const jp = LANG === "ja";
   const ops = [["and", "絞り込み（AND）"], ["semand", "意味で絞る"], ["not", "除外（NOT）"],
                ["or", "合わせる（OR）"], ["compare", "比較（vs）"]];
   const html = `<p class="muted">${jp ? `「${esc(a)}」に別の語を組み合わせて探索します。語を入れて操作を選んでください。` : `Combine “${esc(a)}” with another word.`}</p>
-    <input id="cmb-b" class="cmb-in" placeholder="${jp ? "組み合わせる語（例：教育／労働／音楽）" : "second word"}" autocomplete="off" />
-    <div class="cmb-ops">${ops.map(([k, l]) => `<button type="button" class="cmb-op" data-op="${k}">${esc(l)}</button>`).join("")}</div>
-    <p class="srcline muted">${jp ? "AND=両方に関わる／意味で絞る=意味の近縁をその観点で／NOT=除外／OR=合わせる／比較=共有と差分。ORと比較は空でも可。" : ""}</p>`;
+    <input id="cmb-b" class="cmb-in" value="${esc(initialB)}" placeholder="${jp ? "組み合わせる語（例：教育／労働／音楽）" : "second word"}" autocomplete="off" />
+    <div class="cmb-ops">${ops.map(([k, l]) => `<button type="button" class="cmb-op${k === initialOp ? " on" : ""}" data-op="${k}">${esc(l)}</button>`).join("")}</div>
+    <p class="srcline muted">${jp ? "AND=両方に関わる／意味で絞る=意味の近縁をその観点で／NOT=除外／OR=合わせる／比較=共有と差分。ORと比較は空でも可。" : ""}</p>
+    <p id="cmb-note" class="combine-form-note" role="status" aria-live="polite"></p>`;
   const p = gPanel((jp ? "別の語と組み合わせる：" : "Combine: ") + a, html, a);
   const inp = p.querySelector("#cmb-b");
+  const formNote = p.querySelector("#cmb-note");
   setTimeout(() => inp && inp.focus(), 30);
   p.querySelectorAll(".cmb-op").forEach(btn => btn.addEventListener("click", () => {
     const b = (inp.value || "").trim();
-    if (!b && btn.dataset.op !== "or") { inp.focus(); return; }
-    p.remove(); dispatchAction("combine", { term: a }, currentViewState(), { surface: "combine-form", b, op: btn.dataset.op });
+    if (!b && btn.dataset.op !== "or") {
+      if (formNote) formNote.textContent = jp
+        ? "2つ目の語を入力してください。例：吉本隆明"
+        : "Enter a second word, for example: Yoshimoto Takaaki.";
+      inp.focus(); return;
+    }
+    if (formNote) formNote.textContent = "";
+    surfCloseAction(false); dispatchAction("combine", { term: a }, currentViewState(), { surface: "combine-form", b, op: btn.dataset.op });
   }));
-  if (inp) inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { const b = inp.value.trim(); if (b) { p.remove(); dispatchAction("combine", { term: a }, currentViewState(), { surface: "combine-form", b, op: "and" }); } } });
+  if (inp) inp.addEventListener("keydown", (e) => { if (e.key === "Enter") {
+    const b = inp.value.trim();
+    if (b) { if (formNote) formNote.textContent = ""; surfCloseAction(false); dispatchAction("combine", { term: a }, currentViewState(), { surface: "combine-form", b, op: "and" }); }
+    else if (formNote) formNote.textContent = jp ? "2つ目の語を入力してください。例：吉本隆明" : "Enter a second word.";
+  } });
 }
 async function gCombineRun(a, b, op) {
   const jp = LANG === "ja";
   gBusy(true, jp ? "組み合わせ探索中…" : "combining…", G && G.lastX, G && G.lastY);
   let d;
-  try { d = await api(`/api/combine?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&op=${op}&lang=${LANG}`); }
-  catch (e) { console.error(e); gBusy(false); PANEL_CTX = { action: "combine", term: a }; gPanel(jp ? "組み合わせ探索" : "Combine", softLine(a), a); return; }   // 生エラーを出さず続行フッターへ
+  // SearXNG→Wikipediaの二段経路は通常の単一APIより時間がかかる。
+  // 共通20秒制限で正常な退避結果を途中で捨てない一方、45秒で説明面へ収束する。
+  try { d = await api(`/api/combine?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&op=${op}&lang=${LANG}`, { timeout: 45000 }); }
+  catch (e) {
+    console.error(e); gBusy(false);
+    gCombineOutcomePanel(a, b, op, { note: e && e.name === "TimeoutError"
+      ? "内部検索源の応答が時間内に返りませんでした。"
+      : "内部検索源への接続が完了しませんでした。" }, "error");
+    return false;
+  }
   gBusy(false);
-  if (!d.nodes || d.nodes.length <= 1) { PANEL_CTX = { action: "combine", term: a }; gPanel(jp ? "組み合わせ探索" : "Combine", softLine(a), a); return; }   // 否定表示を出さず続行フッターへ
+  if (!d.nodes || d.nodes.length <= 1 || d.has_results === false) {
+    gCombineOutcomePanel(a, b, op, d, "empty");
+    return false;
+  }
   showCanvas();
   G_raw = d; G_lens = "all";                    // 組み合わせ結果を今のグラフに描く
   const note = $("graph-note"); if (note) note.textContent = d.note || "";
@@ -2507,22 +3106,24 @@ function gPlayPanel() {
     <p><button type="button" id="play-bridge" class="cmb-op">${jp ? "どうつながる？" : "connect"}</button></p>
     <h4 class="gp-h">❓ ${jp ? "クイズ" : "Quiz"}</h4>
     <p><button type="button" id="play-quiz" class="cmb-op">${esc(cur || "—")} ${jp ? "で出題" : "quiz"}</button></p>
-    <div id="play-out"></div>`;
-  const p = gPanel(jp ? "遊ぶ：つなぐ・おみくじ・クイズ" : "Play", html);
+    <p id="play-note" class="combine-form-note" role="status" aria-live="polite"></p><div id="play-out"></div>`;
+  const p = gPanel(jp ? "遊ぶ：つなぐ・おみくじ・クイズ" : "Play", html, cur);
   p.querySelector("#play-omi").addEventListener("click", () => {
     const pool = OMIKUJI.filter(x => !G || x !== G.rootQ);   // 現在語を除外＝必ず別概念へ移動（決定論的に移る）
     const w = pool[Math.floor(Math.random() * pool.length)] || OMIKUJI[0];
-    p.remove(); dispatchAction("center", { term: w }, currentViewState(), { surface: "play" });   // 単一Dispatcher経由
+    surfCloseAction(false); dispatchAction("center", { term: w }, currentViewState(), { surface: "play" });   // 単一Dispatcher経由
   });
   p.querySelector("#play-bridge").addEventListener("click", () => {
     const a = (p.querySelector("#play-a").value || cur).trim(), b = (p.querySelector("#play-b").value || "").trim();
-    if (!a || !b) { p.querySelector("#play-b").focus(); return; }
-    p.remove(); dispatchAction("combine", { term: a }, currentViewState(), { surface: "play", b, op: "and" });
+    const note = p.querySelector("#play-note");
+    if (!a || !b) { if (note) note.textContent = jp ? "2つの語を入力してください。例：弁証法／音楽" : "Enter two words, for example: dialectic / music."; p.querySelector("#play-b").focus(); return; }
+    if (note) note.textContent = "";
+    surfCloseAction(false); dispatchAction("combine", { term: a }, currentViewState(), { surface: "play", b, op: "and" });
   });
   p.querySelector("#play-quiz").addEventListener("click", async () => {
     const out = p.querySelector("#play-out"); if (!cur) { out.innerHTML = `<p class="muted">${jp ? "先に語を選んでください。" : "pick a word first."}</p>`; return; }
     out.innerHTML = `<p class="muted">${jp ? "出題準備中…" : "…"}</p>`;
-    let d; try { d = await api(`/api/origin?q=${encodeURIComponent(cur)}&lang=${LANG}`); } catch (e) { out.innerHTML = noMiss(cur); return; }   // 否定表示を出さず建設的代替へ
+    let d; try { d = await api(`/api/origin?q=${encodeURIComponent(cur)}&lang=${LANG}`); } catch (e) { out.innerHTML = `<p class="srcline">${jp ? "出題データの取得を見送りました。" : "Question data was deferred."}</p>${noMiss(cur)}`; return; }   // 否定表示を出さず建設的代替へ
     const opp = ((d.relations && d.relations.opposite) || [])[0], org = (d.originators || [])[0],
           assoc = (d.associated || [])[0], na = (d.named_after || [])[0];
     let qtext, ans;
@@ -2530,7 +3131,7 @@ function gPlayPanel() {
     else if (opp) { qtext = `「${cur}」と対立・区別される概念は？`; ans = opp.label; }
     else if (assoc) { qtext = `「${cur}」に最も深く関わる思想家は？`; ans = assoc.label; }
     else if (na) { qtext = `「${cur}」の語形の由来（語源）は？`; ans = na.label; }
-    else { out.innerHTML = noMiss(cur); return; }   // 否定表示を出さず建設的代替へ
+    else { out.innerHTML = `<p class="srcline">${jp ? "この語の出題根拠がまだ返っていないため、別の入口を残します。" : "No grounded quiz clue was returned yet; the next entry points remain."}</p>${noMiss(cur)}`; return; }   // 否定表示を出さず建設的代替へ
     out.innerHTML = `<p><b>${esc(qtext)}</b></p><p><button type="button" id="quiz-rev" class="cmb-op">${jp ? "答えを見る" : "reveal"}</button> <span id="quiz-ans"></span></p>`;
     p.querySelector("#quiz-rev").addEventListener("click", () => { p.querySelector("#quiz-ans").innerHTML = `→ <b>${esc(ans)}</b>`; });
   });
@@ -2559,17 +3160,21 @@ function gShelfPanel() {
     <p class="srcline muted">${jp ? "観点の名前と語（カンマ区切り）を決めると、任意の概念をその観点で絞れます。例：名前「労働から」語「労働,搾取,賃金」" : ""}</p>
     <div class="psp-g"><input id="lens-name" class="cmb-in" style="width:30%" placeholder="${jp ? "観点の名前" : "name"}"/><input id="lens-words" class="cmb-in" style="width:58%" placeholder="${jp ? "観点の語（カンマ区切り）" : "words"}"/></div>
     <p><button type="button" id="lens-save" class="cmb-op">${jp ? "レンズを保存" : "save"}</button></p>
-    <div class="shelf-list">${lenses.length ? lenses.map((l, i) => `<span class="shelf-item"><a href="#" class="lens-use" data-i="${i}">${esc(l.name)}</a><a href="#" class="lens-x" data-i="${i}">×</a></span>`).join("") : empty}</div>`;
-  const p = gPanel(jp ? "棚：集める・道を保存・自分のレンズ" : "Shelf", html);
-  const refresh = () => { p.remove(); gShelfPanel(); };
-  p.querySelector("#shelf-add").addEventListener("click", () => { if (cur) { dispatchAction("shelf", { term: cur }, currentViewState(), { surface: "shelf-panel" }); refresh(); } });
-  p.querySelectorAll(".shelf-go").forEach(a => a.addEventListener("click", e => { e.preventDefault(); p.remove(); dispatchAction("center", { term: a.dataset.w }, currentViewState(), { surface: "shelf-panel" }); }));
+    <div class="shelf-list">${lenses.length ? lenses.map((l, i) => `<span class="shelf-item"><a href="#" class="lens-use" data-i="${i}">${esc(l.name)}</a><a href="#" class="lens-x" data-i="${i}">×</a></span>`).join("") : empty}</div>
+    <p id="shelf-note" class="combine-form-note" role="status" aria-live="polite"></p>`;
+  const p = gPanel(jp ? "棚：集める・道を保存・自分のレンズ" : "Shelf", html, cur);
+  const refresh = () => { gShelfPanel(); };   // gPanel→surfCreate が同種Actionを置換する（積層しない）
+  p.querySelector("#shelf-add").addEventListener("click", () => {
+    if (cur) { dispatchAction("shelf", { term: cur }, currentViewState(), { surface: "shelf-panel" }); refresh(); }
+    else { const n = p.querySelector("#shelf-note"); if (n) n.textContent = jp ? "棚に加える語を先に選んでください。" : "Choose a term before adding it to the shelf."; }
+  });
+  p.querySelectorAll(".shelf-go").forEach(a => a.addEventListener("click", e => { e.preventDefault(); surfCloseAction(false); dispatchAction("center", { term: a.dataset.w }, currentViewState(), { surface: "shelf-panel" }); }));
   p.querySelectorAll(".shelf-x").forEach(a => a.addEventListener("click", e => { e.preventDefault(); _lsSet("dx_shelf", _lsGet("dx_shelf", []).filter(w => w !== a.dataset.w)); refresh(); }));
-  p.querySelector("#path-save").addEventListener("click", () => { if (NAV.stack.length > 1) { const ps = _lsGet("dx_paths", []); ps.push(NAV.stack.slice()); _lsSet("dx_paths", ps); refresh(); } else gToast(jp ? "道がまだ1歩です" : "path too short"); });
-  p.querySelectorAll(".path-go").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const pt = _lsGet("dx_paths", [])[+a.dataset.i]; if (pt) { const last = pt[pt.length - 1]; const lastQ = typeof last === "string" ? last : (last && last.q); NAV.stack = pt.slice(); NAV.idx = pt.length - 1; navUpdate(); p.remove(); if (lastQ) originRecenter(lastQ, { nav: true }); } }));
+  p.querySelector("#path-save").addEventListener("click", () => { if (NAV.stack.length > 1) { const ps = _lsGet("dx_paths", []); ps.push(NAV.stack.slice()); _lsSet("dx_paths", ps); refresh(); } else { const n = p.querySelector("#shelf-note"); if (n) n.textContent = jp ? "探索の道は、もう1歩進むと保存できます。" : "Take one more step before saving a path."; } });
+  p.querySelectorAll(".path-go").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const pt = _lsGet("dx_paths", [])[+a.dataset.i]; if (pt) { const last = pt[pt.length - 1]; const lastQ = typeof last === "string" ? last : (last && last.q); NAV.stack = pt.slice(); NAV.idx = pt.length - 1; navUpdate(); surfCloseAction(false); if (lastQ) originExplore(lastQ, { nav: true }); } }));
   p.querySelectorAll(".path-x").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const ps = _lsGet("dx_paths", []); ps.splice(+a.dataset.i, 1); _lsSet("dx_paths", ps); refresh(); }));
-  p.querySelector("#lens-save").addEventListener("click", () => { const name = p.querySelector("#lens-name").value.trim(), words = p.querySelector("#lens-words").value.trim(); if (name && words) { const ls = _lsGet("dx_lenses", []); ls.push({ name, words }); _lsSet("dx_lenses", ls); refresh(); } });
-  p.querySelectorAll(".lens-use").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const l = _lsGet("dx_lenses", [])[+a.dataset.i]; if (l && cur) { p.remove(); dispatchAction("combine", { term: cur }, currentViewState(), { surface: "shelf-panel", b: l.words.split(/[,、\s]+/).filter(Boolean).join(" "), op: "and" }); } else gToast(jp ? "先に語を選んでください" : "pick a word"); }));
+  p.querySelector("#lens-save").addEventListener("click", () => { const name = p.querySelector("#lens-name").value.trim(), words = p.querySelector("#lens-words").value.trim(); if (name && words) { const ls = _lsGet("dx_lenses", []); ls.push({ name, words }); _lsSet("dx_lenses", ls); refresh(); } else { const n = p.querySelector("#shelf-note"); if (n) n.textContent = jp ? "観点の名前と語を入力してから保存してください。" : "Enter a lens name and terms before saving."; } });
+  p.querySelectorAll(".lens-use").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const l = _lsGet("dx_lenses", [])[+a.dataset.i]; if (l && cur) { surfCloseAction(false); dispatchAction("combine", { term: cur }, currentViewState(), { surface: "shelf-panel", b: l.words.split(/[,、\s]+/).filter(Boolean).join(" "), op: "and" }); } else gToast(jp ? "先に語を選んでください" : "pick a word"); }));
   p.querySelectorAll(".lens-x").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const ls = _lsGet("dx_lenses", []); ls.splice(+a.dataset.i, 1); _lsSet("dx_lenses", ls); refresh(); }));
 }
 
@@ -2724,20 +3329,15 @@ function gBind() {
       // domainノード（一般の意味/世界の言語/語源の連鎖 等＝カテゴリ・q無し）は、その文字列でなく親(root語)の
       // 全景を開き、対応する見どころへ寄せる（関心のある箇所へ進む導線）。エッジ選択は従来どおり関係メニュー。
       if (p.n) {
-        // クリック規則（半田様2026-08-01・旧ノード操作と概念全景の共存）:
-        //  ①中心語/rootノード → 概念全景を直接開く
-        //  ②domain/categoryノード（一般の意味・世界の言語・語源の連鎖 等） → 中心語の全景＋該当節へ
-        //  ③実体を持つ派生ノード（矛盾・Karl Marx・dialectic・多言語訳語…全階層） → 既存ノードメニュー
+        // CLICK_ENTITY（半田様2026-08-02・「rootだけ全景直行」の特例は廃止）:
+        //  ・実体ノード（中心語ノードも含め階層・kindに関係なく）→ 旧Menu/Action破棄・Context保持・Menu(target)を前面
+        //  ・構造ノード（domain/区分名/件数＝q無し）は entity ではない → Contextを中心語の全景（該当節）へ
         const n = p.n;
-        const isDomain = (n.kind === "domain") || !(n.q || n.label);
-        const isRoot = !isDomain && (n.layer === 1 || (n.q || n.label) === ((G && G.rootQ) || ""));
-        if (isDomain) {
+        const isStructure = (n.kind === "domain") || !(n.q || n.label);
+        if (isStructure) {
           const secHint = /言語|表記/.test(n.label || "") ? "lang" : /語源|来歴/.test(n.label || "") ? "history" : null;
           dispatchAction("panorama", { term: (G && G.rootQ) || n.label, label: n.label, kind: n.kind, id: n.id, layer: n.layer },
             currentViewState(), { surface: "node", node: null, secHint });
-        } else if (isRoot) {
-          dispatchAction("panorama", { term: n.q || n.label, label: n.label, kind: n.kind, id: n.id, layer: n.layer, lang: n.lang },
-            currentViewState(), { surface: "node", node: n });
         } else {
           gMenu(e.clientX, e.clientY, n);   // 既存popup（Action ID＋単一Dispatcher・無作用0）
         }
@@ -2755,6 +3355,18 @@ function gBind() {
 }
 function gLoopKick() { if (!G.running) gLoop(40); else gDraw(); }
 
+// Context の開閉・window resize で canvas の実寸が変わったら backing store と座標系を追随させる
+// （Map が Context の下へ潜り込まず、実クリック座標が常に有効であることを保証する）。
+function gResize() {
+  if (!G || !G.cv || !G.ctx) return;
+  const cv = G.cv, W = cv.clientWidth, H = cv.clientHeight;
+  if (!W || !H || (W === G.W && H === G.H)) return;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr;
+  G.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  G.W = W; G.H = H; G.cx = W / 2; G.cy = H / 2;
+  graphFit();
+}
 function gFitInstant() { G.view = { x: 0, y: 0, k: 1 }; }
 function graphFit() {
   if (!G || !G.nodes || !G.nodes.length) return;
@@ -2980,8 +3592,29 @@ try {
     setPanelFromMenu(v) { _panelFromMenu = v; },
     // 操作基盤の検査（操作同値性/履歴/失敗継続テスト用・読み取り専用）
     viewState() { return currentViewState(); },
-    get nav() { return { idx: NAV.idx, len: NAV.stack.length, stack: NAV.stack }; },
+    // txn = dispatchAction の実行区間（true の間は1操作が進行中でcommit未確定）。読み取り専用。
+    get nav() { return { idx: NAV.idx, len: NAV.stack.length, stack: NAV.stack, txn: NAV.txn }; },
     get lastDispatch() { return _lastDispatch; },
+    // Action registry（effect宣言）とUI面ごとのAction ID宣言＝テストは文言でなくこれと照合する
+    registry() { const o = {}; for (const k in ACTIONS) { const a = ACTIONS[k];
+      o[k] = { effect: a.effect || null, effectWithArg: a.effectWithArg || null, arg: a.arg || null,
+               commits: a.commits !== false, transient: !!a.transient, newPage: !!a.newPage, label: a.label || "" }; }
+      return o; },
+    effects() { return EFFECTS.slice(); },
+    uiActions() { return JSON.parse(JSON.stringify(UI_ACTION_IDS)); },
+    // 面の実測状態（存在・対象・矩形）。テストが遮蔽・交差・排他を数値で検査するため
+    surfaces() {
+      const r = (k) => surfRect(k);
+      return { context: !!surfEl("context"), menu: !!surfEl("menu"), action: !!surfEl("action"),
+               contextTerm: CONTEXT_CTX ? CONTEXT_CTX.term : null,
+               panel: PANEL_CTX ? { action: PANEL_CTX.action, term: PANEL_CTX.term } : null,
+               z: { context: surfEl("context") && +surfEl("context").style.zIndex,
+                    menu: surfEl("menu") && +surfEl("menu").style.zIndex,
+                    action: surfEl("action") && +surfEl("action").style.zIndex },
+               rects: { context: r("context"), menu: r("menu"), action: r("action") },
+               avail: surfAvail() };
+    },
+    surfaceIds() { return Object.assign({}, SURFACE_ID); },
     fallbackLog() { return FALLBACK_LOG.slice(); },   // A3: 自動代替の実発火ログ（外部証跡）
     fit() { if (typeof graphFit === "function") graphFit(); return G && G.view; },   // A4: 実クリック座標を確定させるため明示fit
     hitTest(mx, my) { const n = gNodeAt(mx, my); return n ? { id: n.id, label: n.label, layer: n.layer } : null; },   // A4: ヒットテスト検査

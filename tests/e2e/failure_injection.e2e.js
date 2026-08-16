@@ -19,6 +19,7 @@ const RAWERR = ["Error", "error", "TypeError", "fetch", "undefined", "500", "404
       if (mode === "500") return r.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error\n stacktrace e.message" });
       if (mode === "empty") return r.fulfill({ status: 200, contentType: "application/json", body: "{}" });
       if (mode === "malformed") return r.fulfill({ status: 200, contentType: "application/json", body: "<<<not json>>> TypeError" });
+      if (mode === "partial") return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ term: "弁証法", segment_layers: [] }) });
       if (mode === "timeout") { await new Promise(res => setTimeout(res, 6000)); return r.fulfill({ status: 200, contentType: "application/json", body: "{}" }); }
       return r.continue();
     });
@@ -37,6 +38,15 @@ const RAWERR = ["Error", "error", "TypeError", "fetch", "undefined", "500", "404
     const rawHit = RAWERR.filter(w => s.body.includes(w));
     ok(`anatomy/${mode}: 生エラー非露出＋続行フッター＋shell健全`, rawHit.length === 0 && s.cont >= 5 && s.shell, `raw=${JSON.stringify(rawHit)} cont=${s.cont}`);
   }
+  // termだけ返る部分応答でも、配列欠落を理由に画面構築を停止しない。
+  await inject("**/api/anatomy**", "partial");
+  await p.evaluate(() => { const x = document.getElementById("graph-panel"); if (x) x.remove(); gAnatomyPanel("弁証法"); });
+  await p.waitForTimeout(900);
+  const partial = await p.evaluate(() => ({
+    body: (document.querySelector("#graph-panel .gp-body") || {}).textContent || "",
+    shell: !!document.getElementById("origin-shell") && !!document.getElementById("nav-back"),
+  }));
+  ok("anatomy/partial: 配列欠落でも画面構築を継続", !RAWERR.some(w => partial.body.includes(w)) && /原語へ辿り|Wiktionary/.test(partial.body) && partial.shell, `body=${partial.body.slice(0, 50)}`);
   await p.unroute("**/api/anatomy**").catch(() => {});
 
   // origin本体(originRun)へ 500 注入 → origin-status に生エラーでなく建設的代替(nomiss)

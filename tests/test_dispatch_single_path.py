@@ -33,7 +33,10 @@ def test_surfaces_route_through_dispatch():
     problems = []
     for anchor, name in SURFACE_ANCHORS:
         # dispatchAction 到達は広めに、禁止関数は「ハンドラ本体だけ」（最初のdispatchActionまで）で検査。
-        wide = _block_after(anchor, 420)
+        # busy/disabled guards and the anchor/dispatcher call may legitimately
+        # span more than the original 420-character probe.  Keep this a local
+        # handler probe; the split below still prevents scanning later code.
+        wide = _block_after(anchor, 700)
         if "dispatchAction" not in wide:
             problems.append(f"{name}: dispatchAction を通っていない（anchor={anchor}）")
         body = wide.split("dispatchAction", 1)[0]   # 表示面ハンドラ本体（dispatchより前）に直接作用が無いこと
@@ -113,4 +116,3 @@ def test_no_noop_menu_items():
         assert re.search(r"\bfn:\s*(\(|function)", block) is None, f"{fn_name} に直接fnのmenu item(無作用/Dispatcher迂回)が残存"
         # 各 menu item literal( { t: ... } )に action: がある（gShowMenu/renderTopMenuはit.actionをdispatchするため）
         assert re.search(r"\{\s*[st]:\s*[`\"'][^`\"']*[`\"'][^}]*\}", block), f"{fn_name} に menu item が無い?"
-

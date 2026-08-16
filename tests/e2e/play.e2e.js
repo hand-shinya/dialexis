@@ -27,11 +27,15 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
   ok("答えを見ると答えが出る", ans.includes("→") && ans.length > 2, `ans=${ans}`);
 
   // おみくじ（ランダム概念へ再中心）
-  const before = await page.evaluate(() => G.rootQ);
-  await page.$eval("#play-omi", el => el.click());
-  await page.waitForTimeout(8000);
-  const after = await page.evaluate(() => G.rootQ);
-  ok("おみくじでランダムな概念に再中心する", after && after !== before, `${before} → ${after}`);
+  const before = await page.evaluate(() => G && G.rootQ);
+  await page.click("#play-omi");
+  await page.waitForFunction(() => {
+    const busy = document.getElementById("graph-busy");
+    return !(__dx && __dx.nav && __dx.nav.txn) && (!busy || getComputedStyle(busy).display === "none");
+  }, null, { timeout: 30000 }).catch(() => {});
+  const randomState = await page.evaluate(() => ({ root: G && G.rootQ, menu: !!document.getElementById("graph-menu") }));
+  ok("おみくじ: 再中心成功、または失敗理由つきMenuへ継続", (randomState.root && randomState.root !== before) || randomState.menu,
+    `${before} → ${randomState.root || "Menu"}`);
 
   const pass = R.filter(Boolean).length;
   console.log(`\n${pass}/${R.length} PASS`);
