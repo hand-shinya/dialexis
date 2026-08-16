@@ -6,7 +6,7 @@
 
 本書は、2026-08-14時点のPROJECT_REPRODUCTION_SPEC_20260814.md、2026-08-01時点の
 Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を基礎に、
-現行コード、Git履歴、検証結果、公開反映結果を2026-08-16時点へ統合した
+現行コード、Git履歴、検証結果、公開反映結果を2026-08-17時点へ統合した
 マスター記録である。古い資料と本書が矛盾する場合、設計意図はGENESIS.md、
 実装状態は現行コードと実測テスト、公開状態は公開サーバー実測を優先する。
 
@@ -21,10 +21,10 @@ Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を�
 | 開発リポジトリ | /home/handa/dialexis |
 | GitHub | https://github.com/hand-shinya/dialexis |
 | ブランチ | main |
-| 公開反映済みの製品コードHEAD | 11c49b0（入口修正4e96a3bを含む） |
+| 公開反映済みの製品コードHEAD | 213f709（runtime code: db993a8） |
 | 今回の入口修正 | 4e96a3b（ホーム・Question Doors・navを /originへ） |
-| 公開デプロイ時の検証SHA | 4e96a3b522d95f8ae1e4e32e998f9545a8ead66a |
-| 本書・回帰E2Eの追加 | 本書更新後のGit履歴を参照（製品runtimeは11c49b0） |
+| 公開デプロイ時の検証SHA | db993a8a52a7706162c0dc43de5da9c65f2cb5c2 |
+| 本書・回帰E2Eの追加 | `translation_history` 特別モード、台帳、公開E2Eを含む |
 | origin/main | 本書更新後のmain。再現時は `git rev-parse HEAD` で確定 |
 | 検証マーカー | deploy/verified_sha.txt |
 | 公開URL | http://219.94.244.239:8000 |
@@ -34,10 +34,9 @@ Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を�
 | 作業フォルダー（WSL） | /mnt/i/GoogleDriveMirror/MyKnowledgeBase/Main/論考/哲学DESK |
 | ライセンス | Code: AGPL-3.0 / Documentation: CC-BY-4.0 |
 
-11c49b0は、4e96a3bで入口の製品コードを修正し、公式verify、VPS側pytest、
-サービス再起動、公開HTTP検査を完了した公開runtimeである。その後の本書と
-`entry_routing.e2e.js`の更新は、製品runtimeを変更しない記録・回帰検査の追加である。
-現在のGit先端はgit logとgit rev-parseで確認し、公開runtimeの基準は11c49b0とする。
+213f709は、db993a8で翻訳・受容史の製品コードを追加し、公式verify、VPS側pytest、
+サービス再起動、公開HTTP検査、公開実ブラウザ8/8を完了した現在の公開HEADである。
+現在のGit先端はgit logとgit rev-parseで確認し、公開runtimeの基準は213f709とする。
 検証SHAはdeploy/verified_sha.txtで確認する。
 vps_update.shは、検証SHA以降の差分がマーカーだけであることを確認する。
 
@@ -155,7 +154,7 @@ translation_history.e2e.js: 8/8 PASS
 検証SHA: deploy/verified_sha.txt に記録された現行HEAD
 ~~~
 
-この時点での未検証: 公開URLへの反映後に、実ブラウザで同じ専用Actionを人間の入口から押すこと。公開反映後にURL・API・ブラウザ結果を追記する。
+公開反映後の実測: `http://219.94.244.239:8000/origin?q=非有機的肉体&lang=ja` で、Menu→`翻訳・受容史`→専用API→科学分野の未整備表示→`←メニュー`を実ブラウザ操作し、8/8 PASS。`healthz HTTP:200`。人間検証の入口URLはこのURLを使う。
 
 ## 2. 目的と背景
 
@@ -1214,6 +1213,15 @@ curl -s 'http://219.94.244.239:8000/api/combine?a=カール・マルクス&b=吉
 - 人間スクリーンショットで発見した `/explore` 迷入の原因と責任範囲を記録。
 - ホーム→`/origin`入口修正、公開反映、公開ブラウザ10/10 E2Eを追記。
 - AI内部テストが直接 `/origin`だけを開き、人間の入口経路を漏らした失敗を明記。
+
+### 2026-08-17追記
+
+- 翻訳・受容史／埋没語追跡を通常検索から分離した特別Actionとして実装。
+- 原語・翻訳語、保存／欠損／付加、時系列5W1H、受容史人物台帳、反証、出所、次の調査を `translation_history_seed.json` に記録。
+- 未知語・文学・科学・芸術の未整備状態で哲学データを流用しないAPI契約を追加。
+- `tests/test_translation_history.py` と `tests/e2e/translation_history.e2e.js` を追加。
+- 公式verify（Python 91 passed、決定論的UI E2E全件PASS）とVPS pytest（91 passed）を通過し、公開URLの実ブラウザ8/8、healthz 200を確認。
+- `db993a8`（製品コード）と `213f709`（検証マーカー・公開HEAD）を記録。
 
 ### 今後
 
