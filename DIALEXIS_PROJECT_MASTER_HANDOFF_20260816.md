@@ -1,6 +1,6 @@
 # Dialexis プロジェクト完全引継ぎ記録
 
-**スナップショット:** 2026-08-16 23時台（Asia/Tokyo）
+**スナップショット:** 2026-08-17（Asia/Tokyo）更新
 **対象:** Dialexis / 反省的哲学研究インフラ
 **目的:** 本プロジェクトを全く知らないAIまたは開発者が、この一ファイルと現行リポジトリだけで、目的・背景・画面・コード・データ契約・失敗史・検証・公開運用を理解し、同じ状態を再現して継続開発できるようにする。
 
@@ -114,6 +114,48 @@ entry_routing.e2e.js                                10/10 PASS
 `http://219.94.244.239:8000/origin?q=非有機的肉体&lang=ja` である。
 
 ---
+
+## 1.5 2026-08-17追加：翻訳・受容史／埋没語追跡の特別モード
+
+2026-08-17、人間検証で示された「単純な文字検索・意味検索では見えない、翻訳で埋没した意味を原典から受容史まで追跡したい」という要求を、通常の `意味`・`解剖`・`埋没`・`外部` とは別のActionとして実装した。
+
+### UI契約
+
+1. `/origin?q=非有機的肉体&lang=ja` を開く。
+2. 中心語または語ノードのMenuで `🧭 翻訳・受容史` を選ぶ。
+3. 地図の中心・Contextを変えず、Action面に専用研究台帳を表示する。
+4. 分野（哲学・思想／文学／科学・化学／芸術・美術）を選び、同じ条件で再調査できる。
+5. 結果面に、中心問い、原語・翻訳語対応、保存／欠損／付加、時系列5W1H、受容史人物台帳、最強の反証、出所、次の調査を表示する。
+6. `← メニュー`、通常の `この語で続ける` フッター、外部出所リンクを残す。取得条件の不成立時もMapと次の入口を保持する。
+
+このActionは `ACTIONS.translationHistory` → `dispatchAction` → `gTranslationHistoryPanel` の一本の経路で実行する。中心移動・グラフ再構成を行わないため、「調べた結果、別の語へ勝手に移った」という意味の漂流を避ける。
+
+### API・データ契約
+
+- API: `GET /api/translation-history?q=<語>&domain=<哲学等>&lang=ja`
+- データ: `app/data/translation_history_seed.json`
+- 初期台帳: マルクス「非有機的肉体」問題（`unorganischer Leib`、`unorganischer Körper`、`unorganische Natur`、`Stoffwechsel`、英仏日訳、城塚・田中訳、吉本隆明、受容候補）。
+- 返却状態: `ready` または `not_seeded`。未知語・未整備分野には哲学台帳を流用せず、情報源選定計画と登録・照合の次Actionを返す。
+- 証拠階層: `confirmed`（本文・書誌の限定確認）、`bibliography_confirmed`（書誌確認）、`strong`（有力・要照合）、`interpretive`（解釈・再構成）、`candidate`（調査候補）、`unverified`（未確認）。
+- 「書誌がある」ことと「該当頁の訳語・引用・影響関係を確認した」ことを分離する。資料の綜合に含まれる未確認主張は画面でも未確認／候補のまま表示する。
+
+### 対象資料との接続
+
+ユーザー指定の `I:\GoogleDriveMirror\MyKnowledgeBase\Main\論考\非有機的肉体`（WSL: `/mnt/i/GoogleDriveMirror/MyKnowledgeBase/Main/論考/非有機的肉体`）直下にある調査資料から、中心問い、1844年草稿、Grundrisse、Stoffwechsel、岩波訳、吉本隆明、受容史候補、未確認事項を抽出した。主なローカル参照は `compass_artifact_wf-3549...`、`deep-research-report (2).md`、`吉本隆明のマルクス理解：非有機的肉体を中心に.md`、`非有機的肉体とは何か論考計画書 v1.2.md`。これらは研究入力であり、外部原典・NDL・CiNii等での再照合を要する。
+
+### 現時点の検証
+
+~~~text
+Python: 91 passed
+翻訳・受容史 Python: 5件を含む
+translation_history.e2e.js: 8/8 PASS
+内容確認: 中心語不変、原語・翻訳語、5W1H、受容史、反証、出所、未整備科学分野、Menu復帰
+決定論的UI E2E: 全件PASS
+統合 origin: 21/23（従来どおりnetwork依存の情報表示）
+検証SHA: deploy/verified_sha.txt に記録された現行HEAD
+~~~
+
+この時点での未検証: 公開URLへの反映後に、実ブラウザで同じ専用Actionを人間の入口から押すこと。公開反映後にURL・API・ブラウザ結果を追記する。
 
 ## 2. 目的と背景
 

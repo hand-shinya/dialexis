@@ -266,6 +266,63 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .gp-x { background: none; color: var(--muted); font-size: 1.3rem; padding: 0 .3rem; }
 .gp-body { padding: .8rem .9rem 1.1rem; }
 
+/* 翻訳・受容史の特別研究面：通常の語源カードより広い情報を、証拠単位ごとに読む。 */
+.th-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; padding: .55rem .65rem;
+  border: 1px solid var(--line); border-radius: 8px; background: #faf7f0; margin-bottom: .6rem; }
+.th-controls label, .th-controls select, .th-run { font-family: system-ui, sans-serif; font-size: .82rem; }
+.th-controls select { border: 1px solid var(--line); border-radius: 5px; padding: .28rem .45rem; background: var(--paper); color: var(--ink); }
+.th-run { border: 1px solid var(--accent); border-radius: 999px; padding: .3rem .7rem; background: var(--accent); color: #fff; cursor: pointer; }
+.th-run:hover { filter: brightness(1.08); }
+.th-run:disabled { opacity: .55; cursor: wait; }
+.th-intro, .th-honesty, .th-scope { line-height: 1.6; font-size: .86rem; }
+.th-status-line { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; margin: .2rem 0 .45rem; font-family: system-ui, sans-serif; }
+.th-badge { display: inline-block; font-family: system-ui, sans-serif; font-size: .68rem; line-height: 1.2; padding: .16rem .42rem; border-radius: 999px; white-space: nowrap; }
+.th-confirmed { background: #dff3e5; color: #176534; }
+.th-bibliography_confirmed { background: #e4effb; color: #24527a; }
+.th-strong { background: #f8e8bd; color: #76520a; }
+.th-interpretive { background: #eee4fa; color: #633b86; }
+.th-candidate, .th-unverified { background: #f4e4dc; color: #8a3f20; }
+.th-question { border-left: 4px solid var(--accent); background: #f6f1e2; padding: .55rem .7rem; margin: .6rem 0; }
+.th-question p { margin: .2rem 0 0; line-height: 1.55; }
+.th-evidence-guide { border: 1px solid var(--line); border-radius: 7px; padding: .45rem .6rem; margin: .55rem 0 .8rem; background: #fcfbf8; }
+.th-evidence-guide summary { cursor: pointer; font-family: system-ui, sans-serif; font-size: .8rem; color: var(--accent2); }
+.th-evidence-guide p, .th-evidence-guide li { font-size: .78rem; line-height: 1.5; }
+.th-evidence-guide ul { padding-left: 1.2rem; margin-bottom: .2rem; }
+.th-section { border-top: 1px solid var(--line); padding-top: .65rem; margin-top: .7rem; }
+.th-section h3, .th-subhead { font-family: system-ui, sans-serif; font-size: .92rem; margin: .2rem 0 .45rem; color: var(--ink); }
+.th-term-grid, .th-timeline, .th-transform-grid, .th-ledger, .th-counter-grid, .th-source-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)); gap: .5rem; }
+.th-term-card, .th-timeline-card, .th-transform-card, .th-ledger-card, .th-counter-card, .th-source-card { border: 1px solid var(--line); border-radius: 8px; padding: .55rem .65rem; background: var(--paper); min-width: 0; }
+.th-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-bottom: .35rem; font-family: system-ui, sans-serif; }
+.th-card-top code { font-size: .92rem; color: var(--accent2); overflow-wrap: anywhere; }
+.th-card-top span:not(.th-badge) { color: var(--muted); font-size: .76rem; }
+.th-kind { color: var(--muted); font-size: .72rem; margin: .1rem 0 .35rem; }
+.th-term-card p, .th-timeline-card p, .th-transform-card p, .th-ledger-card p, .th-counter-card p, .th-source-card p { font-size: .82rem; line-height: 1.52; margin: .25rem 0; }
+.th-distinction { border-left: 3px solid var(--accent2); padding-left: .45rem; }
+.th-dl { display: grid; grid-template-columns: max-content 1fr; gap: .18rem .45rem; margin: .45rem 0 .25rem; }
+.th-dl dt { color: var(--muted); font-family: system-ui, sans-serif; font-size: .7rem; }
+.th-dl dd { margin: 0; font-size: .78rem; line-height: 1.48; overflow-wrap: anywhere; }
+.th-fivew dt { font-weight: 600; color: var(--accent2); }
+.th-evidence-note { background: #fffaf0; padding: .3rem .4rem; border-radius: 4px; color: var(--muted); }
+.th-source-line { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem; margin-top: .45rem !important; color: var(--muted); font-family: system-ui, sans-serif; font-size: .7rem !important; }
+.th-source-ref { display: inline-flex; flex-direction: column; vertical-align: top; }
+.th-source-link, .th-source-name { font-size: .7rem; margin: .05rem .12rem; padding: .08rem .32rem; }
+.th-local-ref { color: var(--muted); line-height: 1.35; overflow-wrap: anywhere; }
+.th-next-list { padding-left: 1.2rem; margin: .2rem 0; }
+.th-next-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin: .35rem 0; font-size: .82rem; line-height: 1.45; }
+.th-plan { display: flex; flex-direction: column; gap: .3rem; }
+.th-plan-row { display: grid; grid-template-columns: 8.5rem 1fr max-content; gap: .45rem; align-items: baseline; border-bottom: 1px dotted var(--line); padding: .25rem 0; font-size: .76rem; }
+.th-plan-row b { font-family: system-ui, sans-serif; }
+.th-plan-row span { line-height: 1.4; }
+.th-plan-row em { color: var(--muted); font-size: .68rem; }
+.th-unseeded { border-left: 4px solid var(--warn); background: #fffaf2; padding: .6rem .7rem; }
+.th-ready { min-width: 0; }
+.th-source-card .th-card-top b { font-size: .78rem; line-height: 1.35; overflow-wrap: anywhere; }
+.th-source-card .ext-link { margin: 0; }
+@media (max-width: 560px) {
+  .th-term-grid, .th-timeline, .th-transform-grid, .th-ledger, .th-counter-grid, .th-source-list { grid-template-columns: 1fr; }
+  .th-plan-row { grid-template-columns: 1fr; gap: .1rem; }
+}
+
 /* Context面＝概念全景（右側の永続ドロワー・半田様2026-08-02にAction(#graph-panel)からid分離）。
    幅は clamp で必ず利用可能領域を残す（Menu/Action が Context と交差せず置ける前提）。
    本体は body の padding-right（surfSyncLayout）で退避するため、地図がドロワーの下に潜らない。 */

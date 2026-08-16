@@ -1,0 +1,389 @@
+{
+  "_meta": {
+    "schema": "dialexis.translation-history.v1",
+    "purpose": "A deliberately separate, evidence-graded dossier for tracing a term through original texts, translations, editions, and reception. It is not a general web-search result and it is not exhaustive.",
+    "honesty": "CURATED SEED, NOT exhaustive. A bibliographic record proves that a work or edition exists; it does not by itself prove the exact wording, page, translation choice, influence, or interpretation. Every claim must retain its evidence level and its next verification step.",
+    "verified_at": "2026-08-17",
+    "evidence_levels": [
+      {"id": "confirmed", "label": "本文・書誌を確認", "description": "The cited online text or authoritative catalog directly supports the limited claim shown."},
+      {"id": "bibliography_confirmed", "label": "書誌を確認", "description": "The work or edition is confirmed in a library catalog; the relevant passage still needs page-level checking."},
+      {"id": "strong", "label": "有力・要照合", "description": "The claim is strongly supported by the project materials and a plausible primary-text path, but the exact edition or locator is not yet closed."},
+      {"id": "interpretive", "label": "解釈・再構成", "description": "An interpretive relation or reception reading, not a quotation from the original author."},
+      {"id": "candidate", "label": "調査候補", "description": "A lead retained for the next research pass; it must not be stated as established fact."},
+      {"id": "unverified", "label": "未確認", "description": "The project materials mention it, but the original text, edition, or page has not yet been checked."}
+    ],
+    "source_policy": [
+      "原典・批判版・標準的な版を最上位に置く。オンライン本文は入口であり、版面照合が必要な場合はその状態を残す。",
+      "翻訳の存在は国立国会図書館・CiNii等の書誌で確認し、訳語の実例は該当版のページ画像または本文で別に確認する。",
+      "辞書・百科事典・Wikipediaは語義と候補の発見に使うが、著者の意図や翻訳史の証明には単独で使わない。",
+      "引用・影響・後世の再構成を別のレコードにし、受容者の解釈を原著者の主張へ戻さない。"
+    ],
+    "source_plan": [
+      {"id": "primary", "label": "原典・批判版", "purpose": "語形、前後文脈、異読、版・頁・行を確定する", "status": "available"},
+      {"id": "translation", "label": "翻訳・書誌", "purpose": "訳者、出版社、刊年、版、訳語の対応を確定する", "status": "available"},
+      {"id": "dictionary", "label": "辞書・語史", "purpose": "各言語の語義・語源・歴史的用例を比較する", "status": "available"},
+      {"id": "scholarship", "label": "研究・受容史", "purpose": "引用、影響、対立する読み、学派・時代の位置を確認する", "status": "planned"},
+      {"id": "discovery", "label": "探索用情報源", "purpose": "候補を見つける入口。証明の代替にはしない", "status": "available"}
+    ]
+  },
+  "domain_aliases": {
+    "philosophy": ["philosophy", "哲学", "思想", "文学・思想", "人文"],
+    "literature": ["literature", "文学"],
+    "science": ["science", "科学", "化学"],
+    "art": ["art", "芸術", "美術"]
+  },
+  "dossiers": [
+    {
+      "id": "marx-nonorganic-body",
+      "domain": "philosophy",
+      "match": ["非有機的肉体", "非有機的身体", "unorganischer Leib", "unorganischer Körper", "unorganische Natur", "Leib", "Körper", "Stoffwechsel", "inorganic body", "corps non organique"],
+      "title": "「非有機的肉体」――原語・翻訳・受容史の追跡台帳",
+      "center_question": "「非有機的肉体」という語は、原典・翻訳・受容史の中で、誰によって、いつ、どこで、どのように使われ、どのように変形されたのか。",
+      "scope_note": "この初期台帳は、マルクス1844年草稿を起点に、Grundrisse・『資本論』・日本語訳・吉本隆明への経路を表示する。網羅的な研究結果ではなく、確認済みの入口と未確認の調査課題を同じ画面で区別する。",
+      "term_map": [
+        {
+          "source_term": "unorganischer Leib",
+          "language": "ドイツ語",
+          "kind": "原典語",
+          "japanese_candidates": ["非有機的身体", "非有機的肉体"],
+          "distinction": "自然を人間の生命活動と結びついた身体・肉体として述べる語。Leibを後世の現象学的な「生きられた身体」と同一視することは、この時点では解釈として分離する。",
+          "preserved": "自然が生活手段・素材・対象・道具であるという文脈",
+          "lost_or_shifted": "日本語一語だけではLeibの語史とKörperとの関係が見えにくい",
+          "added": "訳者・受容者の「身体／肉体」という語感",
+          "evidence": "confirmed",
+          "source_ids": ["marx-1844-online", "local-synthesis"]
+        },
+        {
+          "source_term": "unorganischer Körper",
+          "language": "ドイツ語",
+          "kind": "原典語候補",
+          "japanese_candidates": ["非有機的肉体", "非有機的身体"],
+          "distinction": "プロジェクト資料は、1844年草稿の同一問題圏でKörperとLeibが交替すると整理している。Körperを物体性の側、Leibを生命過程の側として読むことは有力だが、固定した現象学的二分法として確定してはならない。",
+          "preserved": "原語を別レコードとして保持すれば、英訳のbodyへの圧縮を検査できる",
+          "lost_or_shifted": "英訳・仏訳・日本語訳の版によってLeib/Körperの差が同じ訳語に集約される可能性",
+          "added": "後世の身体論からの読み込みの可能性",
+          "evidence": "strong",
+          "source_ids": ["local-synthesis", "marx-1844-online"]
+        },
+        {
+          "source_term": "unorganische Natur",
+          "language": "ドイツ語",
+          "kind": "関連原語",
+          "japanese_candidates": ["非有機的自然", "無機的自然"],
+          "distinction": "自然を人間の外部に置くだけでなく、人間の生命活動が依存する自然として読むための周辺語。unorganisch／anorganischの時代差・用法差は別途、辞書と原典の併読が必要。",
+          "preserved": "自然と人間の生命活動の連関",
+          "lost_or_shifted": "日本語の「非有機的／無機的」の選択による自然科学・自然哲学の焦点差",
+          "added": "現代生態学の語彙を後から重ねる危険",
+          "evidence": "strong",
+          "source_ids": ["marx-1844-online", "local-synthesis"]
+        },
+        {
+          "source_term": "Stoffwechsel",
+          "language": "ドイツ語",
+          "kind": "後期の接続語",
+          "japanese_candidates": ["物質代謝"],
+          "distinction": "1844年の「非有機的肉体」と同一語ではない。『資本論』では人間と自然の労働過程・代謝を記述する別の理論語彙として現れ、継承・再編の関係を検証する接続点になる。",
+          "preserved": "人間―自然の物質的な相互過程",
+          "lost_or_shifted": "身体比喩から経済学・生理学・生態学的な過程語へ焦点が移る",
+          "added": "metabolism／物質代謝という近代科学的連想",
+          "evidence": "strong",
+          "source_ids": ["marx-capital-online", "local-synthesis"]
+        },
+        {
+          "source_term": "inorganic body",
+          "language": "英語",
+          "kind": "翻訳語",
+          "japanese_candidates": ["非有機的身体", "非有機的肉体"],
+          "distinction": "プロジェクト資料が比較対象として挙げる英訳。LeibとKörperが同じbodyへ統合されたかどうかは、訳者・版ごとの該当ページを照合して確定する。",
+          "preserved": "自然を人間の身体との関係で捉える大枠",
+          "lost_or_shifted": "Leib／Körperの語彙差が見えなくなる可能性",
+          "added": "英語bodyの一般的・身体論的な連想",
+          "evidence": "unverified",
+          "source_ids": ["local-synthesis"]
+        },
+        {
+          "source_term": "corps non organique / corps inorganique",
+          "language": "フランス語",
+          "kind": "翻訳語候補",
+          "japanese_candidates": ["非有機的身体", "非有機的肉体"],
+          "distinction": "corpsへの集約がLeib／Körperの差をどう扱うかを、フランス語版ごとに確認する必要がある。",
+          "preserved": "自然と身体の関係を示す語の連結",
+          "lost_or_shifted": "ドイツ語二語の対応関係と、フランス語のcorpsが持つ身体・物体の幅",
+          "added": "フランス語圏の既存の身体・自然・疎外論の語彙",
+          "evidence": "unverified",
+          "source_ids": ["local-synthesis"]
+        },
+        {
+          "source_term": "非有機的身体／非有機的肉体",
+          "language": "日本語",
+          "kind": "受容語",
+          "japanese_candidates": ["身体", "肉体"],
+          "distinction": "城塚登・田中吉六訳はLeib／Körperを身体／肉体として訳し分けたというプロジェクト上の重要仮説。岩波文庫の書誌は確認済みだが、訳語の該当ページは未照合。",
+          "preserved": "二語を別の日本語へ配分できる可能性",
+          "lost_or_shifted": "unorganisch／anorganischの差、ドイツ語の語史・文脈",
+          "added": "日本語の「身体」「肉体」が持つ人格性・物質性の対照",
+          "evidence": "bibliography_confirmed",
+          "source_ids": ["ndl-1844-jp", "local-synthesis"]
+        }
+      ],
+      "timeline": [
+        {
+          "when": "1844",
+          "who": "Karl Marx",
+          "where": "『経済学・哲学草稿』第一草稿「疎外された労働」",
+          "what": "自然を人間のunorganischer Leibとして記述し、自然を生活手段・素材・対象・道具として位置づける。",
+          "why": "疎外された労働が人間の類的生活と自然との関係を奪う構造を記述するため。",
+          "how": "自然、人間の生命活動、労働、類的存在の関係を一つの段落群で接続する。",
+          "evidence": "confirmed",
+          "evidence_note": "オンラインのドイツ語本文でunorganischer Leibとその文脈を確認できる。MEW／MEGAの版・頁・異読まで確定した記録ではない。",
+          "source_ids": ["marx-1844-online", "local-synthesis"]
+        },
+        {
+          "when": "1857–1858",
+          "who": "Karl Marx",
+          "where": "『経済学批判要綱』・Formen／土地・所有・生産条件の問題圏",
+          "what": "自然・土地・生産条件と労働主体の統一／分離を、非有機的な身体・自然の系列として読む候補。",
+          "why": "前資本主義的所有形態と、労働者が生産条件から切り離される過程を分析するため。",
+          "how": "土地・共同体・所有・労働の歴史的関係を追う。",
+          "evidence": "unverified",
+          "evidence_note": "プロジェクト資料に整理があるが、ここでは正確な原文・版・頁をまだ照合していない。1844年の語をそのまま継続したと断定しない。",
+          "source_ids": ["grundrisse-online", "local-synthesis"]
+        },
+        {
+          "when": "1867以降",
+          "who": "Karl Marx",
+          "where": "『資本論』第1巻の労働過程、および後期の自然・社会の代謝論",
+          "what": "Stoffwechsel（物質代謝）が、人間と自然の労働過程を記述する主要な接続語になる。",
+          "why": "身体比喩だけでなく、労働・生産・自然の物質的な過程を経済学的に記述するため。",
+          "how": "人間の労働を自然との物質代謝を媒介・調整・統制する過程として再編する。",
+          "evidence": "strong",
+          "evidence_note": "原文系オンライン資料とプロジェクトの引用台帳が接続を示す。1844年のunorganischer Leibと同一概念・同一語だとは扱わない。",
+          "source_ids": ["marx-capital-online", "local-synthesis"]
+        },
+        {
+          "when": "1964",
+          "who": "城塚登・田中吉六",
+          "where": "岩波文庫『経済学・哲学草稿』",
+          "what": "日本語訳の書誌上の存在と訳者を確認できる。Leib／Körperを身体／肉体と訳し分けたという対応はページ照合対象。",
+          "why": "原語の異なる語を日本語でどう配分したかを、受容史の実物として確認するため。",
+          "how": "NDL書誌を起点に、所蔵版の該当頁・訳注・凡例を照合する。",
+          "evidence": "bibliography_confirmed",
+          "evidence_note": "刊行年・訳者・書名はNDLで確認済み。訳語の対応そのものはこの台帳では未確認。",
+          "source_ids": ["ndl-1844-jp", "local-synthesis"]
+        },
+        {
+          "when": "1966",
+          "who": "吉本隆明",
+          "where": "『カール・マルクス』（試行叢刊第4集）",
+          "what": "日本語思想圏で「非有機的肉体」を自然の人間化と結びつけて再構成したという受容上の重要候補。",
+          "why": "初期マルクスの自然哲学・疎外論・経済学批判を連続した問題として読むため。",
+          "how": "「非有機的肉体」と「有機的自然」の関係を双方向に読み、マルクスの記述を日本語の思想語彙へ再編する。",
+          "evidence": "bibliography_confirmed",
+          "evidence_note": "書名・著者・1966年刊・158頁はNDL／CiNii書誌で確認済み。引用文と該当頁、吉本の直接参照関係は原本照合が必要。",
+          "source_ids": ["ndl-yoshimoto", "cinii-yoshimoto", "local-synthesis"]
+        },
+        {
+          "when": "2000年代以降",
+          "who": "Foster／Burkett等（候補台帳）",
+          "where": "英語圏のエコロジカル・マルクス主義研究",
+          "what": "自然・物質代謝・環境危機の議論と、1844年の自然＝非有機的身体の問題を接続する研究候補。",
+          "why": "マルクスの自然論を生態学的に再読するため。",
+          "how": "Stoffwechsel、代謝の亀裂、自然科学ノート、初期草稿の関係を研究書・論文の直接引用で検証する。",
+          "evidence": "candidate",
+          "evidence_note": "現段階ではユーザー提供資料の受容史整理を次の検索候補として保持する。直接引用・頁・影響関係を確認するまで確定扱いしない。",
+          "source_ids": ["local-synthesis", "scholarship-plan"]
+        }
+      ],
+      "transformations": [
+        {
+          "stage": "独語原典 → 英語",
+          "preserved": "自然と人間の身体的・生命的関係の大枠",
+          "lost": "Leib／Körperの語彙的差がinorganic bodyに集約される可能性",
+          "added": "英語bodyが持つ一般的な身体・物体の幅",
+          "test": "同一箇所を版・訳者別に並置し、Leib／Körper各々の訳語と注記を確認する。",
+          "evidence": "unverified",
+          "source_ids": ["local-synthesis"]
+        },
+        {
+          "stage": "独語原典 → 仏語",
+          "preserved": "corpsを軸にした自然・身体の関係",
+          "lost": "Leib／Körperの対応差がcorpsへ集約される可能性",
+          "added": "フランス語corpsの身体・物体・社会的用法",
+          "test": "Bottigelli等の版を確定し、本文・脚注・訳者序で対応を確認する。",
+          "evidence": "unverified",
+          "source_ids": ["local-synthesis"]
+        },
+        {
+          "stage": "独語原典 → 日本語（城塚・田中訳）",
+          "preserved": "身体／肉体の二語へ分配された可能性",
+          "lost": "unorganisch／anorganischの語形差とドイツ語の語史",
+          "added": "日本語の身体／肉体が生む人格性・物質性の焦点",
+          "test": "岩波文庫の該当頁、訳注、原語索引を画像または所蔵本文で照合する。",
+          "evidence": "bibliography_confirmed",
+          "source_ids": ["ndl-1844-jp", "local-synthesis"]
+        },
+        {
+          "stage": "日本語訳 → 吉本隆明の再構成",
+          "preserved": "非有機的自然と人間の連関という問題系",
+          "lost": "Leib／Körperを日本語で分ける可能性が一語へ統合される点",
+          "added": "「自然の人間化」「有機的自然」との双方向的な読み（吉本の解釈として扱う）",
+          "test": "1966年初版または指定版の該当頁を確認し、引用・括弧・文脈・参照訳を記録する。",
+          "evidence": "bibliography_confirmed",
+          "source_ids": ["ndl-yoshimoto", "cinii-yoshimoto", "local-synthesis"]
+        },
+        {
+          "stage": "unorganischer Leib／自然 → Stoffwechsel",
+          "preserved": "人間と自然が切り離せない物質的過程という問題",
+          "lost": "身体・肉体という比喩の前景性",
+          "added": "労働過程・経済学・生態学へ接続する代謝の語彙",
+          "test": "1844年、Grundrisse、『資本論』の原文を年代順に並べ、同一語・近接語・機能の差を確認する。",
+          "evidence": "strong",
+          "source_ids": ["marx-1844-online", "marx-capital-online", "local-synthesis"]
+        }
+      ],
+      "reception_ledger": [
+        {
+          "who": "Karl Marx",
+          "when": "1844",
+          "where": "パリで執筆された草稿",
+          "what": "自然と人間の生命活動を非有機的身体／肉体の問題として記述",
+          "why": "疎外された労働の構造を説明するため",
+          "how": "自然・労働・類的生活を同じ論述単位で連結",
+          "relation": "原典",
+          "evidence": "confirmed",
+          "source_ids": ["marx-1844-online"]
+        },
+        {
+          "who": "城塚登・田中吉六",
+          "when": "1964",
+          "where": "日本語訳・岩波文庫",
+          "what": "原語を日本語の身体／肉体へ割り当てた可能性",
+          "why": "日本語読者へ原典を移すため",
+          "how": "版面の訳語・訳注・凡例を確認する必要がある",
+          "relation": "翻訳媒介",
+          "evidence": "bibliography_confirmed",
+          "source_ids": ["ndl-1844-jp"]
+        },
+        {
+          "who": "吉本隆明",
+          "when": "1966",
+          "where": "日本語思想圏・『カール・マルクス』",
+          "what": "非有機的肉体を自然の人間化・有機的自然との相互関係として再構成した候補",
+          "why": "初期と後期マルクスの連続性を自然哲学・疎外論から読むため",
+          "how": "翻訳語を思想語彙へ再配置し、受容者自身の解釈を付加",
+          "relation": "再構成",
+          "evidence": "bibliography_confirmed",
+          "source_ids": ["ndl-yoshimoto", "cinii-yoshimoto", "local-synthesis"]
+        },
+        {
+          "who": "Foster／Burkett等",
+          "when": "2000年代以降",
+          "where": "英語圏の環境思想・マルクス研究（候補）",
+          "what": "非有機的身体の問題を物質代謝・生態学へ接続したとされる研究候補",
+          "why": "マルクスの自然論を環境危機の分析へつなぐため",
+          "how": "直接の引用・書誌・頁を研究書と論文から確認する",
+          "relation": "受容候補",
+          "evidence": "candidate",
+          "source_ids": ["scholarship-plan", "local-synthesis"]
+        }
+      ],
+      "counterchecks": [
+        {
+          "claim": "LeibとKörperは常に、生命的身体と物体的身体という固定した二分法である。",
+          "counterargument": "一般語としては重なり得る。1844年の用法を後世の現象学の区別へそのまま投影してはならない。",
+          "test": "当時の辞書・自然哲学・前後文脈と、後世の身体論を別レイヤーで比較する。"
+        },
+        {
+          "claim": "翻訳で意味は必ず全面的に失われる。",
+          "counterargument": "翻訳は損失だけでなく、別の言語で新しい可読性・関連づけ・受容を生む。失われたもの、保存されたもの、追加されたものを分けて記録する必要がある。",
+          "test": "原文・訳文・訳注・受容テキストを同一箇所で並置する。"
+        },
+        {
+          "claim": "Stoffwechselはunorganischer Leibの単純な後継語である。",
+          "counterargument": "近接する問題系でも、語・理論機能・時期は異なる可能性がある。連続性は原文の系列比較によってのみ主張する。",
+          "test": "1844年、1857–58年、1867年以降の語形・文脈・概念機能を分けて追う。"
+        }
+      ],
+      "sources": [
+        {
+          "id": "marx-1844-online",
+          "label": "Marx, Ökonomisch-philosophische Manuskripte 1844（ドイツ語本文）",
+          "type": "原典オンライン本文",
+          "url": "https://www.marxists.org/deutsch/archiv/marx-engels/1844/oek-phil/1-4_frem.htm",
+          "status": "本文の該当語を確認できる入口。批判版の最終照合は別途。",
+          "evidence": "confirmed"
+        },
+        {
+          "id": "marx-capital-online",
+          "label": "Marx, Capital: Volume One（オンライン本文入口）",
+          "type": "原典・翻訳本文入口",
+          "url": "https://www.marxists.org/archive/marx/works/1867-c1/index.htm",
+          "status": "Stoffwechselと労働過程の年代的接続を調べる入口。版・訳者ごとの照合が必要。",
+          "evidence": "strong"
+        },
+        {
+          "id": "grundrisse-online",
+          "label": "Marx, Grundrisse（オンライン本文入口）",
+          "type": "原典本文入口",
+          "url": "https://www.marxists.org/archive/marx/works/1857/grundrisse/",
+          "status": "土地・所有・非有機的自然の候補箇所を確認する入口。該当版・頁は未確定。",
+          "evidence": "candidate"
+        },
+        {
+          "id": "ndl-1844-jp",
+          "label": "NDLサーチ『経済学・哲学草稿』（岩波文庫）",
+          "type": "日本語訳の書誌",
+          "url": "https://ndlsearch.ndl.go.jp/books/R100000002-I000001053434",
+          "status": "城塚登・田中吉六訳の書誌・書誌IDを確認。該当訳語の頁は未照合。",
+          "evidence": "bibliography_confirmed"
+        },
+        {
+          "id": "ndl-yoshimoto",
+          "label": "NDLサーチ 吉本隆明『カール・マルクス』",
+          "type": "受容テキストの書誌",
+          "url": "https://ndlsearch.ndl.go.jp/books/R100000002-I000001098107",
+          "status": "著者・刊年・書名・158頁の書誌を確認。核心引用の頁・初版本文は未照合。",
+          "evidence": "bibliography_confirmed"
+        },
+        {
+          "id": "cinii-yoshimoto",
+          "label": "CiNii Books 吉本隆明『カール・マルクス』",
+          "type": "図書館総合目録",
+          "url": "https://ci.nii.ac.jp/ncid/BN04692637",
+          "status": "1966年12月刊の書誌情報を確認する補助線。本文の証明ではない。",
+          "evidence": "bibliography_confirmed"
+        },
+        {
+          "id": "duden-leib",
+          "label": "Duden: Leib",
+          "type": "現代ドイツ語辞書",
+          "url": "https://www.duden.de/rechtschreibung/Leib",
+          "status": "現代語義・語源の比較用。マルクスの意図を単独で証明しない。",
+          "evidence": "confirmed"
+        },
+        {
+          "id": "local-synthesis",
+          "label": "ユーザー提供資料：非有機的肉体フォルダー内の調査綜合",
+          "type": "プロジェクト内研究資料",
+          "local_refs": ["compass_artifact_wf-3549fe01-7afe-4318-9237-69ac01238707_text_markdown.md", "deep-research-report (2).md", "吉本隆明のマルクス理解：非有機的肉体を中心に.md", "非有機的肉体とは何か論考計画書 v1.2.md"],
+          "status": "再利用するが、外部一次資料で再照合すべき主張を含む。",
+          "evidence": "candidate"
+        },
+        {
+          "id": "scholarship-plan",
+          "label": "研究・受容史の次段検索計画",
+          "type": "調査計画",
+          "status": "Foster／Burkett等の直接引用・頁・影響関係を検索する候補。未確認。",
+          "evidence": "candidate"
+        }
+      ],
+      "next_actions": [
+        {"label": "1844年原典の前後文脈と版面を照合する", "kind": "verify", "source_ids": ["marx-1844-online"]},
+        {"label": "岩波文庫の該当頁でLeib／Körperの訳語を確認する", "kind": "verify", "source_ids": ["ndl-1844-jp"]},
+        {"label": "吉本隆明1966年版の核心箇所・頁・引用範囲を確認する", "kind": "verify", "source_ids": ["ndl-yoshimoto", "cinii-yoshimoto"]},
+        {"label": "英訳・仏訳を版ごとに追加し、何が圧縮・追加されたかを並置する", "kind": "expand", "source_ids": ["marx-1844-online"]},
+        {"label": "Foster／Burkett等の直接引用と対立する読みを研究文献で検証する", "kind": "expand", "source_ids": ["scholarship-plan"]}
+      ]
+    }
+  ]
+}

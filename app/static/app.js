@@ -1456,6 +1456,7 @@ const ACTIONS = {
   meaning:      { label: "意味", effect: "action", run: (t) => gWordAspect(t.term, "meaning") },
   multilingual: { label: "多言語", effect: "action", run: (t) => gWordAspect(t.term, "breadth") },   // 中心を変えない（Aの是正・全入口統一）
   collapse:     { label: "埋没原語", effect: "action", run: (t) => gWordAspect(t.term, "collapse") },
+  translationHistory: { label: "翻訳・受容史", effect: "action", run: (t) => gTranslationHistoryPanel(t.term) },
   anatomy:      { label: "解剖", effect: "action", run: (t) => gAnatomyPanel(t.term) },
   contrast:     { label: "並置", effect: "action", run: (t) => gContrastPanel(t.term) },
   colloc:       { label: "共起", effect: "action", run: (t) => gColloc(t.term) },
@@ -2253,6 +2254,138 @@ async function gWordAspect(word, aspect) {
   if (h) body.innerHTML = h; else await autoFallback(word, aspect, body);   // A3: 空なら別源を実走行（softLine単独でない）
 }
 
+// ── 翻訳・受容史（通常の語源/外部検索とは別の証拠台帳モード） ────────────────
+// 地図を再中心せず、原典・版・訳者・受容者・変形・反証を一枚の研究面に束ねる。
+// curated seed の範囲だけを返すAPIと対になり、未整備の語・分野は空結果でなく「未整備＋次の調査」を表示する。
+const TH_DOMAIN_OPTIONS = [
+  ["philosophy", "哲学・思想"], ["literature", "文学"], ["science", "科学・化学"], ["art", "芸術・美術"]
+];
+function _thLevel(level, levels) {
+  const rec = (levels || []).find(x => x && x.id === level);
+  const label = rec && rec.label ? rec.label : (level || "未分類");
+  const cls = String(level || "unknown").replace(/[^a-z0-9_-]/gi, "-");
+  return `<span class="th-badge th-${cls}">${esc(label)}</span>`;
+}
+function _thSources(ids, sources) {
+  const by = Object.fromEntries((sources || []).filter(Boolean).map(s => [s.id, s]));
+  return (ids || []).map(id => by[id]).filter(Boolean).map(s => {
+    const label = esc(s.label || s.id || "source");
+    const link = s.url
+      ? `<a class="ext-link th-source-link" href="${esc(s.url)}" target="_blank" rel="noopener">${label}</a>`
+      : `<span class="th-source-name">${label}</span>`;
+    const local = (s.local_refs || []).length ? `<small class="th-local-ref">ローカル資料：${esc(s.local_refs.join(" ／ "))}</small>` : "";
+    return `<span class="th-source-ref">${link}${local}</span>`;
+  }).join(" ");
+}
+function _thField(label, value) {
+  if (value == null || value === "") return "";
+  return `<dt>${esc(label)}</dt><dd>${esc(String(value))}</dd>`;
+}
+function _thSourceLine(ids, sources) {
+  const links = _thSources(ids, sources);
+  return links ? `<p class="th-source-line"><span>出所：</span>${links}</p>` : "";
+}
+function _thNextActions(actions, sources) {
+  if (!(actions || []).length) return "";
+  return `<ul class="th-next-list">` + actions.map(a =>
+    `<li><span>${esc(a.label || "次の調査")}</span>${_thSources(a.source_ids, sources)}</li>`).join("") + `</ul>`;
+}
+function _thPlan(plan) {
+  if (!(plan || []).length) return "";
+  return `<div class="th-plan">` + plan.map(x =>
+    `<div class="th-plan-row"><b>${esc(x.label || "")}</b><span>${esc(x.purpose || "")}</span><em>${esc(x.status || "")}</em></div>`).join("") + `</div>`;
+}
+function _thResponseHtml(d) {
+  const jp = LANG === "ja";
+  if (!d || d.status !== "ready" || !d.dossier) {
+    const next = _thNextActions((d && d.next_actions) || [], []);
+    return `<div class="th-result th-unseeded">
+      <div class="th-status-line"><b>この条件の台帳はまだ未整備です</b><span class="th-badge th-unverified">未整備</span></div>
+      <p>${esc((d && d.note) || (jp ? "この分野の証拠台帳はまだ登録されていません。" : "This evidence dossier is not seeded yet."))}</p>
+      <p class="muted">既存の哲学資料を別分野の答えとして流用しません。分野を変えるか、原語・版・出典を登録してから同じ入口で再開できます。</p>
+      ${next ? `<h4 class="th-subhead">次にできること</h4>${next}` : ""}
+      <h4 class="th-subhead">情報源の選定計画</h4>${_thPlan((d && d.source_plan) || [])}
+      <p class="srcline">${esc((d && d.verified_at) ? `台帳確認日：${d.verified_at}` : "確認日：未記録")}</p>
+    </div>`;
+  }
+  const ds = d.dossier, sources = ds.sources || [], levels = d.evidence_levels || [];
+  let h = `<div class="th-result th-ready">
+    <div class="th-status-line"><b>台帳を表示しています：${esc(ds.title || d.query)}</b>${_thLevel("strong", levels)}</div>
+    <p class="th-honesty">${esc(d.note || "")}</p>
+    <div class="th-question"><b>中心問い</b><p>${esc(ds.center_question || "")}</p></div>
+    <p class="th-scope">${esc(ds.scope_note || "")}</p>
+    <details class="th-evidence-guide"><summary>証拠階層と読み方</summary><p>${esc(d.honesty || "")}</p><ul>`
+      + levels.map(x => `<li>${_thLevel(x.id, levels)} ${esc(x.description || "")}</li>`).join("")
+      + `</ul></details>`;
+
+  h += `<section class="th-section"><h3>原語・翻訳語の対応</h3><p class="muted">一つの日本語にまとめず、原語・翻訳・保存／欠損／追加を別々に表示します。</p><div class="th-term-grid">`
+    + (ds.term_map || []).map(t => `<article class="th-term-card">
+      <div class="th-card-top"><code>${esc(t.source_term || "")}</code><span>${esc(t.language || "")}</span>${_thLevel(t.evidence, levels)}</div>
+      <p class="th-kind">${esc(t.kind || "")}</p>
+      <p><b>日本語候補：</b>${esc((t.japanese_candidates || []).join(" ／ "))}</p>
+      <p class="th-distinction">${esc(t.distinction || "")}</p>
+      <dl class="th-dl">${_thField("保存", t.preserved)}${_thField("欠損・変形", t.lost_or_shifted)}${_thField("付加", t.added)}</dl>
+      ${_thSourceLine(t.source_ids, sources)}
+    </article>`).join("") + `</div></section>`;
+
+  h += `<section class="th-section"><h3>時系列 5W1H</h3><div class="th-timeline">`
+    + (ds.timeline || []).map(t => `<article class="th-timeline-card">
+      <div class="th-card-top"><b>${esc(t.when || "")}</b><span>${esc(t.who || "")}</span>${_thLevel(t.evidence, levels)}</div>
+      <dl class="th-dl th-fivew">${_thField("Where", t.where)}${_thField("What", t.what)}${_thField("Why", t.why)}${_thField("How", t.how)}</dl>
+      ${t.evidence_note ? `<p class="th-evidence-note">${esc(t.evidence_note)}</p>` : ""}${_thSourceLine(t.source_ids, sources)}
+    </article>`).join("") + `</div></section>`;
+
+  h += `<section class="th-section"><h3>翻訳・受容による変形</h3><div class="th-transform-grid">`
+    + (ds.transformations || []).map(t => `<article class="th-transform-card">
+      <div class="th-card-top"><b>${esc(t.stage || "")}</b>${_thLevel(t.evidence, levels)}</div>
+      <dl class="th-dl">${_thField("保存", t.preserved)}${_thField("失われた／移動した焦点", t.lost)}${_thField("加わった焦点", t.added)}${_thField("検証方法", t.test)}</dl>
+      ${_thSourceLine(t.source_ids, sources)}
+    </article>`).join("") + `</div></section>`;
+
+  h += `<section class="th-section"><h3>受容史の人物台帳</h3><div class="th-ledger">`
+    + (ds.reception_ledger || []).map(t => `<article class="th-ledger-card">
+      <div class="th-card-top"><b>${esc(t.who || "")}</b><span>${esc(t.when || "")}</span>${_thLevel(t.evidence, levels)}</div>
+      <dl class="th-dl th-fivew">${_thField("Where", t.where)}${_thField("What", t.what)}${_thField("Why", t.why)}${_thField("How", t.how)}${_thField("関係", t.relation)}</dl>
+      ${_thSourceLine(t.source_ids, sources)}
+    </article>`).join("") + `</div></section>`;
+
+  h += `<section class="th-section"><h3>最強の反証・注意点</h3><div class="th-counter-grid">`
+    + (ds.counterchecks || []).map(t => `<article class="th-counter-card"><p><b>主張：</b>${esc(t.claim || "")}</p><p><b>反証候補：</b>${esc(t.counterargument || "")}</p><p><b>検査：</b>${esc(t.test || "")}</p></article>`).join("")
+    + `</div></section>`;
+
+  h += `<section class="th-section"><h3>参照先</h3><div class="th-source-list">` + sources.map(s =>
+    `<article class="th-source-card"><div class="th-card-top"><b>${s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id || "source")}</a>` : esc(s.label || s.id || "source")}</b>${_thLevel(s.evidence, levels)}</div><p>${esc(s.status || "")}</p>${(s.local_refs || []).length ? `<small class="th-local-ref">${esc(s.local_refs.join(" ／ "))}</small>` : ""}</article>`).join("") + `</div></section>`;
+  h += `<section class="th-section th-next"><h3>次の調査</h3>${_thNextActions(d.next_actions || ds.next_actions || [], sources)}</section>`;
+  return h + `</div>`;
+}
+async function gTranslationHistoryPanel(word) {
+  const jp = LANG === "ja";
+  const controls = `<div class="th-controls"><label for="th-domain">分野</label><select id="th-domain">${TH_DOMAIN_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select><button type="button" class="th-run">この条件で調査を開始</button></div>
+    <p class="th-intro">通常の意味検索や単純な語源検索とは別に、「誰が・いつ・どの版で・どの言語へ移し、何が保存／欠損／追加されたか」を証拠階層つきで追跡します。現時点で登録された資料だけを表示し、未確認の点は未確認のまま残します。</p>
+    <div class="th-results"><p class="muted">${jp ? "台帳を読み込んでいます…" : "Loading the evidence dossier…"}</p></div>`;
+  const p = gPanel((jp ? "🧭 翻訳・受容史を追跡：" : "Translation / reception history: ") + word, controls, word);
+  if (!p) return false;
+  const results = p.querySelector(".th-results"), select = p.querySelector("#th-domain"), runButton = p.querySelector(".th-run");
+  const run = async () => {
+    if (!results || !select || !runButton) return;
+    const domain = select.value || "philosophy";
+    runButton.disabled = true;
+    results.innerHTML = `<p class="muted"><span class="spin"></span> ${esc(jp ? `「${word}」の${domain}分野の原典・翻訳・受容史を照合中…` : "Checking the source dossier…")}</p>`;
+    try {
+      const d = await api(`/api/translation-history?q=${encodeURIComponent(word)}&domain=${encodeURIComponent(domain)}&lang=${LANG}`);
+      if (results.isConnected) results.innerHTML = _thResponseHtml(d);
+    } catch (e) {
+      console.error("translation history", e);
+      if (results.isConnected) results.innerHTML = `<div class="th-result th-unseeded"><div class="th-status-line"><b>この調査面は追加確認を要します</b><span class="th-badge th-unverified">未確認</span></div><p>「${esc(word)}」の現在のMapと、ここからの次の入口は保持されています。下のフッターから外部情報源・多言語・組み合わせへ続けられます。</p><p class="srcline">${esc(String(e && e.message || e))}</p></div>`;
+    } finally {
+      if (runButton.isConnected) runButton.disabled = false;
+    }
+  };
+  runButton.addEventListener("click", run);
+  await run();
+  return true;
+}
+
 // 普遍的な語源解剖（半田様指摘の弁証法ケース＝dia-対話性の復元）。原語へ辿り構成要素と
 // 意味の連鎖をWiktionaryの実文書から。どんな語にも普遍適用（seed不要）。
 async function gAnatomyPanel(word) {
@@ -2426,6 +2559,7 @@ function gActions(n) {
         { s: "🔬 解剖", t: "🔬 語源と構成要素を解剖する（原義を復元）", action: "anatomy" },
         { s: "⚖ 並置", t: "⚖ 訳語と原語の意味を並べて比べる（何が隠れたか）", action: "contrast" },
         { s: "⚠ 埋没", t: "⚠ 埋没した原語を見る（中心は変えない）", action: "collapse" },
+        { s: "🧭 翻訳・受容史", t: "🧭 翻訳・受容史を追跡する（原典・版・人物・変容・欠損を証拠付きで整理）", action: "translationHistory" },
         { s: "🌍 多言語", t: "🌍 多言語での言い方を見る（中心は変えない）", action: "multilingual" },
         { s: "🕮 共起", t: "🕮 原語空間の共起（共に使われる語）", action: "colloc" },
       ];

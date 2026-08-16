@@ -10,10 +10,12 @@ of the seven axioms. In particular:
   axiom 7 (exit): full export to Markdown / JSON-LD.
 """
 import asyncio
+import copy
 import json
 import math
 import os
 import re
+import unicodedata
 import urllib.parse
 
 from fastapi import FastAPI, Request, HTTPException
@@ -70,6 +72,8 @@ with open(os.path.join(APP_DIR, "data", "orig_clusters.json"), encoding="utf-8")
 ORIG_CLUSTER_INDEX = {
     m.lower(): c for c in ORIG_CLUSTERS["clusters"] for m in c["match"]
 }
+with open(os.path.join(APP_DIR, "data", "translation_history_seed.json"), encoding="utf-8") as f:
+    TRANSLATION_HISTORY = json.load(f)
 with open(os.path.join(APP_DIR, "data", "author_lineage.json"), encoding="utf-8") as f:
     AUTHOR_LINEAGE = json.load(f)
 AUTHOR_LINEAGE_INDEX = {
@@ -657,6 +661,92 @@ async def api_origin(q: str, lang: str = "ja"):
         "sources": [{"source": r["source"], "retrieved_at": r["retrieved_at"],
                      "error": r["error"]} for r in (tr, cn)],
     }
+
+
+def _history_norm(value: str) -> str:
+    """Normalize only for matching a dossier trigger, never for displayed evidence."""
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", str(value or "")).casefold())
+
+
+def _history_domain(value: str) -> str:
+    key = _history_norm(value) or "philosophy"
+    for domain, aliases in (TRANSLATION_HISTORY.get("domain_aliases") or {}).items():
+        if key == _history_norm(domain) or any(key == _history_norm(a) for a in aliases):
+            return domain
+    return key
+
+
+def _history_dossier(q: str, domain: str):
+    """Return a copy of a curated dossier only when the query is an explicit match.
+
+    This endpoint intentionally does not synthesize a history from a generic search
+    hit. An absent domain/query is a visible, actionable not-seeded state.
+    """
+    nq = _history_norm(q)
+    for dossier in TRANSLATION_HISTORY.get("dossiers", []):
+        if dossier.get("domain") != domain:
+            continue
+        for match in dossier.get("match", []):
+            nm = _history_norm(match)
+            if nq and (nq == nm or (len(nq) >= 4 and (nq in nm or nm in nq))):
+                return copy.deepcopy(dossier), match
+    return None, None
+
+
+@app.get("/api/translation-history")
+async def api_translation_history(q: str, domain: str = "philosophy", lang: str = "ja"):
+    """特別モード: 原語・翻訳・受容史を証拠階層つきで追跡する。
+
+    通常の /api/origin と違い、これは一つの語の一般的な語源を返すAPIではない。
+    版・訳者・受容者・変形・欠損を同じ証拠台帳に束ねるための curated seed であり、
+    未整備の分野や語に哲学の結果を流用しない。
+    """
+    if not q.strip():
+        raise HTTPException(400, "empty query")
+    domain_key = _history_domain(domain)
+    meta = TRANSLATION_HISTORY.get("_meta", {})
+    available = sorted({d.get("domain") for d in TRANSLATION_HISTORY.get("dossiers", []) if d.get("domain")})
+    supported_domains = sorted((TRANSLATION_HISTORY.get("domain_aliases") or {}).keys())
+    dossier, matched = _history_dossier(q, domain_key)
+    base = {
+        "schema_version": meta.get("schema", "dialexis.translation-history.v1"),
+        "query": q,
+        "lang": lang,
+        "domain": domain_key,
+        "queried_at": now(),
+        "verified_at": meta.get("verified_at"),
+        "honesty": meta.get("honesty"),
+        "evidence_levels": copy.deepcopy(meta.get("evidence_levels", [])),
+        "source_policy": copy.deepcopy(meta.get("source_policy", [])),
+        "source_plan": copy.deepcopy(meta.get("source_plan", [])),
+        "available_domains": supported_domains,
+        "seeded_domains": available,
+    }
+    if not dossier:
+        base.update({
+            "status": "not_seeded",
+            "matched": False,
+            "matched_term": None,
+            "dossier": None,
+            "note": (f"「{q}」の「{domain_key}」分野について、原典・翻訳・受容史を一つの台帳に"
+                      "束ねたデータはまだ登録されていません。既存の哲学資料を別分野へ流用せず、"
+                      "下の情報源計画から調査を開始できます。"),
+            "next_actions": [
+                {"label": "原語・別綴り・代表的な版を登録する", "kind": "seed"},
+                {"label": "原典→翻訳→受容の順に証拠を集める", "kind": "research"},
+                {"label": "一般の多言語・外部検索へ戻る", "kind": "continue"},
+            ],
+        })
+        return base
+    base.update({
+        "status": "ready",
+        "matched": True,
+        "matched_term": matched,
+        "dossier": dossier,
+        "note": "これは網羅的な検索結果ではなく、現時点で接地できた資料範囲を証拠階層つきで整理した台帳です。",
+        "next_actions": copy.deepcopy(dossier.get("next_actions", [])),
+    })
+    return base
 
 
 @app.get("/api/origin/graph")
