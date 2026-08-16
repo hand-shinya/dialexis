@@ -21,9 +21,9 @@ Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を�
 | 開発リポジトリ | /home/handa/dialexis |
 | GitHub | https://github.com/hand-shinya/dialexis |
 | ブランチ | main |
-| 公開反映済みの製品コードHEAD | 213f709（runtime code: db993a8） |
+| 公開反映済みの製品コードHEAD | efc7d5d（generalized runtime code: 5696a64） |
 | 今回の入口修正 | 4e96a3b（ホーム・Question Doors・navを /originへ） |
-| 公開デプロイ時の検証SHA | db993a8a52a7706162c0dc43de5da9c65f2cb5c2 |
+| 公開デプロイ時の検証SHA | 5696a64f836147c2c36c792abc09e68011280cff |
 | 本書・回帰E2Eの追加 | `translation_history` 特別モード、台帳、公開E2Eを含む |
 | origin/main | 本書更新後のmain。再現時は `git rev-parse HEAD` で確定 |
 | 検証マーカー | deploy/verified_sha.txt |
@@ -34,8 +34,8 @@ Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を�
 | 作業フォルダー（WSL） | /mnt/i/GoogleDriveMirror/MyKnowledgeBase/Main/論考/哲学DESK |
 | ライセンス | Code: AGPL-3.0 / Documentation: CC-BY-4.0 |
 
-213f709は、db993a8で翻訳・受容史の製品コードを追加し、公式verify、VPS側pytest、
-サービス再起動、公開HTTP検査、公開実ブラウザ8/8を完了した現在の公開HEADである。
+efc7d5dは、5696a64で翻訳・受容史を全実体ノード・全パネルへ一般化した製品コードを追加し、
+公式verify、VPS側pytest、サービス再起動、公開HTTP検査、公開実ブラウザ11/11を完了した現在の公開HEADである。
 現在のGit先端はgit logとgit rev-parseで確認し、公開runtimeの基準は213f709とする。
 検証SHAはdeploy/verified_sha.txtで確認する。
 vps_update.shは、検証SHA以降の差分がマーカーだけであることを確認する。
@@ -142,19 +142,34 @@ entry_routing.e2e.js                                10/10 PASS
 
 ユーザー指定の `I:\GoogleDriveMirror\MyKnowledgeBase\Main\論考\非有機的肉体`（WSL: `/mnt/i/GoogleDriveMirror/MyKnowledgeBase/Main/論考/非有機的肉体`）直下にある調査資料から、中心問い、1844年草稿、Grundrisse、Stoffwechsel、岩波訳、吉本隆明、受容史候補、未確認事項を抽出した。主なローカル参照は `compass_artifact_wf-3549...`、`deep-research-report (2).md`、`吉本隆明のマルクス理解：非有機的肉体を中心に.md`、`非有機的肉体とは何か論考計画書 v1.2.md`。これらは研究入力であり、外部原典・NDL・CiNii等での再照合を要する。
 
+### 1.5.1 2026-08-17追加：全語・全窓への一般化
+
+初期実装が「非有機的肉体」の詳細台帳だけを表示する状態だったため、別語・別ノード・別パネルでは
+利用者から「反応しない」と見える余地があった。2026-08-17に次を修正した。
+
+1. `ACTIONS.translationHistory` を wordだけでなく、original / language / related / author / work の
+   全実体ノードの共通Menu（上部帯・popup）へ移動した。domainなど構造ノードは語ではないため対象外。
+2. 全Actionパネルの「この語で続ける」フッターと、空結果・取得保留時の `noMiss` にも
+   `🧭 翻訳・受容史` を追加した。どの窓からでも同じdispatcherへ到達する。
+3. 台帳未登録の語・分野でも無反応にせず、その語を題名・中心問いにした「新規調査台帳」準備面を返す。
+   原語、版、翻訳、受容を順に揃える初回手順と、Wiktionary、NDL、CiNii、Google Booksの
+   query-specificな探索入口を表示する。これらは証拠ではなく候補入口である。
+4. 既存の「非有機的肉体」台帳は引き続き哲学分野のseedとしてのみ使用し、未知語・文学・科学・芸術へ
+   哲学データを流用しない。
+
 ### 現時点の検証
 
 ~~~text
-Python: 91 passed
-翻訳・受容史 Python: 5件を含む
-translation_history.e2e.js: 8/8 PASS
-内容確認: 中心語不変、原語・翻訳語、5W1H、受容史、反証、出所、未整備科学分野、Menu復帰
+Python: 92 passed
+翻訳・受容史 Python: 未登録語の調査workspace・query-specific出典候補を含む
+translation_history.e2e.js: 11/11 PASS
+内容確認: 中心語不変、原語・翻訳語、5W1H、受容史、反証、出所、未整備科学分野、全実体kind、別語、Menu復帰
 決定論的UI E2E: 全件PASS
 統合 origin: 21/23（従来どおりnetwork依存の情報表示）
 検証SHA: deploy/verified_sha.txt に記録された現行HEAD
 ~~~
 
-公開反映後の実測: `http://219.94.244.239:8000/origin?q=非有機的肉体&lang=ja` で、Menu→`翻訳・受容史`→専用API→科学分野の未整備表示→`←メニュー`を実ブラウザ操作し、8/8 PASS。`healthz HTTP:200`。人間検証の入口URLはこのURLを使う。
+公開反映後の実測: `http://219.94.244.239:8000/origin?q=非有機的肉体&lang=ja` で、Menu→`翻訳・受容史`→専用API→科学分野の未整備表示→`←メニュー`、さらに人物・著作・原語・言語・関連語の共通Actionと別語「自由」の新規調査台帳を実ブラウザ操作し、11/11 PASS。VPS `pytest 92 passed`、`healthz HTTP:200`。人間検証の入口URLはこのURLを使う。
 
 ## 2. 目的と背景
 
@@ -1222,6 +1237,13 @@ curl -s 'http://219.94.244.239:8000/api/combine?a=カール・マルクス&b=吉
 - `tests/test_translation_history.py` と `tests/e2e/translation_history.e2e.js` を追加。
 - 公式verify（Python 91 passed、決定論的UI E2E全件PASS）とVPS pytest（91 passed）を通過し、公開URLの実ブラウザ8/8、healthz 200を確認。
 - `db993a8`（製品コード）と `213f709`（検証マーカー・公開HEAD）を記録。
+
+### 2026-08-17 一般化追記
+
+- 翻訳・受容史Actionを全実体ノードと全Actionパネルへ一般化。
+- 未登録語に対しても語専用の調査台帳準備面、初回調査手順、語を埋め込んだ出典候補リンクを表示。
+- 公式verifyを再実行し、Python 92 passed、翻訳・受容史11/11、全決定論的E2Eを確認。
+- `5696a64`（一般化実装）、`efc7d5d`（検証マーカー・公開HEAD）、VPS pytest 92 passed、healthz 200を記録。
 
 ### 今後
 
