@@ -2,6 +2,7 @@
 import asyncio
 import os
 import tempfile
+import urllib.parse
 
 os.environ["DIALEXIS_DB"] = os.path.join(tempfile.mkdtemp(), "translation-history-test.db")
 
@@ -47,3 +48,14 @@ def test_api_returns_a_copy_so_one_view_cannot_mutate_the_seed():
     first["dossier"]["term_map"].clear()
     second = asyncio.run(api_translation_history("非有機的肉体", "philosophy", "ja"))
     assert len(second["dossier"]["term_map"]) >= 5
+
+
+def test_unknown_term_returns_a_research_workspace_and_query_specific_sources():
+    result = asyncio.run(api_translation_history("自由", "哲学", "ja"))
+    assert result["status"] == "not_seeded"
+    assert result["research_brief"]["status"] == "new_research_workspace"
+    assert "自由" in result["research_brief"]["title"]
+    ids = {s["id"] for s in result["source_candidates"]}
+    assert {"candidate-wiktionary-ja", "candidate-ndl", "candidate-cinii"} <= ids
+    assert all("自由" in urllib.parse.unquote(s["url"]) for s in result["source_candidates"])
+    assert all(a.get("source_ids") for a in result["next_actions"])

@@ -1185,6 +1185,7 @@ function noMiss(term, opts) {
     ["ext", "🌐 " + (jp ? "外部の専門情報で調べる" : "external")],
     ["combine", "🔗 " + (jp ? "別の語と組み合わせる" : "combine")],
     ["lens", "👓 " + (jp ? "別の見方で見る" : "other views")],
+    ["history", "🧭 " + (jp ? "翻訳・受容史を追跡する" : "translation / reception history")],
   ];
   return `<div class="nomiss"><p class="nomiss-lead">${lead}</p><div class="nomiss-acts">`
     + acts.map(([a, l]) => `<button type="button" class="nomiss-b" data-a="${a}" data-w="${esc(term)}">${esc(l)}</button>`).join("")
@@ -1488,8 +1489,8 @@ const ACTIONS = {
 // 各表示面が使う Action ID の宣言（テストが registry と照合し「未宣言のユーザー操作」を0にする）。
 // 実装側の各面はこの定義を参照する（文言から推測しない・面ごとに作用を再実装しない）。
 const UI_ACTION_MAP = {
-  panelFooter: { center: "center", lens: "lens", lang: "multilingual", ext: "external", combine: "combine", new: "newtab" },
-  nomiss:      { center: "center", lang: "multilingual", ext: "external", combine: "combine", lens: "lens" },
+  panelFooter: { center: "center", lens: "lens", lang: "multilingual", ext: "external", combine: "combine", history: "translationHistory", new: "newtab" },
+  nomiss:      { center: "center", lang: "multilingual", ext: "external", combine: "combine", lens: "lens", history: "translationHistory" },
 };
 const UI_ACTION_IDS = {
   topbar:      null,   // gActions（中心語）— 実行時に列挙
@@ -2295,15 +2296,25 @@ function _thPlan(plan) {
   return `<div class="th-plan">` + plan.map(x =>
     `<div class="th-plan-row"><b>${esc(x.label || "")}</b><span>${esc(x.purpose || "")}</span><em>${esc(x.status || "")}</em></div>`).join("") + `</div>`;
 }
+function _thCandidateCards(sources, levels) {
+  if (!(sources || []).length) return "";
+  return `<div class="th-source-list">` + sources.map(s =>
+    `<article class="th-source-card"><div class="th-card-top"><b>${s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id || "source")}</a>` : esc(s.label || s.id || "source")}</b>${_thLevel(s.evidence || "candidate", levels)}</div><p>${esc(s.purpose || "")}</p><p class="muted">${esc(s.status || "")}</p></article>`).join("") + `</div>`;
+}
 function _thResponseHtml(d) {
   const jp = LANG === "ja";
   if (!d || d.status !== "ready" || !d.dossier) {
-    const next = _thNextActions((d && d.next_actions) || [], []);
+    const sources = (d && d.source_candidates) || [];
+    const brief = (d && d.research_brief) || {};
+    const next = _thNextActions((d && d.next_actions) || [], sources);
     return `<div class="th-result th-unseeded">
-      <div class="th-status-line"><b>この条件の台帳はまだ未整備です</b><span class="th-badge th-unverified">未整備</span></div>
+      <div class="th-status-line"><b>この語の調査台帳をここから開始できます</b><span class="th-badge th-unverified">初回調査</span></div>
       <p>${esc((d && d.note) || (jp ? "この分野の証拠台帳はまだ登録されていません。" : "This evidence dossier is not seeded yet."))}</p>
-      <p class="muted">既存の哲学資料を別分野の答えとして流用しません。分野を変えるか、原語・版・出典を登録してから同じ入口で再開できます。</p>
+      <div class="th-question"><b>${esc(brief.title || `「${d && d.query || ""}」の新規調査`)}</b><p>${esc(brief.center_question || "原語・原典・翻訳・受容を同じ台帳へ登録するための開始点です。")}</p></div>
+      <p class="muted">既存の哲学資料を別分野の答えとして流用しません。この語の原語・版・出典を登録すれば、同じ画面で台帳を継続できます。</p>
+      ${brief.first_pass && brief.first_pass.length ? `<h4 class="th-subhead">最初に揃える証拠</h4><ol class="th-first-pass">${brief.first_pass.map(x => `<li>${esc(x)}</li>`).join("")}</ol>` : ""}
       ${next ? `<h4 class="th-subhead">次にできること</h4>${next}` : ""}
+      ${sources.length ? `<h4 class="th-subhead">この語の調査入口</h4>${_thCandidateCards(sources, (d && d.evidence_levels) || [])}` : ""}
       <h4 class="th-subhead">情報源の選定計画</h4>${_thPlan((d && d.source_plan) || [])}
       <p class="srcline">${esc((d && d.verified_at) ? `台帳確認日：${d.verified_at}` : "確認日：未記録")}</p>
     </div>`;
@@ -2539,6 +2550,7 @@ function gActions(n) {
       { s: "🎯 中心に据える", t: "🎯 これを地図の中心に据え直す（グラフを再構成）", action: "center" },
       { s: "🔗 組み合わせ", t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", action: "combine" },
       { s: "👓 見方", t: "👓 見方を選ぶ（この地図の切り口）", action: "lens" },
+      { s: "🧭 翻訳・受容史", t: "🧭 この語・人物・著作の翻訳・受容史を追跡する（原典・版・変容・欠損を証拠付きで整理）", action: "translationHistory" },
     ];
     const CORE_TAIL = [
       { s: "🌐 外部で調べる", t: "🌐 外部の専門情報で調べる（各サイトの言語で・新タブ）", action: "external" },
@@ -2559,7 +2571,6 @@ function gActions(n) {
         { s: "🔬 解剖", t: "🔬 語源と構成要素を解剖する（原義を復元）", action: "anatomy" },
         { s: "⚖ 並置", t: "⚖ 訳語と原語の意味を並べて比べる（何が隠れたか）", action: "contrast" },
         { s: "⚠ 埋没", t: "⚠ 埋没した原語を見る（中心は変えない）", action: "collapse" },
-        { s: "🧭 翻訳・受容史", t: "🧭 翻訳・受容史を追跡する（原典・版・人物・変容・欠損を証拠付きで整理）", action: "translationHistory" },
         { s: "🌍 多言語", t: "🌍 多言語での言い方を見る（中心は変えない）", action: "multilingual" },
         { s: "🕮 共起", t: "🕮 原語空間の共起（共に使われる語）", action: "colloc" },
       ];
@@ -2700,6 +2711,7 @@ function gPanel(title, bodyHtml, term) {
     ["lang", "🌍 " + (jp ? "多言語" : "languages")],
     ["ext", "🌐 " + (jp ? "外部で調べる" : "external")],
     ["combine", "🔗 " + (jp ? "組み合わせ" : "combine")],
+    ["history", "🧭 " + (jp ? "翻訳・受容史" : "translation history")],
     ["new", "↗ " + (jp ? "新タブ" : "new tab")],
   ].map(([a, l]) => `<button type="button" class="gp-cont-b" data-a="${a}">${esc(l)}</button>`).join("") + `</div>` : "";
   p.innerHTML = `<div class="gp-head">${back ? `<button type="button" class="gp-back" title="${jp ? "このノードのメニューに戻って別の項目を選ぶ" : "back to menu"}">← ${jp ? "メニュー" : "menu"}</button>` : ""}<b>${esc(title)}</b><button type="button" class="gp-x">×</button></div>

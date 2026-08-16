@@ -693,6 +693,65 @@ def _history_dossier(q: str, domain: str):
     return None, None
 
 
+def _history_source_candidates(q: str):
+    """Build generic discovery links for a new research term.
+
+    These are entry points, not evidence. Keeping them generated from the
+    user's query means an unknown term still becomes a usable research start
+    instead of an inert ``not_seeded`` response.
+    """
+    encoded = urllib.parse.quote(str(q or "").strip(), safe="")
+    return [
+        {
+            "id": "candidate-wiktionary-ja",
+            "label": "Wiktionary 日本語（語義・別綴りの探索）",
+            "url": f"https://ja.wiktionary.org/wiki/Special:Search?search={encoded}",
+            "purpose": "語形・別綴り・語義の候補を見つける",
+            "evidence": "candidate",
+            "status": "探索入口。原典・版・頁の証明には使わない。",
+        },
+        {
+            "id": "candidate-ndl",
+            "label": "国立国会図書館サーチ（書誌・翻訳版の探索）",
+            "url": f"https://ndlsearch.ndl.go.jp/search?keyword={encoded}",
+            "purpose": "日本語訳、訳者、刊年、版、所蔵を確認する",
+            "evidence": "candidate",
+            "status": "書誌確認の入口。本文の訳語は該当頁で別途確認する。",
+        },
+        {
+            "id": "candidate-cinii",
+            "label": "CiNii Research（研究・書誌の探索）",
+            "url": f"https://cir.nii.ac.jp/all?q={encoded}",
+            "purpose": "論文・図書・研究者・引用関係の候補を探す",
+            "evidence": "candidate",
+            "status": "研究候補の探索入口。引用・影響関係は本文で検証する。",
+        },
+        {
+            "id": "candidate-books",
+            "label": "Google Books（版・全文候補の探索）",
+            "url": f"https://books.google.com/books?q={encoded}",
+            "purpose": "異版、翻訳、引用箇所の候補を探索する",
+            "evidence": "candidate",
+            "status": "探索入口。表示された書誌や断片を証拠と同一視しない。",
+        },
+    ]
+
+
+def _history_research_brief(q: str, domain: str):
+    """Return a reusable first-pass brief without pretending the research is done."""
+    return {
+        "title": f"「{q}」の翻訳・受容史 調査台帳",
+        "center_question": f"「{q}」は、{domain}の原典・翻訳・受容史の中で、誰が、いつ、どの版で、どのように使ったのか。",
+        "status": "new_research_workspace",
+        "first_pass": [
+            "原語・異綴り・関連する語形を確定する",
+            "原典と代表的な版の書誌・該当頁を確定する",
+            "翻訳者・刊年・訳語の差を版ごとに並べる",
+            "受容者の引用・再構成・反対解釈を原著者の主張から分離する",
+        ],
+    }
+
+
 @app.get("/api/translation-history")
 async def api_translation_history(q: str, domain: str = "philosophy", lang: str = "ja"):
     """特別モード: 原語・翻訳・受容史を証拠階層つきで追跡する。
@@ -723,18 +782,21 @@ async def api_translation_history(q: str, domain: str = "philosophy", lang: str 
         "seeded_domains": available,
     }
     if not dossier:
+        candidates = _history_source_candidates(q)
         base.update({
             "status": "not_seeded",
             "matched": False,
             "matched_term": None,
             "dossier": None,
+            "research_brief": _history_research_brief(q, domain_key),
+            "source_candidates": candidates,
             "note": (f"「{q}」の「{domain_key}」分野について、原典・翻訳・受容史を一つの台帳に"
                       "束ねたデータはまだ登録されていません。既存の哲学資料を別分野へ流用せず、"
                       "下の情報源計画から調査を開始できます。"),
             "next_actions": [
-                {"label": "原語・別綴り・代表的な版を登録する", "kind": "seed"},
-                {"label": "原典→翻訳→受容の順に証拠を集める", "kind": "research"},
-                {"label": "一般の多言語・外部検索へ戻る", "kind": "continue"},
+                {"label": "原語・別綴り・代表的な版を登録する", "kind": "seed", "source_ids": ["candidate-wiktionary-ja"]},
+                {"label": "原典→翻訳→受容の順に証拠を集める", "kind": "research", "source_ids": ["candidate-ndl", "candidate-cinii"]},
+                {"label": "一般の多言語・外部検索へ戻る", "kind": "continue", "source_ids": ["candidate-books"]},
             ],
         })
         return base
