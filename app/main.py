@@ -752,13 +752,294 @@ def _history_research_brief(q: str, domain: str):
     }
 
 
+def _history_payload(value):
+    """Unwrap a connector envelope without exposing connector error internals."""
+    if not isinstance(value, dict):
+        return {}
+    data = value.get("data")
+    return data if isinstance(data, (dict, list)) else value
+
+
+def _history_items(value) -> list:
+    data = _history_payload(value)
+    return data if isinstance(data, list) else []
+
+
+def _history_discovery_from_sources(q: str, domain: str, lang: str,
+                                    origin=None, anatomy=None, explore=None):
+    """Normalize existing source responses into a preliminary evidence ledger.
+
+    This is deliberately an extraction layer, not an AI-authored history. It
+    only copies meanings, labels, bibliographic records, and source links that
+    the existing connectors returned. Missing translation or reception claims
+    remain explicit next verification tasks.
+    """
+    origin = origin if isinstance(origin, dict) else {}
+    anatomy = anatomy if isinstance(anatomy, dict) else {}
+    explore = explore if isinstance(explore, dict) else {}
+    meta = TRANSLATION_HISTORY.get("_meta", {})
+    sources = [copy.deepcopy(s) for s in _history_source_candidates(q)]
+    source_by_id = {s["id"]: s for s in sources}
+
+    def add_source(source_id, label, url="", evidence="candidate", status=""):
+        rec = source_by_id.get(source_id)
+        if rec is None:
+            rec = {"id": source_id, "label": label, "url": url or "",
+                   "purpose": "", "evidence": evidence, "status": status}
+            source_by_id[source_id] = rec
+            sources.append(rec)
+        else:
+            if label:
+                rec["label"] = label
+            if url:
+                rec["url"] = url
+            rec["evidence"] = evidence or rec.get("evidence", "candidate")
+            if status:
+                rec["status"] = status
+        return source_id
+
+    wiki_url = origin.get("wiktionary_url") or ""
+    dict_source = add_source(
+        "candidate-wiktionary-ja", "Wiktionary 日本語（辞書・語形）", wiki_url,
+        "confirmed" if (origin.get("general_meaning") or origin.get("senses")) else "candidate",
+        "辞書義・語形を自動抽出。原典の意図や翻訳史の証明には使わない。")
+    if origin.get("wikidata_url"):
+        wd_source = add_source("auto-wikidata", "Wikidata（概念・人物・多言語ラベル）",
+                               origin["wikidata_url"], "candidate",
+                               "概念・人物・多言語ラベルの候補。関係の意味は本文で照合する。")
+    else:
+        wd_source = add_source("auto-wikidata", "Wikidata（概念・人物・多言語ラベル）",
+                               "https://www.wikidata.org/w/api.php", "candidate",
+                               "検索候補の入口。関係の意味は本文で照合する。")
+
+    term_map, term_seen = [], set()
+
+    def add_term(source_term, language, kind, japanese_candidates=None,
+                 distinction="", evidence="candidate", source_ids=None,
+                 preserved="", lost_or_shifted="", added=""):
+        source_term = str(source_term or "").strip()
+        if not source_term or (source_term, language) in term_seen:
+            return
+        term_seen.add((source_term, language))
+        term_map.append({
+            "source_term": source_term, "language": language, "kind": kind,
+            "japanese_candidates": japanese_candidates or [q],
+            "distinction": distinction, "preserved": preserved,
+            "lost_or_shifted": lost_or_shifted, "added": added,
+            "evidence": evidence, "source_ids": source_ids or [dict_source],
+        })
+
+    senses = [str(x).strip() for x in (origin.get("general_meaning") or origin.get("senses") or []) if str(x).strip()]
+    if senses:
+        add_term(q, "日本語", "入力語・辞書見出し", [q],
+                 "辞書に記載された現在語義：" + " ／ ".join(senses[:4]),
+                 "confirmed", [dict_source], "辞書に記載された語義",
+                 "原典・版・訳者ごとの意味差はこの自動抽出では未比較")
+    else:
+        add_term(q, "日本語", "入力語", [q],
+                 "この語を調査対象として各情報源へ照会した", "candidate",
+                 [dict_source], "入力語を保持", "辞書義は今回の抽出で未取得")
+
+    layers = (origin.get("segment_layers") or anatomy.get("segment_layers") or [])
+    for layer in layers:
+        if layer.get("level") not in {"semantic", "morphology"}:
+            continue
+        for unit in (layer.get("units") or [])[:8]:
+            text = unit.get("text") if isinstance(unit, dict) else unit
+            gloss = unit.get("gloss") if isinstance(unit, dict) else ""
+            add_term(text, "日本語", "意味のまとまり", [text],
+                     gloss or "辞書・語源データが示した構成単位",
+                     "confirmed", [dict_source], "意味のまとまりとして抽出",
+                     "文字単位より上位の意味単位", "翻訳史上の対応は未比較")
+
+    for comp in (anatomy.get("components") or [])[:8]:
+        if not isinstance(comp, dict):
+            continue
+        add_term(comp.get("part"), comp.get("lang") or "原語候補", "語源的構成要素",
+                 [q], comp.get("meaning") or "語源データの構成要素",
+                 "candidate", [dict_source], "語形の候補", "概念史上の原点とは別経路", "後世の解釈を混入させない")
+
+    for item in (origin.get("concept_origin") or [])[:10]:
+        if isinstance(item, dict):
+            add_term(item.get("term"), item.get("name") or "原語候補", "概念・翻訳候補",
+                     [q], "Wikipedia/Wikidata記事に併記された語形候補。翻訳関係は別途照合する。",
+                     "candidate", [wd_source], "候補語形を保持", "原典・訳語対応は未確認", "記事の併記を翻訳の証明としない")
+
+    for item in (origin.get("chain") or [])[:10]:
+        if not isinstance(item, dict):
+            continue
+        add_term(item.get("form") or item.get("term"), item.get("name") or item.get("lang") or "語源経路",
+                 "語形変化候補", [q], item.get("gloss") or "語源チェーンから抽出",
+                 "candidate", [dict_source], "語形の経路候補", "概念の原点ではない", "訳者・受容者の付加は未比較")
+
+    for item in (origin.get("breadth") or [])[:12]:
+        if isinstance(item, dict) and item.get("term"):
+            add_term(item.get("term"), item.get("name") or "多言語", "多言語表記",
+                     [q], "Wikidata/Wiktionaryが保持する多言語ラベル。意味の同一性は個別照合する。",
+                     "confirmed", [wd_source, dict_source], "各言語の表記を保持", "語の使用文脈は未比較", "翻訳語の焦点差は未比較")
+
+    timeline = []
+
+    def add_bibliography(items, source_key, label, evidence="bibliography_confirmed"):
+        for i, item in enumerate(items[:8]):
+            if not isinstance(item, dict) or not item.get("title"):
+                continue
+            sid = add_source(
+                f"{source_key}-{i}", item.get("title"), item.get("url") or "",
+                evidence, f"自動検索で得た書誌候補。{item.get('year') or '刊年未取得'}")
+            creators = item.get("creators") or item.get("authors") or []
+            if isinstance(creators, str):
+                creators = [creators]
+            who = "・".join(str(x) for x in creators[:5] if str(x).strip()) or label
+            year = str(item.get("year") or "刊年未取得")
+            timeline.append({
+                "when": year, "who": who, "where": item.get("title", ""),
+                "what": f"「{q}」に関係する{label}の書誌候補",
+                "why": "翻訳・受容史の入口として自動抽出",
+                "how": f"{label}で語を検索",
+                "evidence": evidence,
+                "evidence_note": "書誌の存在は確認材料だが、本文の引用・訳語・影響関係そのものではない。",
+                "source_ids": [sid],
+            })
+
+    explore_ndl = _history_items(explore.get("japanese_scholarship"))
+    explore_cinii = _history_items(explore.get("cinii"))
+    # /api/explore currently uses a philosophy precision lens for OpenAlex.
+    # NDL/CiNii remain useful cross-domain bibliographic discovery, but do not
+    # present the philosophy-lens OpenAlex/SEP hits as science, literature, or
+    # art evidence merely because the user selected that menu domain.
+    explore_openalex = (_history_items(explore.get("recent_scholarship"))
+                        if domain == "philosophy" else [])
+    add_bibliography(explore_ndl, "auto-ndl", "NDL書誌")
+    add_bibliography(explore_cinii, "auto-cinii", "CiNii研究書誌")
+    add_bibliography(explore_openalex, "auto-openalex", "OpenAlex研究候補", "candidate")
+    for group_index, group in enumerate(_history_items(explore.get("japanese_translations"))):
+        if isinstance(group, dict):
+            add_bibliography(group.get("editions") or [], f"auto-translation-{group_index}", "NDL翻訳版書誌")
+
+    sep_entry = _history_payload(explore.get("sep_entry"))
+    if domain == "philosophy" and isinstance(sep_entry, dict) and sep_entry.get("title"):
+        sid = add_source("auto-sep", sep_entry.get("title"), sep_entry.get("url") or "",
+                         "candidate", "SEPの関連候補。日本語語の直接的な受容史の証明ではない。")
+        timeline.append({
+            "when": sep_entry.get("pubinfo") or "改訂情報を参照",
+            "who": "Stanford Encyclopedia of Philosophy",
+            "where": sep_entry.get("title", ""),
+            "what": "英語圏の概念・論争構造候補",
+            "why": "比較対象としての自動抽出",
+            "how": "SEP検索と関連性ゲート",
+            "evidence": "candidate", "source_ids": [sid],
+        })
+
+    reception_ledger = []
+    people = (origin.get("originators") or []) + (origin.get("associated") or [])
+    seen_people = set()
+    for person in people[:12]:
+        if not isinstance(person, dict) or not person.get("label") or person["label"] in seen_people:
+            continue
+        seen_people.add(person["label"])
+        reception_ledger.append({
+            "who": person["label"], "when": "書誌・Wikidata記録時点",
+            "where": origin.get("resolved_to") or q,
+            "what": f"「{q}」との著者・考案者・関連人物候補として抽出",
+            "why": "受容史の人物候補を先に可視化するため",
+            "how": "Wikidataの著者・考案者・関連項目から抽出",
+            "relation": "候補。実際の引用・影響関係は本文照合が必要",
+            "evidence": "candidate", "source_ids": [wd_source],
+        })
+
+    transformations = [{
+        "stage": "辞書・書誌の自動予備抽出",
+        "preserved": "入力語、辞書義、候補語形、書誌レコード、人物候補",
+        "lost": "原典の前後文脈、版ごとの訳語差、受容者の実際の引用",
+        "added": "検索インデックスが返した候補順と自動分類",
+        "test": "原典・代表版・訳者・該当頁を一件ずつ照合する",
+        "evidence": "unverified", "source_ids": [dict_source, wd_source],
+    }]
+    if origin.get("resolved_from") and origin.get("resolved_to"):
+        transformations.insert(0, {
+            "stage": "見出し解決",
+            "preserved": f"入力語「{origin['resolved_from']}」",
+            "lost": "入力語と解決先記事の用法差は未比較",
+            "added": f"解決先記事「{origin['resolved_to']}」",
+            "test": "記事本文・辞書・書誌を並置し、同一概念と断定しない",
+            "evidence": "confirmed", "source_ids": [dict_source],
+        })
+
+    counterchecks = [
+        {"claim": "辞書に語義があるので、その語の原典上の意味も確定した", "counterargument": "辞書は現在語義の入口であり、原典・版・受容の使用場面を保証しない", "test": "原典の該当箇所と代表訳をページ単位で比較する"},
+        {"claim": "NDL・CiNii・OpenAlexの書誌ヒットは、その人物の影響関係を証明する", "counterargument": "書誌の存在は出版・収録の確認であり、引用・継承・対立までは示さない", "test": "本文の引用、引用先、刊年順、反対解釈を確認する"},
+    ]
+    discovery = {
+        "id": "auto-discovery:" + _history_norm(q),
+        "mode": "automated_discovery",
+        "domain": domain,
+        "title": f"「{q}」――自動予備調査台帳（翻訳・受容史）",
+        "center_question": f"「{q}」は、{domain}の辞書・原典・翻訳・受容史の中で、誰が、いつ、どの版で、どのように使ったのか。",
+        "scope_note": "これは既存の辞書・概念・書誌コネクタから自動抽出した予備台帳である。自動収集できた情報を先に整理し、原典・版・訳語・影響関係の未確認部分は次の照合課題として残す。",
+        "term_map": term_map,
+        "timeline": timeline[:24],
+        "transformations": transformations,
+        "reception_ledger": reception_ledger,
+        "counterchecks": counterchecks,
+        "sources": sources,
+        "next_actions": [
+            {"label": "自動抽出された原語・語形候補を原典で照合する", "kind": "verify", "source_ids": [dict_source, wd_source]},
+            {"label": "NDL・CiNiiの書誌候補から訳者・刊年・版を確認する", "kind": "verify", "source_ids": ["candidate-ndl", "candidate-cinii"]},
+            {"label": "人物候補を本文の引用・受容史と照合する", "kind": "verify", "source_ids": [wd_source]},
+        ],
+    }
+    useful = bool(senses or len(term_map) > 1 or timeline or reception_ledger
+                 or origin.get("resolved_to") or origin.get("wikidata_url"))
+    return discovery if useful else None
+
+
+async def _history_bounded(coro, timeout: float = 8.0):
+    """Run one discovery source without letting cancellation hold the UI hostage.
+
+    A few third-party HTTP/DNS stacks can take time to finish cancellation after
+    their socket timeout.  ``asyncio.wait_for`` waits for that cancellation to
+    complete, so a nominal eight-second limit can still look like a stopped
+    screen.  ``asyncio.wait`` returns at the deadline; the pending task is
+    cancelled in the background and its partial result is intentionally not used.
+    """
+    # Keep a misbehaving resolver off the ASGI event loop.  In particular, a
+    # DNS/proxy failure can make a third-party client's await point effectively
+    # non-cancellable in some deployments; a worker thread lets the request
+    # still return the honest partial/fallback state at the deadline.
+    task = asyncio.create_task(asyncio.to_thread(asyncio.run, coro))
+    done, _ = await asyncio.wait({task}, timeout=timeout)
+    if not done:
+        task.cancel()
+        return {}
+    try:
+        return task.result()
+    except Exception:
+        return {}
+
+
+async def _history_discovery(q: str, domain: str, lang: str):
+    try:
+        origin, anatomy, explore = await asyncio.gather(
+            _history_bounded(api_origin(q, lang)),
+            _history_bounded(api_anatomy(q, lang)),
+            _history_bounded(api_explore(q, lang)),
+        )
+        return _history_discovery_from_sources(q, domain, lang, origin, anatomy, explore)
+    except Exception:
+        # A malformed partial response must fall through to the visible,
+        # query-specific research workspace; it must never become a blank panel.
+        return None
+
+
 @app.get("/api/translation-history")
 async def api_translation_history(q: str, domain: str = "philosophy", lang: str = "ja"):
     """特別モード: 原語・翻訳・受容史を証拠階層つきで追跡する。
 
     通常の /api/origin と違い、これは一つの語の一般的な語源を返すAPIではない。
-    版・訳者・受容者・変形・欠損を同じ証拠台帳に束ねるための curated seed であり、
-    未整備の分野や語に哲学の結果を流用しない。
+    版・訳者・受容者・変形・欠損を同じ証拠台帳に束ねる。curated seed がある語は
+    確定台帳を返し、未登録の語は既存情報源から自動予備台帳を作る。未整備の分野や
+    語に哲学の結果を流用しない。
     """
     if not q.strip():
         raise HTTPException(400, "empty query")
@@ -782,6 +1063,17 @@ async def api_translation_history(q: str, domain: str = "philosophy", lang: str 
         "seeded_domains": available,
     }
     if not dossier:
+        discovery = await _history_discovery(q, domain_key, lang)
+        if discovery:
+            base.update({
+                "status": "discovery",
+                "matched": False,
+                "matched_term": None,
+                "dossier": discovery,
+                "note": "これは辞書・概念・書誌情報源から自動抽出した予備台帳です。原典・版・訳語・影響関係の未確認部分は、証拠レベルを下げて次の照合課題として表示しています。",
+                "next_actions": copy.deepcopy(discovery.get("next_actions", [])),
+            })
+            return base
         candidates = _history_source_candidates(q)
         base.update({
             "status": "not_seeded",

@@ -46,9 +46,9 @@ const B = process.argv[2] || "http://127.0.0.1:8028";
 
   await page.selectOption("#th-domain", "science");
   await page.click(".th-run");
-  await page.waitForSelector("#graph-panel .th-unseeded", { state: "visible", timeout: 10000 });
+  await page.waitForSelector("#graph-panel .th-discovery, #graph-panel .th-unseeded", { state: "visible", timeout: 30000 });
   const empty = await page.locator("#graph-panel .gp-body").textContent();
-  ok("未整備の科学分野で哲学データを流用せず、調査計画を出す", /初回調査/.test(empty) && /情報源の選定計画/.test(empty) && !/unorganischer Leib/.test(empty));
+  ok("未整備の科学分野でも予備台帳または調査計画を出す", /自動予備台帳|初回調査/.test(empty) && /情報源の選定計画|最初に揃える証拠/.test(empty) && !/unorganischer Leib/.test(empty));
 
   await page.locator("#graph-panel .gp-back").click();
   await page.waitForSelector("#graph-menu", { state: "visible", timeout: 5000 });
@@ -65,10 +65,10 @@ const B = process.argv[2] || "http://127.0.0.1:8028";
     gMenu(240, 240, n);
   });
   await page.locator("#graph-menu .gm-item").filter({ hasText: "翻訳・受容史" }).click();
-  await page.waitForSelector("#graph-panel .th-unseeded", { state: "visible", timeout: 15000 });
+  await page.waitForSelector("#graph-panel .th-discovery, #graph-panel .th-unseeded", { state: "visible", timeout: 30000 });
   const unknown = await page.locator("#graph-panel .gp-body").textContent();
   const candidateLinks = await page.locator("#graph-panel .th-source-card a").count();
-  ok("未登録の別語でも無反応にならず、語専用の調査台帳が開く", /自由/.test(unknown) && /調査台帳/.test(unknown) && candidateLinks >= 3);
+  ok("未登録の別語でも無反応にならず、自動予備台帳または調査台帳が開く", /自由/.test(unknown) && /自動予備台帳|調査台帳/.test(unknown) && candidateLinks >= 3);
 
   const pass = R.filter(Boolean).length;
   console.log(`\n${pass}/${R.length} PASS`);

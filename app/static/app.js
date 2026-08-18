@@ -2257,7 +2257,8 @@ async function gWordAspect(word, aspect) {
 
 // ── 翻訳・受容史（通常の語源/外部検索とは別の証拠台帳モード） ────────────────
 // 地図を再中心せず、原典・版・訳者・受容者・変形・反証を一枚の研究面に束ねる。
-// curated seed の範囲だけを返すAPIと対になり、未整備の語・分野は空結果でなく「未整備＋次の調査」を表示する。
+// curated seed がある語は確定台帳を返し、未登録語は既存の辞書・概念・書誌コネクタから
+// 自動予備台帳を作る。全自動抽出を原典の証明と混同せず、証拠レベルを画面に残す。
 const TH_DOMAIN_OPTIONS = [
   ["philosophy", "哲学・思想"], ["literature", "文学"], ["science", "科学・化学"], ["art", "芸術・美術"]
 ];
@@ -2303,7 +2304,7 @@ function _thCandidateCards(sources, levels) {
 }
 function _thResponseHtml(d) {
   const jp = LANG === "ja";
-  if (!d || d.status !== "ready" || !d.dossier) {
+  if (!d || (d.status !== "ready" && d.status !== "discovery") || !d.dossier) {
     const sources = (d && d.source_candidates) || [];
     const brief = (d && d.research_brief) || {};
     const next = _thNextActions((d && d.next_actions) || [], sources);
@@ -2320,9 +2321,11 @@ function _thResponseHtml(d) {
     </div>`;
   }
   const ds = d.dossier, sources = ds.sources || [], levels = d.evidence_levels || [];
-  let h = `<div class="th-result th-ready">
-    <div class="th-status-line"><b>台帳を表示しています：${esc(ds.title || d.query)}</b>${_thLevel("strong", levels)}</div>
+  const isDiscovery = d.status === "discovery";
+  let h = `<div class="th-result ${isDiscovery ? "th-discovery" : "th-ready"}">
+    <div class="th-status-line"><b>${isDiscovery ? "自動予備台帳を表示しています：" : "台帳を表示しています："}${esc(ds.title || d.query)}</b>${_thLevel(isDiscovery ? "candidate" : "strong", levels)}</div>
     <p class="th-honesty">${esc(d.note || "")}</p>
+    ${isDiscovery ? `<div class="th-discovery-banner"><b>これは最初の自動整理です</b><p>辞書・概念データ・書誌検索から取得できた情報を先に配置しました。原典の該当頁、版ごとの訳語、実際の引用・影響関係は未確認のまま保持しています。</p></div>` : ""}
     <div class="th-question"><b>中心問い</b><p>${esc(ds.center_question || "")}</p></div>
     <p class="th-scope">${esc(ds.scope_note || "")}</p>
     <details class="th-evidence-guide"><summary>証拠階層と読み方</summary><p>${esc(d.honesty || "")}</p><ul>`
@@ -2364,6 +2367,8 @@ function _thResponseHtml(d) {
     + (ds.counterchecks || []).map(t => `<article class="th-counter-card"><p><b>主張：</b>${esc(t.claim || "")}</p><p><b>反証候補：</b>${esc(t.counterargument || "")}</p><p><b>検査：</b>${esc(t.test || "")}</p></article>`).join("")
     + `</div></section>`;
 
+  h += `<section class="th-section"><h3>情報源の選定計画</h3><p class="muted">自動予備台帳で拾えた候補を、次の確認順に並べます。候補の存在と本文の証明を混同しません。</p>${_thPlan(d.source_plan || [])}</section>`;
+
   h += `<section class="th-section"><h3>参照先</h3><div class="th-source-list">` + sources.map(s =>
     `<article class="th-source-card"><div class="th-card-top"><b>${s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id || "source")}</a>` : esc(s.label || s.id || "source")}</b>${_thLevel(s.evidence, levels)}</div><p>${esc(s.status || "")}</p>${(s.local_refs || []).length ? `<small class="th-local-ref">${esc(s.local_refs.join(" ／ "))}</small>` : ""}</article>`).join("") + `</div></section>`;
   h += `<section class="th-section th-next"><h3>次の調査</h3>${_thNextActions(d.next_actions || ds.next_actions || [], sources)}</section>`;
@@ -2372,7 +2377,7 @@ function _thResponseHtml(d) {
 async function gTranslationHistoryPanel(word) {
   const jp = LANG === "ja";
   const controls = `<div class="th-controls"><label for="th-domain">分野</label><select id="th-domain">${TH_DOMAIN_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select><button type="button" class="th-run">この条件で調査を開始</button></div>
-    <p class="th-intro">通常の意味検索や単純な語源検索とは別に、「誰が・いつ・どの版で・どの言語へ移し、何が保存／欠損／追加されたか」を証拠階層つきで追跡します。現時点で登録された資料だけを表示し、未確認の点は未確認のまま残します。</p>
+    <p class="th-intro">通常の意味検索や単純な語源検索とは別に、「誰が・いつ・どの版で・どの言語へ移し、何が保存／欠損／追加されたか」を証拠階層つきで追跡します。登録済み台帳がある語は詳細台帳を表示し、未登録語でも既存情報源から自動予備台帳を作って調査を始めます。</p>
     <div class="th-results"><p class="muted">${jp ? "台帳を読み込んでいます…" : "Loading the evidence dossier…"}</p></div>`;
   const p = gPanel((jp ? "🧭 翻訳・受容史を追跡：" : "Translation / reception history: ") + word, controls, word);
   if (!p) return false;
@@ -2383,7 +2388,7 @@ async function gTranslationHistoryPanel(word) {
     runButton.disabled = true;
     results.innerHTML = `<p class="muted"><span class="spin"></span> ${esc(jp ? `「${word}」の${domain}分野の原典・翻訳・受容史を照合中…` : "Checking the source dossier…")}</p>`;
     try {
-      const d = await api(`/api/translation-history?q=${encodeURIComponent(word)}&domain=${encodeURIComponent(domain)}&lang=${LANG}`);
+      const d = await api(`/api/translation-history?q=${encodeURIComponent(word)}&domain=${encodeURIComponent(domain)}&lang=${LANG}`, { timeout: 45000 });
       if (results.isConnected) results.innerHTML = _thResponseHtml(d);
     } catch (e) {
       console.error("translation history", e);

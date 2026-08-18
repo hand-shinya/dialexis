@@ -315,6 +315,9 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .th-plan-row span { line-height: 1.4; }
 .th-plan-row em { color: var(--muted); font-size: .68rem; }
 .th-unseeded { border-left: 4px solid var(--warn); background: #fffaf2; padding: .6rem .7rem; }
+.th-discovery { min-width: 0; }
+.th-discovery-banner { border-left: 4px solid var(--accent2); background: #eef3f7; padding: .55rem .7rem; margin: .55rem 0; }
+.th-discovery-banner p { margin: .2rem 0 0; font-size: .82rem; line-height: 1.5; }
 .th-first-pass { margin: .25rem 0 .65rem; padding-left: 1.35rem; }
 .th-first-pass li { margin: .25rem 0; font-size: .82rem; line-height: 1.45; }
 .th-ready { min-width: 0; }
