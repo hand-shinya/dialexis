@@ -1,12 +1,12 @@
 # Dialexis プロジェクト完全引継ぎ記録
 
-**スナップショット:** 2026-08-17（Asia/Tokyo）更新
+**スナップショット:** 2026-08-18（Asia/Tokyo）更新
 **対象:** Dialexis / 反省的哲学研究インフラ
 **目的:** 本プロジェクトを全く知らないAIまたは開発者が、この一ファイルと現行リポジトリだけで、目的・背景・画面・コード・データ契約・失敗史・検証・公開運用を理解し、同じ状態を再現して継続開発できるようにする。
 
 本書は、2026-08-14時点のPROJECT_REPRODUCTION_SPEC_20260814.md、2026-08-01時点の
 Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を基礎に、
-現行コード、Git履歴、検証結果、公開反映結果を2026-08-17時点へ統合した
+現行コード、Git履歴、検証結果、公開反映結果を2026-08-18時点へ統合した
 マスター記録である。古い資料と本書が矛盾する場合、設計意図はGENESIS.md、
 実装状態は現行コードと実測テスト、公開状態は公開サーバー実測を優先する。
 
@@ -21,9 +21,9 @@ Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を�
 | 開発リポジトリ | /home/handa/dialexis |
 | GitHub | https://github.com/hand-shinya/dialexis |
 | ブランチ | main |
-| 公開反映済みの製品コードHEAD | efc7d5d（generalized runtime code: 5696a64） |
-| 今回の入口修正 | 4e96a3b（ホーム・Question Doors・navを /originへ） |
-| 公開デプロイ時の検証SHA | 5696a64f836147c2c36c792abc09e68011280cff |
+| 公開反映済みの製品コードHEAD | 2a418f1（公開コード本体: 7cca756、検証マーカー: 7cca756） |
+| 入口修正（履歴） | 4e96a3b（ホーム・Question Doors・navを /originへ） |
+| 公開デプロイ時の検証SHA | 7cca7567d045ffd6b8bc9a0a204faa4b4f9c69eb |
 | 本書・回帰E2Eの追加 | `translation_history` 特別モード、台帳、公開E2Eを含む |
 | origin/main | 本書更新後のmain。再現時は `git rev-parse HEAD` で確定 |
 | 検証マーカー | deploy/verified_sha.txt |
@@ -34,9 +34,9 @@ Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を�
 | 作業フォルダー（WSL） | /mnt/i/GoogleDriveMirror/MyKnowledgeBase/Main/論考/哲学DESK |
 | ライセンス | Code: AGPL-3.0 / Documentation: CC-BY-4.0 |
 
-efc7d5dは、5696a64で翻訳・受容史を全実体ノード・全パネルへ一般化した製品コードを追加し、
-公式verify、VPS側pytest、サービス再起動、公開HTTP検査、公開実ブラウザ11/11を完了した現在の公開HEADである。
-現在のGit先端はgit logとgit rev-parseで確認し、公開runtimeの基準は213f709とする。
+7cca756は、未登録語にも辞書・概念・書誌情報を自動抽出する「自動予備台帳」を追加した製品コードである。
+2a418f1はその検証マーカーだけを記録した公開HEADであり、公式verify、VPS側pytest、サービス再起動、公開HTTP検査、
+公開実ブラウザ11/11を完了している。現在のGit先端はgit logとgit rev-parseで確認し、公開runtimeの基準は2a418f1とする。
 検証SHAはdeploy/verified_sha.txtで確認する。
 vps_update.shは、検証SHA以降の差分がマーカーだけであることを確認する。
 
@@ -62,6 +62,11 @@ healthz: 200
 /api/combine?a=カール・マルクス&b=吉本隆明&op=and&lang=ja:
   has_results = true, nodes = 13, edges = 12, source = SearXNG
 公開実ブラウザの組み合わせUI: 4/4 PASS
+GET /api/translation-history?q=共同幻想&domain=philosophy&lang=ja:
+  status = discovery, mode = automated_discovery
+  term_map = 8, timeline = 9, reception_ledger = 5, sources = 14, next_actions = 3
+公開実ブラウザ translation_history.e2e.js: 11/11 PASS
+VPS pytest: 93 passed
 ~~~
 
 公開ブラウザでは、Canvas上の中心語を実マウスクリックし、
@@ -134,7 +139,7 @@ entry_routing.e2e.js                                10/10 PASS
 - API: `GET /api/translation-history?q=<語>&domain=<哲学等>&lang=ja`
 - データ: `app/data/translation_history_seed.json`
 - 初期台帳: マルクス「非有機的肉体」問題（`unorganischer Leib`、`unorganischer Körper`、`unorganische Natur`、`Stoffwechsel`、英仏日訳、城塚・田中訳、吉本隆明、受容候補）。
-- 返却状態: `ready` または `not_seeded`。未知語・未整備分野には哲学台帳を流用せず、情報源選定計画と登録・照合の次Actionを返す。
+- 返却状態: `ready`（curated台帳）、`discovery`（自動予備台帳）、`not_seeded`（情報源も取得できず調査入口のみ）。未知語・未整備分野には哲学台帳を流用せず、取得できた辞書・概念・書誌の候補と、登録・照合の次Actionを証拠階層つきで返す。
 - 証拠階層: `confirmed`（本文・書誌の限定確認）、`bibliography_confirmed`（書誌確認）、`strong`（有力・要照合）、`interpretive`（解釈・再構成）、`candidate`（調査候補）、`unverified`（未確認）。
 - 「書誌がある」ことと「該当頁の訳語・引用・影響関係を確認した」ことを分離する。資料の綜合に含まれる未確認主張は画面でも未確認／候補のまま表示する。
 
@@ -160,16 +165,65 @@ entry_routing.e2e.js                                10/10 PASS
 ### 現時点の検証
 
 ~~~text
-Python: 92 passed
+Python: 93 passed（2026-08-18時点。前版の記録92件は履歴として残す）
 翻訳・受容史 Python: 未登録語の調査workspace・query-specific出典候補を含む
 translation_history.e2e.js: 11/11 PASS
 内容確認: 中心語不変、原語・翻訳語、5W1H、受容史、反証、出所、未整備科学分野、全実体kind、別語、Menu復帰
 決定論的UI E2E: 全件PASS
 統合 origin: 21/23（従来どおりnetwork依存の情報表示）
-検証SHA: deploy/verified_sha.txt に記録された現行HEAD
+検証SHA: deploy/verified_sha.txt に記録された 7cca7567d045ffd6b8bc9a0a204faa4b4f9c69eb
 ~~~
 
-公開反映後の実測: `http://219.94.244.239:8000/origin?q=非有機的肉体&lang=ja` で、Menu→`翻訳・受容史`→専用API→科学分野の未整備表示→`←メニュー`、さらに人物・著作・原語・言語・関連語の共通Actionと別語「自由」の新規調査台帳を実ブラウザ操作し、11/11 PASS。VPS `pytest 92 passed`、`healthz HTTP:200`。人間検証の入口URLはこのURLを使う。
+公開反映後の実測: `http://219.94.244.239:8000/origin?q=非有機的肉体&lang=ja` で、Menu→`翻訳・受容史`→専用API→科学分野の未整備表示→`←メニュー`、さらに人物・著作・原語・言語・関連語の共通Actionと別語「自由」の新規調査台帳を実ブラウザ操作し、11/11 PASS。VPS `pytest 93 passed`、`healthz HTTP:200`。未知語「共同幻想」の自動予備台帳は次節に記録する。人間検証の入口URLはこのURLを使う。
+
+### 1.5.2 2026-08-18追加：未知語の自動予備台帳
+
+前節までの未知語画面は、語専用の調査ワークスペースと情報源リンクを示すだけで、利用者が最初の抽出・整理を自分で行う必要があった。これは「辞書の組み合わせと情報源の連携で、まず現時点の候補を整理して見せてほしい」という要求に対して不十分だった。そこで `7cca756` で、未知語でも取得可能な既存情報を先に台帳化する層を追加した。
+
+#### 自動抽出の流れ
+
+~~~text
+GET /api/translation-history
+  ├─ curated seed に明示一致 → ready（確定台帳）
+  └─ 一致しない語
+      ├─ /api/origin       → 辞書義、意味単位、語源連鎖、多言語表記、人物候補
+      ├─ /api/anatomy      → 意味のまとまり、語源的構成要素
+      └─ /api/explore      → NDL、CiNii、OpenAlex、SEP等の書誌・研究候補
+          ↓
+      _history_discovery_from_sources が証拠レコードへ正規化
+          ↓
+      discovery（自動予備台帳）または not_seeded（検索入口へ退避）
+~~~
+
+自動予備台帳は、原語・翻訳語候補、保存／欠損／付加、時系列5W1H、受容史人物候補、反証、参照先、次の検証行動を同じ画面に配置する。自動生成したものを「研究史が確定した」とは扱わず、辞書・Wikidataは `candidate`、NDL/CiNiiの書誌は `bibliography_confirmed`、本文のページ・引用・影響関係は未確認として残す。画面上部にも「これは最初の自動整理」と明示し、情報源の選定計画を必ず表示する。
+
+#### 共同幻想の公開実測
+
+2026-08-18、公開VPSのローカルHTTP APIを読み取り確認した結果は次のとおり。
+
+~~~text
+query=共同幻想 / domain=philosophy
+status=discovery / mode=automated_discovery
+term_map=8 / timeline=9 / reception_ledger=5 / sources=14 / next_actions=3
+抽出された語形例: 共同幻想、共同、幻想、communal fantasy
+人物候補例: カール・マルクス、ウラジーミル・レーニン、ジークムント・フロイト、吉本隆明、岸田秀
+書誌候補例: 1966年「禁制論--共同幻想論-1-」、2005年「共同幻想論 : 『文芸』初出」、2016年「吉本隆明と『共同幻想論』」
+~~~
+
+上記は「翻訳・受容史の完成結果」ではなく、辞書・概念・書誌の自動初回整理である。とくに人物候補はWikidata上の関連候補、書誌候補はNDL/CiNii/OpenAlexの検索記録であり、実際の引用・影響・訳語対応を意味しない。次に原典本文、版、訳者、該当頁を人間が照合することが正しい運用である。
+
+#### 停止しないための実装
+
+外部情報源が固まったときに `asyncio.wait_for` のキャンセル完了待ちまで画面を止める問題があったため、探索タスクをワーカーへ隔離し、各情報源を8秒で打ち切って取得済み部分だけを正規化する。フロント側の専用API待機は45秒だが、通常は自動台帳または query-specific な調査入口へ退避する。正規化例外も空白画面へせず `not_seeded` に戻す。OpenAlexの哲学レンズとSEP候補は哲学分野でのみ表示し、科学・文学・芸術へ哲学結果を流用しない。
+
+#### 検証・公開
+
+~~~text
+公式 verify.sh: Python 93 passed、決定論的E2E全件PASS、translation_history.e2e.js 11/11 PASS
+VPS vps_update.sh: pytest 93 passed、healthz 200
+公開ブラウザ: http://219.94.244.239:8000 で translation_history.e2e.js 11/11 PASS
+製品コード: 7cca756 / 検証マーカー: 2a418f1（markerが指す検証SHAは7cca756）
+~~~
 
 ## 2. 目的と背景
 
@@ -901,7 +955,7 @@ cd /home/handa/dialexis
 verify.shはpytest、Uvicorn、healthz、決定論E2E、network依存統合E2Eを実行し、
 gateが全成功した時だけHEADをdeploy/verified_sha.txtへ記録する。
 
-### 11.2 2026-08-16の結果
+### 11.2 2026-08-16の結果（履歴）
 
 ~~~text
 Python: 85 passed
@@ -946,6 +1000,20 @@ origin 21/23 PASS（外部ネットワーク依存）
 
 originの21/23は決定論gateとは別の情報表示である。
 network flakeを隠さず、しかし全機能失敗とも誤診しない。
+
+### 11.2.1 2026-08-18の最新結果
+
+~~~text
+Python: 93 passed
+決定論的E2E: 全件PASS
+translation_history.e2e.js: 11/11 PASS（自動予備台帳、科学分野退避、別語、全実体kindを含む）
+VPS pytest: 93 passed
+公開healthz: 200
+公開API共同幻想: discovery / automated_discovery、term_map 8、timeline 9、人物5、sources 14
+統合origin: 21/23 PASS（network依存・gate外。結果は実行時の外部応答で変動）
+~~
+
+公式verifyの `deploy/verified_sha.txt` は7cca756を指し、マーカーコミット2a418f1を含むmainが公開VPSへ反映済みである。
 
 ### 2026-08-16: 人間入口の回帰を修正
 
@@ -1035,8 +1103,8 @@ api_cacheは再取得可能だが、projects/nodes/provenance/ai_ledgerは研究
 ~~~
 
 reset --hard、checkout --、git clean、広範なrmを使わない。
-既知参照点は1c19fd5（実装）、4f0ef98（検証・公開確認）、
-439e367（現在の公開確認済みHEAD）。
+上記の古いSHAは過去の切り戻し・失敗史参照点である。現在の公開確認済み参照点は
+7cca756（製品コード）、2a418f1（検証マーカー）である。
 
 ---
 
@@ -1244,6 +1312,15 @@ curl -s 'http://219.94.244.239:8000/api/combine?a=カール・マルクス&b=吉
 - 未登録語に対しても語専用の調査台帳準備面、初回調査手順、語を埋め込んだ出典候補リンクを表示。
 - 公式verifyを再実行し、Python 92 passed、翻訳・受容史11/11、全決定論的E2Eを確認。
 - `5696a64`（一般化実装）、`efc7d5d`（検証マーカー・公開HEAD）、VPS pytest 92 passed、healthz 200を記録。
+
+### 2026-08-18 自動予備台帳追記
+
+- 未登録語で利用者が空の台帳を手作業で作るだけだった不足を修正し、`/api/origin`、`/api/anatomy`、`/api/explore` の既存情報を証拠階層つきの `discovery` 台帳へ正規化。
+- `共同幻想` の公開APIで `term_map=8`、`timeline=9`、`reception_ledger=5`、`sources=14`、`next_actions=3` を実測。吉本隆明を含む人物・書誌候補を表示するが、引用・影響・訳語対応は未確認のまま残す。
+- 外部情報源のキャンセル待ちで画面が止まる経路をワーカー隔離・期限退避へ変更。取得失敗時は `not_seeded` の語専用調査入口へ戻す。
+- 科学・文学・芸術で哲学レンズのOpenAlex/SEP結果を表示しない分野ゲートを追加。
+- 公式verifyはPython 93 passed、決定論的E2E全件PASS、翻訳・受容史11/11。VPS pytest 93 passed、healthz 200、公開実ブラウザ11/11を確認。
+- `7cca756`（自動予備台帳製品コード）、`2a418f1`（検証マーカー・公開HEAD）を記録。
 
 ### 今後
 
