@@ -189,7 +189,8 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .segment-panorama { margin-bottom: .55rem; }
 #dx-toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 90;
   background: rgba(20,24,34,.94); color: #fff; padding: .5rem .9rem; border-radius: 999px;
-  font-family: system-ui, sans-serif; font-size: .85rem; box-shadow: 0 6px 20px rgba(0,0,0,.3); display: none; }
+  font-family: system-ui, sans-serif; font-size: .85rem; box-shadow: 0 6px 20px rgba(0,0,0,.3); display: none;
+  pointer-events: none; }
 /* レンズ切替: 同じ言葉・同じデータを、いくつもの見方（地図）で見る入口（間口を広げる） */
 .graph-lens { display: flex; flex-wrap: wrap; gap: .4rem; padding: .5rem .8rem;
   border-bottom: 1px solid var(--line); font-family: system-ui, sans-serif; align-items: center; }
@@ -323,9 +324,29 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .th-ready { min-width: 0; }
 .th-source-card .th-card-top b { font-size: .78rem; line-height: 1.35; overflow-wrap: anywhere; }
 .th-source-card .ext-link { margin: 0; }
+.ledger-desk-card { margin-bottom: 1rem; }
+.ledger-list { display: flex; flex-direction: column; gap: .45rem; margin-top: .7rem; }
+.ledger-row { display: grid; grid-template-columns: minmax(0, 1fr) max-content max-content; gap: .7rem; align-items: center; border: 1px solid var(--line); border-radius: 7px; padding: .55rem .65rem; background: var(--paper); }
+.ledger-row a { color: var(--accent2); }
+.ledger-metrics { display: flex; flex-wrap: wrap; gap: .35rem; color: var(--muted); font-family: system-ui, sans-serif; font-size: .72rem; }
+.ledger-metrics span { border: 1px solid var(--line); border-radius: 999px; padding: .12rem .35rem; }
+.ledger-head-card { border-left: 4px solid var(--accent2); }
+.ledger-counts { display: flex; flex-wrap: wrap; gap: .4rem; margin: .6rem 0; }
+.ledger-counts span { background: #f5f1e8; border: 1px solid var(--line); border-radius: 999px; padding: .2rem .45rem; font-family: system-ui, sans-serif; font-size: .72rem; }
+.ledger-entry-list { display: flex; flex-direction: column; gap: .5rem; }
+.ledger-entry { border: 1px solid var(--line); border-radius: 7px; padding: .6rem .7rem; background: var(--paper); }
+.ledger-entry-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.ledger-entry-head b { overflow-wrap: anywhere; }
+.ledger-entry blockquote { margin: .45rem 0; padding: .35rem .55rem; border-left: 3px solid var(--accent); background: #faf7ee; white-space: pre-wrap; }
+.th-ledger-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; margin: .65rem 0; padding: .5rem .6rem; border: 1px solid var(--line); border-radius: 7px; background: #f7f3e8; }
+.th-save-ledger { border: 1px solid var(--accent); border-radius: 999px; padding: .35rem .7rem; background: var(--accent); color: #fff; cursor: pointer; }
+.th-save-ledger:disabled { opacity: .55; cursor: wait; }
+.th-existing-label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .3rem; color: var(--muted); font-size: .75rem; }
+.th-existing-ledger { color: var(--accent2); text-decoration: none; }
 @media (max-width: 560px) {
   .th-term-grid, .th-timeline, .th-transform-grid, .th-ledger, .th-counter-grid, .th-source-list { grid-template-columns: 1fr; }
   .th-plan-row { grid-template-columns: 1fr; gap: .1rem; }
+  .ledger-row { grid-template-columns: 1fr; gap: .35rem; }
 }
 
 /* Context面＝概念全景（右側の永続ドロワー・半田様2026-08-02にAction(#graph-panel)からid分離）。

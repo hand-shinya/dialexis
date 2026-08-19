@@ -10,7 +10,11 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
   const R = [];
   const ok = (n, c, d) => { R.push(c); console.log(`${c ? "PASS" : "FAIL"}  ${n}${d ? "  — " + d : ""}`); };
 
-  await page.goto(`${BASE}/origin?q=%E8%B3%87%E6%9C%AC%E8%AB%96&lang=ja`, { waitUntil: "networkidle" });
+  // 原点画面は外部情報源を非同期で読む。外部取得の完了をページ遷移の
+  // 条件にすると、表示自体は成立しているのに networkidle 待ちで止まる。
+  await page.goto(`${BASE}/origin?q=%E8%B3%87%E6%9C%AC%E8%AB%96&lang=ja`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#graph-lens .tm-chip", { state: "attached", timeout: 45000 });
+  await page.waitForFunction(() => window.__dx && __dx.G && __dx.G_raw, null, { timeout: 45000 });
   await page.waitForTimeout(1500);
   await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();}); await page.waitForTimeout(350); await page.click('.lens-row[data-k="applications"]');
   await page.waitForTimeout(3500);

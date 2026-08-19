@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ ledger.title }}{% endblock %}
+{% block content %}
+<p><a href="/desk?lang={{ lang }}">← {{ t.nav_desk }}</a></p>
+<div id="ledger-detail" data-ledger-id="{{ ledger.id }}">
+  <div class="card"><p class="muted">{{ t.loading }}</p></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>ledgerInit({{ ledger.id }});</script>
+{% endblock %}

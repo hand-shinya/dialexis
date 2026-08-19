@@ -11,6 +11,9 @@ const T = {
         oppLit: "対立文献の候補（OpenAlex検索）", works: "関連論文・著作", authors: "研究者", books: "無料で読める原典（Gutenberg）",
         wikisource: "Wikisource原典", notable: "主要著作", influenced: "影響を受けた", occupation: "職業", born: "生", died: "没",
         argNone: "まだ論証はありません。前提P1..Pnと結論Cを組み立て、妥当性と健全性を別々に評価してください。",
+        ledgerSave: "研究資産として保存", ledgerOpen: "台帳を開く", ledgerEntries: "記録",
+        ledgerProjects: "利用中のプロジェクト", ledgerLink: "この台帳をプロジェクトで使う",
+        ledgerFork: "台帳を分岐", ledgerNoProject: "接続先のプロジェクトがありません。先に研究デスクで作成してください。",
         premise: "前提", premiseAdd: "前提を追加", hidden: "隠れた前提", therefore: "ゆえに",
         voice: "声", validity: "妥当性", soundness: "健全性", locator: "ロケータ", suggestHidden: "隠れた前提をAIに提案",
         premisePh: "前提の文", locatorPh: "ロケータ（例: Republic 514a）",
@@ -24,6 +27,9 @@ const T = {
         saved: "Saved (this browser only)", cleared: "Cleared",
         oppLit: "Candidate opposing literature (OpenAlex)", works: "Related works & papers", authors: "Scholars", books: "Free primary texts (Gutenberg)",
         wikisource: "Wikisource texts", notable: "Notable works", influenced: "Influenced by", occupation: "Occupation", born: "Born", died: "Died",
+        ledgerSave: "Save as research asset", ledgerOpen: "Open ledger", ledgerEntries: "entries",
+        ledgerProjects: "Using projects", ledgerLink: "Use this ledger in a project",
+        ledgerFork: "Fork ledger", ledgerNoProject: "No project to connect. Create one in the research desk first.",
         argNone: "No arguments yet. Build premises P1..Pn and a conclusion C, then assess validity and soundness separately.",
         premise: "Premise", premiseAdd: "Add premise", hidden: "Hidden premise", therefore: "Therefore",
         voice: "Voice", validity: "Validity", soundness: "Soundness", locator: "Locator", suggestHidden: "Suggest hidden premises (AI)",
@@ -343,7 +349,7 @@ async function exploreRun(q) {
 /* ---------- desk ---------- */
 
 async function deskInit() {
-  const list = await api("/api/projects");
+  const [list, ledgers] = await Promise.all([api("/api/projects"), api("/api/ledgers")]);
   $("project-list").innerHTML = list.length
     ? `<div class="card"><table class="plain">` + list.map(p => `<tr>
         <td><a href="/project/${p.id}?lang=${LANG}"><b>${esc(p.title)}</b></a>
@@ -353,6 +359,88 @@ async function deskInit() {
         <td><button class="small secondary" onclick="deskDelete(${p.id})">${T.del}</button></td>
       </tr>`).join("") + "</table></div>"
     : `<p class="muted">${T.none}</p>`;
+  $("ledger-list").innerHTML = ledgers.length
+    ? `<div class="ledger-list">${ledgers.map(l => `<article class="ledger-row">
+        <div><a href="/ledger/${l.id}?lang=${LANG}"><b>${esc(l.title)}</b></a>
+          <div class="srcline">${esc(l.central_question || l.subject || "")}</div></div>
+        <div class="ledger-metrics"><span>${l.entry_count} ${T.ledgerEntries}</span>
+          <span>${l.project_count} ${T.ledgerProjects}</span><span>v${l.version}</span></div>
+        <div><span class="badge">${esc(l.status)}</span>
+          <a class="small" href="/ledger/${l.id}?lang=${LANG}">${T.ledgerOpen}</a></div>
+      </article>`).join("")}</div>`
+    : `<p class="muted">${LANG === "ja" ? "台帳一覧はここに表示されます。" : "Your ledgers will appear here."}</p>`;
+}
+
+async function ledgerCreate() {
+  const title = $("nl-title") && $("nl-title").value.trim();
+  if (!title) return;
+  const r = await api("/api/ledgers", { method: "POST", body: {
+    title, subject: $("nl-subject").value.trim(),
+    central_question: $("nl-question").value.trim(), subject_type: "term" } });
+  location.href = `/ledger/${r.ledger.id}?lang=${LANG}`;
+}
+
+async function ledgerLinkProject(lid, pid, role) {
+  if (!pid) return;
+  await api(`/api/projects/${pid}/ledgers`, { method: "POST", body: {
+    ledger_id: Number(lid), role: role || "background" } });
+  if (location.pathname.startsWith("/project/")) projRefresh();
+}
+
+async function ledgerFork(lid) {
+  const title = window.prompt(LANG === "ja" ? "分岐台帳の名前" : "Title for the fork", "");
+  if (title === null) return;
+  const r = await api(`/api/ledgers/${lid}/fork`, { method: "POST", body: { title } });
+  location.href = `/ledger/${r.ledger.id}?lang=${LANG}`;
+}
+
+async function ledgerAdoptEntry(lid, eid, pid) {
+  if (!pid) return;
+  await api(`/api/projects/${pid}/ledgers`, { method: "POST", body: {
+    ledger_id: Number(lid), role: "evidence" } });
+  await api(`/api/projects/${pid}/ledger-entries`, { method: "POST", body: {
+    entry_id: Number(eid), relation: "evidence" } });
+  const note = $("ledger-action-note");
+  if (note) note.textContent = LANG === "ja" ? "この記録をプロジェクトへ接続しました。" : "Entry connected to the project.";
+}
+
+async function ledgerInit(lid) {
+  const box = $("ledger-detail");
+  if (!box) return;
+  try {
+    const [d, projects] = await Promise.all([api(`/api/ledgers/${lid}`), api("/api/projects")]);
+    const l = d.ledger, jp = LANG === "ja";
+    const projectOptions = projects.map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join("");
+    const entrySources = {};
+    (d.entry_sources || []).forEach(x => (entrySources[x.entry_id] ||= []).push(x.source_id));
+    const entries = (d.entries || []).map(e => `<article class="ledger-entry">
+      <div class="ledger-entry-head"><span class="badge">${esc(e.kind)}</span>
+        <b>${esc(e.title)}</b><span class="badge ${e.status === "confirmed" ? "conf-confirmed" : "conf-unverified"}">${esc(e.status)}</span></div>
+      <p class="srcline">${esc(e.source_term || "")} ${e.target_term ? `→ ${esc(e.target_term)}` : ""}
+        ${e.year ? ` · ${esc(e.year)}` : ""} ${e.locator ? ` · ${esc(e.locator)}` : ""}</p>
+      ${e.body ? `<p>${esc(e.body)}</p>` : ""}
+      ${e.original_quote ? `<blockquote>${esc(e.original_quote)}</blockquote>` : ""}
+      <details><summary>${jp ? "この記録をプロジェクトで使う" : "Use this entry in a project"}</summary>
+        <div class="formrow"><select id="ledger-entry-project-${e.id}">${projectOptions || `<option value="">${T.ledgerNoProject}</option>`}</select>
+          <button class="small" onclick="ledgerAdoptEntry(${lid}, ${e.id}, Number($('ledger-entry-project-${e.id}').value))">${T.ledgerLink}</button></div>
+      </details>
+      ${e.sources && e.sources.length ? `<p class="srcline">${e.sources.map(s => s.source_url ? `<a href="${esc(s.source_url)}" target="_blank">${esc(s.source_name || s.source_url)}</a>` : esc(s.source_name)).join(" · ")}</p>` : ""}
+    </article>`).join("");
+    const linked = (d.linked_projects || []).map(p => `<li><a href="/project/${p.id}?lang=${LANG}">${esc(p.title)}</a> · ${esc(p.role)} · v${p.pinned_version}</li>`).join("");
+    box.innerHTML = `<div class="card ledger-head-card">
+      <div class="th-status-line"><b>${esc(l.title)}</b><span class="badge">${esc(l.status)}</span><span class="badge">v${l.version}</span></div>
+      <p class="muted">${esc(l.central_question || "")}</p>
+      <p>${jp ? "この台帳は特定の一つのプロジェクトに属さず、複数の研究で参照できます。" : "This ledger is reusable across multiple research projects."}</p>
+      <div class="ledger-counts"><span>${d.counts.entries} ${T.ledgerEntries}</span><span>${d.counts.projects} ${T.ledgerProjects}</span><span>${jp ? "確認済み" : "confirmed"}: ${d.counts.confirmed}</span><span>${jp ? "候補" : "candidates"}: ${d.counts.candidate}</span></div>
+      <div class="formrow"><select id="ledger-project-select">${projectOptions || `<option value="">${T.ledgerNoProject}</option>`}</select>
+        <button class="small" onclick="ledgerLinkProject(${lid}, Number($('ledger-project-select').value), 'background')">${T.ledgerLink}</button>
+        <button class="small secondary" onclick="ledgerFork(${lid})">${T.ledgerFork}</button></div>
+      <p id="ledger-action-note" class="srcline"></p>
+      <h3>${T.ledgerProjects}</h3><ul>${linked || `<li class="muted">${jp ? "まだプロジェクトから参照されていません。" : "No project uses this ledger yet."}</li>`}</ul>
+    </div><div class="card"><h2>${T.ledgerEntries}</h2><div class="ledger-entry-list">${entries || `<p class="muted">${jp ? "まだ記録がありません。" : "No entries yet."}</p>`}</div></div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="card"><p class="badge err">${esc(String(e && e.message || e))}</p></div>`;
+  }
 }
 
 async function deskCreate() {
@@ -410,7 +498,9 @@ async function projectInit(pid) {
 }
 
 async function projRefresh() {
-  const g = await api(`/api/projects/${PROJ}/graph`);
+  const [g, allLedgers] = await Promise.all([
+    api(`/api/projects/${PROJ}/graph`), api("/api/ledgers")
+  ]);
   const provByNode = {};
   g.provenance.forEach(p => (provByNode[p.node_id] ||= []).push(p));
   PROJ_G = g; PROJ_PROV = provByNode;
@@ -424,7 +514,39 @@ async function projRefresh() {
   if ($("arg-cnode")) $("arg-cnode").innerHTML = `<option value="">— ${T.arg_conclusion || "conclusion node"} —</option>` + nodeOpts;
   argRender(g.arguments || []);
 
+  renderProjectLedgers(g, allLedgers);
+
   renderStructure(g, provByNode);
+}
+
+function renderProjectLedgers(g, allLedgers) {
+  const box = $("project-ledgers");
+  if (!box) return;
+  const jp = LANG === "ja";
+  const linked = g.ledgers || [];
+  const linkedIds = new Set(linked.map(x => Number(x.id)));
+  const options = (allLedgers || []).filter(l => !linkedIds.has(Number(l.id)))
+    .map(l => `<option value="${l.id}">${esc(l.title)}</option>`).join("");
+  const rows = linked.length ? linked.map(l => `<tr>
+    <td><a href="/ledger/${l.id}?lang=${LANG}"><b>${esc(l.title)}</b></a></td>
+    <td>${esc(l.role)}</td><td>v${l.pinned_version} / ${jp ? "現在" : "current"} v${l.version}</td>
+    <td><button class="small secondary" onclick="projectUnlinkLedger(${PROJ}, ${l.id})">${jp ? "接続解除" : "Unlink"}</button></td>
+  </tr>`).join("") : `<tr><td class="muted" colspan="4">${jp ? "まだ台帳を参照していません。" : "No ledgers linked yet."}</td></tr>`;
+  box.innerHTML = `<h2>${jp ? "参照中の研究台帳" : "Referenced research ledgers"}</h2>
+    <p class="muted">${jp ? "台帳は複数プロジェクトで共有できます。ここでの解釈や主張は台帳本体を変更しません。" : "Ledgers are reusable across projects; project interpretations do not change the ledger."}</p>
+    <table class="plain"><tr><th>${jp ? "台帳" : "Ledger"}</th><th>${jp ? "役割" : "Role"}</th><th>${jp ? "版" : "Version"}</th><th></th></tr>${rows}</table>
+    ${options ? `<div class="formrow"><select id="project-ledger-select">${options}</select><select id="project-ledger-role"><option value="background">${jp ? "背景" : "background"}</option><option value="evidence">${jp ? "根拠" : "evidence"}</option><option value="translation">${jp ? "翻訳比較" : "translation"}</option><option value="context">${jp ? "文脈" : "context"}</option></select><button class="small" onclick="projectLinkSelectedLedger()">${jp ? "台帳を接続" : "Link ledger"}</button></div>` : `<p class="srcline">${jp ? "接続可能な未接続台帳はありません。" : "All ledgers are already linked."}</p>`}`;
+}
+
+async function projectLinkSelectedLedger() {
+  const select = $("project-ledger-select");
+  if (!select || !select.value) return;
+  await ledgerLinkProject(Number(select.value), PROJ, $("project-ledger-role").value);
+}
+
+async function projectUnlinkLedger(pid, lid) {
+  await api(`/api/projects/${pid}/ledgers/${lid}`, { method: "DELETE" });
+  projRefresh();
 }
 
 // Structure-bearing view of the research process — replaces the decorative
@@ -2302,6 +2424,33 @@ function _thCandidateCards(sources, levels) {
   return `<div class="th-source-list">` + sources.map(s =>
     `<article class="th-source-card"><div class="th-card-top"><b>${s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id || "source")}</a>` : esc(s.label || s.id || "source")}</b>${_thLevel(s.evidence || "candidate", levels)}</div><p>${esc(s.purpose || "")}</p><p class="muted">${esc(s.status || "")}</p></article>`).join("") + `</div>`;
 }
+function _thLedgerActions(d) {
+  if (!d || !d.query) return "";
+  const jp = LANG === "ja";
+  const existing = (d.saved_ledgers || []).map(l => `<a class="th-existing-ledger" href="/ledger/${l.id}?lang=${LANG}">${esc(l.title)} · v${l.version} · ${l.entry_count} ${jp ? "記録" : "entries"}</a>`).join("");
+  return `<div class="th-ledger-actions"><button type="button" class="th-save-ledger" data-query="${esc(d.query)}" data-domain="${esc(d.domain || "philosophy")}">${jp ? "この結果を新しい研究台帳として保存" : "Save this result as a new research ledger"}</button>
+    <a class="small" href="/desk?lang=${LANG}">${jp ? "台帳一覧を見る" : "View ledgers"}</a>${existing ? `<span class="th-existing-label">${jp ? "既存の台帳：" : "Existing ledgers: "}${existing}</span>` : ""}</div>`;
+}
+async function _thSaveLedger(d, button) {
+  if (!d || !d.query || !button) return;
+  button.disabled = true;
+  try {
+    const saved = await api("/api/ledgers/from-translation-history", { method: "POST", timeout: 60000, body: {
+      query: d.query, domain: d.domain || "philosophy", lang: LANG } });
+    button.textContent = LANG === "ja" ? "保存しました。台帳を開く" : "Saved. Open ledger";
+    button.onclick = () => { location.href = `/ledger/${saved.id}?lang=${LANG}`; };
+  } catch (e) {
+    button.disabled = false;
+      button.textContent = LANG === "ja" ? "保存処理をもう一度実行" : "Retry saving this ledger";
+    console.error("save translation ledger", e);
+  }
+}
+function _thBindLedgerActions(container, d) {
+  if (!container) return;
+  container.querySelectorAll(".th-save-ledger").forEach(button => {
+    button.addEventListener("click", () => _thSaveLedger(d, button));
+  });
+}
 function _thResponseHtml(d) {
   const jp = LANG === "ja";
   if (!d || (d.status !== "ready" && d.status !== "discovery") || !d.dossier) {
@@ -2310,6 +2459,7 @@ function _thResponseHtml(d) {
     const next = _thNextActions((d && d.next_actions) || [], sources);
     return `<div class="th-result th-unseeded">
       <div class="th-status-line"><b>この語の調査台帳をここから開始できます</b><span class="th-badge th-unverified">初回調査</span></div>
+      ${_thLedgerActions(d)}
       <p>${esc((d && d.note) || (jp ? "この分野の証拠台帳はまだ登録されていません。" : "This evidence dossier is not seeded yet."))}</p>
       <div class="th-question"><b>${esc(brief.title || `「${d && d.query || ""}」の新規調査`)}</b><p>${esc(brief.center_question || "原語・原典・翻訳・受容を同じ台帳へ登録するための開始点です。")}</p></div>
       <p class="muted">既存の哲学資料を別分野の答えとして流用しません。この語の原語・版・出典を登録すれば、同じ画面で台帳を継続できます。</p>
@@ -2324,6 +2474,7 @@ function _thResponseHtml(d) {
   const isDiscovery = d.status === "discovery";
   let h = `<div class="th-result ${isDiscovery ? "th-discovery" : "th-ready"}">
     <div class="th-status-line"><b>${isDiscovery ? "自動予備台帳を表示しています：" : "台帳を表示しています："}${esc(ds.title || d.query)}</b>${_thLevel(isDiscovery ? "candidate" : "strong", levels)}</div>
+    ${_thLedgerActions(d)}
     <p class="th-honesty">${esc(d.note || "")}</p>
     ${isDiscovery ? `<div class="th-discovery-banner"><b>これは最初の自動整理です</b><p>辞書・概念データ・書誌検索から取得できた情報を先に配置しました。原典の該当頁、版ごとの訳語、実際の引用・影響関係は未確認のまま保持しています。</p></div>` : ""}
     <div class="th-question"><b>中心問い</b><p>${esc(ds.center_question || "")}</p></div>
@@ -2389,7 +2540,10 @@ async function gTranslationHistoryPanel(word) {
     results.innerHTML = `<p class="muted"><span class="spin"></span> ${esc(jp ? `「${word}」の${domain}分野の原典・翻訳・受容史を照合中…` : "Checking the source dossier…")}</p>`;
     try {
       const d = await api(`/api/translation-history?q=${encodeURIComponent(word)}&domain=${encodeURIComponent(domain)}&lang=${LANG}`, { timeout: 45000 });
-      if (results.isConnected) results.innerHTML = _thResponseHtml(d);
+      if (results.isConnected) {
+        results.innerHTML = _thResponseHtml(d);
+        _thBindLedgerActions(results, d);
+      }
     } catch (e) {
       console.error("translation history", e);
       if (results.isConnected) results.innerHTML = `<div class="th-result th-unseeded"><div class="th-status-line"><b>この調査面は追加確認を要します</b><span class="th-badge th-unverified">未確認</span></div><p>「${esc(word)}」の現在のMapと、ここからの次の入口は保持されています。下のフッターから外部情報源・多言語・組み合わせへ続けられます。</p><p class="srcline">${esc(String(e && e.message || e))}</p></div>`;

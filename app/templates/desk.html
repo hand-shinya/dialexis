@@ -2,6 +2,16 @@
 {% block title %}{{ t.desk_title }}{% endblock %}
 {% block content %}
 <h1>{{ t.desk_title }}</h1>
+<div class="card ledger-desk-card">
+  <h2>{{ t.ledger_title }}</h2>
+  <p class="muted">{{ t.ledger_empty }}</p>
+  <h3>{{ t.ledger_new }}</h3>
+  <div class="formrow"><input id="nl-title" placeholder="{{ t.ledger_name }}"></div>
+  <div class="formrow"><input id="nl-subject" placeholder="{{ t.ledger_subject }}"></div>
+  <div class="formrow"><input id="nl-question" placeholder="{{ t.ledger_question }}"></div>
+  <button onclick="ledgerCreate()">{{ t.ledger_create }}</button>
+  <div id="ledger-list"></div>
+</div>
 <div class="card">
   <h2>{{ t.desk_new_project }}</h2>
   <div class="formrow"><input id="np-title" placeholder="{{ t.desk_project_title }}"></div>

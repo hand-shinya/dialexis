@@ -30,6 +30,27 @@ SOUNDNESS = ("sound", "unsound", "unassessed")
 # nodes.origin (who created the row in the tool: human/ai/external).
 VOICES = ("author", "commentator", "self")
 
+# Research ledgers are reusable evidence assets, distinct from projects (the
+# user's arguments and interpretations).  These vocabularies are deliberately
+# kept separate from NODE_TYPES/CONFIDENCE: a ledger record can be a candidate
+# translation without becoming a confirmed project claim.
+LEDGER_SUBJECT_TYPES = ("term", "concept", "discipline", "person", "work",
+                        "translation", "research_question")
+LEDGER_STATUSES = ("draft", "active", "reviewed", "archived")
+LEDGER_ENTRY_KINDS = ("term", "edition", "translation", "source_text",
+                      "reception", "claim", "interpretation", "open_question",
+                      "note")
+LEDGER_ENTRY_STATUSES = ("candidate", "confirmed", "disputed", "rejected", "open")
+LEDGER_EVIDENCE_LEVELS = (
+    "dictionary_confirmed", "bibliography_confirmed", "primary_text_confirmed",
+    "translation_text_confirmed", "reception_confirmed", "strong",
+    "interpretive", "candidate", "unverified")
+LEDGER_LINK_ROLES = ("background", "evidence", "translation", "counterargument",
+                     "method", "context")
+LEDGER_RELATIONS = ("translated_as", "appears_in", "revised_in", "cited_by",
+                    "criticized_by", "derived_from", "supports", "contradicts",
+                    "related_to")
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects(
   id INTEGER PRIMARY KEY,
@@ -101,6 +122,109 @@ CREATE TABLE IF NOT EXISTS ai_ledger(
   task TEXT,
   project_id INTEGER,
   summary TEXT);
+
+CREATE TABLE IF NOT EXISTS ledgers(
+  id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  central_question TEXT DEFAULT '',
+  subject TEXT DEFAULT '',
+  subject_type TEXT NOT NULL DEFAULT 'term',
+  domain TEXT DEFAULT 'philosophy',
+  status TEXT NOT NULL DEFAULT 'draft',
+  parent_ledger_id INTEGER REFERENCES ledgers(id) ON DELETE SET NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT, updated_at TEXT);
+
+CREATE TABLE IF NOT EXISTS ledger_versions(
+  ledger_id INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  note TEXT DEFAULT '',
+  created_at TEXT,
+  PRIMARY KEY(ledger_id, version));
+
+CREATE TABLE IF NOT EXISTS ledger_entries(
+  id INTEGER PRIMARY KEY,
+  ledger_id INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT DEFAULT '',
+  source_term TEXT DEFAULT '',
+  target_term TEXT DEFAULT '',
+  source_language TEXT DEFAULT '',
+  target_language TEXT DEFAULT '',
+  author TEXT DEFAULT '',
+  translator TEXT DEFAULT '',
+  work TEXT DEFAULT '',
+  edition TEXT DEFAULT '',
+  year TEXT DEFAULT '',
+  locator TEXT DEFAULT '',
+  original_quote TEXT DEFAULT '',
+  translated_quote TEXT DEFAULT '',
+  preserved_meaning TEXT DEFAULT '',
+  lost_meaning TEXT DEFAULT '',
+  added_meaning TEXT DEFAULT '',
+  evidence_level TEXT NOT NULL DEFAULT 'candidate',
+  status TEXT NOT NULL DEFAULT 'candidate',
+  origin TEXT NOT NULL DEFAULT 'external',
+  created_at TEXT, updated_at TEXT);
+
+CREATE TABLE IF NOT EXISTS ledger_sources(
+  id INTEGER PRIMARY KEY,
+  ledger_id INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+  external_id TEXT DEFAULT '',
+  role TEXT NOT NULL DEFAULT 'candidate_index',
+  source_name TEXT DEFAULT '',
+  source_url TEXT DEFAULT '',
+  citation TEXT DEFAULT '',
+  retrieved_at TEXT DEFAULT '',
+  locator TEXT DEFAULT '',
+  quote TEXT DEFAULT '',
+  note TEXT DEFAULT '');
+
+CREATE TABLE IF NOT EXISTS ledger_entry_sources(
+  entry_id INTEGER NOT NULL REFERENCES ledger_entries(id) ON DELETE CASCADE,
+  source_id INTEGER NOT NULL REFERENCES ledger_sources(id) ON DELETE CASCADE,
+  PRIMARY KEY(entry_id, source_id));
+
+CREATE TABLE IF NOT EXISTS ledger_relations(
+  id INTEGER PRIMARY KEY,
+  ledger_id INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+  src_entry_id INTEGER NOT NULL REFERENCES ledger_entries(id) ON DELETE CASCADE,
+  dst_entry_id INTEGER NOT NULL REFERENCES ledger_entries(id) ON DELETE CASCADE,
+  relation TEXT NOT NULL,
+  note TEXT DEFAULT '',
+  created_at TEXT,
+  UNIQUE(ledger_id, src_entry_id, dst_entry_id, relation));
+
+CREATE TABLE IF NOT EXISTS ledger_tasks(
+  id INTEGER PRIMARY KEY,
+  ledger_id INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+  entry_id INTEGER REFERENCES ledger_entries(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  priority INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT, updated_at TEXT);
+
+CREATE TABLE IF NOT EXISTS project_ledger_links(
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  ledger_id INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'background',
+  pinned_version INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'active',
+  note TEXT DEFAULT '',
+  created_at TEXT, updated_at TEXT,
+  PRIMARY KEY(project_id, ledger_id));
+
+CREATE TABLE IF NOT EXISTS project_ledger_entries(
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  entry_id INTEGER NOT NULL REFERENCES ledger_entries(id) ON DELETE CASCADE,
+  relation TEXT NOT NULL DEFAULT 'evidence',
+  adopted_version INTEGER NOT NULL DEFAULT 1,
+  use_note TEXT DEFAULT '',
+  created_at TEXT,
+  PRIMARY KEY(project_id, entry_id));
 
 CREATE TABLE IF NOT EXISTS arguments(
   id INTEGER PRIMARY KEY,

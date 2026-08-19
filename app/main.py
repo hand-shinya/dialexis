@@ -172,6 +172,16 @@ def page_project(request: Request, pid: int):
     return render(request, "project.html", project=dict(p))
 
 
+@app.get("/ledger/{lid}", response_class=HTMLResponse)
+def page_ledger(request: Request, lid: int):
+    conn = get_conn()
+    l = conn.execute("SELECT * FROM ledgers WHERE id=?", (lid,)).fetchone()
+    conn.close()
+    if not l:
+        raise HTTPException(404)
+    return render(request, "ledger.html", ledger=dict(l))
+
+
 @app.get("/watches", response_class=HTMLResponse)
 def page_watches(request: Request):
     return render(request, "watches.html")
@@ -752,6 +762,19 @@ def _history_research_brief(q: str, domain: str):
     }
 
 
+def _saved_ledgers_for_query(q: str, domain: str) -> list:
+    conn = get_conn()
+    try:
+        return rows(conn.execute(
+            "SELECT l.id, l.title, l.subject, l.central_question, l.domain, l.status, l.version,"
+            " (SELECT COUNT(*) FROM ledger_entries e WHERE e.ledger_id=l.id) AS entry_count,"
+            " (SELECT COUNT(*) FROM project_ledger_links pll WHERE pll.ledger_id=l.id AND pll.status='active') AS project_count"
+            " FROM ledgers l WHERE l.subject=? AND l.domain=? AND l.status!='archived'"
+            " ORDER BY l.updated_at DESC", (str(q or "").strip(), str(domain or "philosophy"))))
+    finally:
+        conn.close()
+
+
 def _history_payload(value):
     """Unwrap a connector envelope without exposing connector error internals."""
     if not isinstance(value, dict):
@@ -1061,6 +1084,7 @@ async def api_translation_history(q: str, domain: str = "philosophy", lang: str 
         "source_plan": copy.deepcopy(meta.get("source_plan", [])),
         "available_domains": supported_domains,
         "seeded_domains": available,
+        "saved_ledgers": _saved_ledgers_for_query(q, domain_key),
     }
     if not dossier:
         discovery = await _history_discovery(q, domain_key, lang)
@@ -2012,6 +2036,547 @@ def api_locator(author: str, work: str = "", locator: str = ""):
             "result": cites.resolve(author, work, locator) if author else None}
 
 
+# ---------- reusable research ledgers ----------
+
+def _ledger_enum(value, allowed, default):
+    value = str(value or "").strip()
+    return value if value in allowed else default
+
+
+def _ledger_evidence_level(level: str, source_label: str = "") -> str:
+    """Map the older translation-history labels to typed ledger evidence.
+
+    A dictionary hit must not become a primary-text confirmation merely because
+    the old UI used the generic word ``confirmed``.
+    """
+    level = str(level or "candidate").strip()
+    label = str(source_label or "").lower()
+    if level == "confirmed":
+        if "wiktionary" in label or "辞書" in label:
+            return "dictionary_confirmed"
+        return "strong"
+    if level in db.LEDGER_EVIDENCE_LEVELS:
+        return level
+    return {
+        "bibliography_confirmed": "bibliography_confirmed",
+        "interpretive": "interpretive",
+        "strong": "strong",
+    }.get(level, "candidate")
+
+
+def _ledger_source_role(source: dict) -> str:
+    label = str(source.get("label") or source.get("source_name") or "").lower()
+    evidence = str(source.get("evidence") or "candidate")
+    if "wiktionary" in label or "辞書" in label:
+        return "dictionary"
+    if "wikidata" in label or "多言語" in label:
+        return "authority_label"
+    if evidence == "bibliography_confirmed" or "ndl" in label or "cinii" in label:
+        return "bibliographic_catalog"
+    if "sep" in label or "openalex" in label or "研究" in label:
+        return "secondary_scholarship"
+    return "candidate_index"
+
+
+def _ledger_snapshot(conn, lid: int) -> dict:
+    ledger = conn.execute("SELECT * FROM ledgers WHERE id=?", (lid,)).fetchone()
+    if not ledger:
+        raise HTTPException(404, "unknown ledger")
+    entries = rows(conn.execute(
+        "SELECT * FROM ledger_entries WHERE ledger_id=? ORDER BY id", (lid,)))
+    sources = rows(conn.execute(
+        "SELECT * FROM ledger_sources WHERE ledger_id=? ORDER BY id", (lid,)))
+    entry_sources = rows(conn.execute(
+        "SELECT les.entry_id, les.source_id FROM ledger_entry_sources les"
+        " JOIN ledger_entries e ON e.id=les.entry_id"
+        " WHERE e.ledger_id=? ORDER BY les.entry_id, les.source_id", (lid,)))
+    relations = rows(conn.execute(
+        "SELECT * FROM ledger_relations WHERE ledger_id=? ORDER BY id", (lid,)))
+    tasks = rows(conn.execute(
+        "SELECT * FROM ledger_tasks WHERE ledger_id=? ORDER BY priority DESC, id", (lid,)))
+    return {"ledger": dict(ledger), "entries": entries, "sources": sources,
+            "entry_sources": entry_sources, "relations": relations, "tasks": tasks}
+
+
+def _record_ledger_version(conn, lid: int, note: str = "", bump: bool = False) -> int:
+    if bump:
+        conn.execute("UPDATE ledgers SET version=version+1, updated_at=? WHERE id=?",
+                     (now(), lid))
+    snapshot = _ledger_snapshot(conn, lid)
+    version = int(snapshot["ledger"]["version"])
+    conn.execute(
+        "INSERT OR REPLACE INTO ledger_versions(ledger_id, version, snapshot_json, note, created_at)"
+        " VALUES(?,?,?,?,?)",
+        (lid, version, json.dumps(snapshot, ensure_ascii=False, sort_keys=True), note, now()))
+    return version
+
+
+def _ledger_detail(conn, lid: int) -> dict:
+    data = _ledger_snapshot(conn, lid)
+    data["linked_projects"] = rows(conn.execute(
+        "SELECT p.id, p.title, pll.role, pll.pinned_version, pll.status, pll.note,"
+        " pll.created_at, pll.updated_at"
+        " FROM project_ledger_links pll JOIN projects p ON p.id=pll.project_id"
+        " WHERE pll.ledger_id=? ORDER BY p.updated_at DESC", (lid,)))
+    data["versions"] = rows(conn.execute(
+        "SELECT ledger_id, version, note, created_at FROM ledger_versions"
+        " WHERE ledger_id=? ORDER BY version DESC", (lid,)))
+    source_by_id = {s["id"]: s for s in data["sources"]}
+    entry_sources = {}
+    for link in data["entry_sources"]:
+        entry_sources.setdefault(link["entry_id"], []).append(source_by_id[link["source_id"]])
+    for entry in data["entries"]:
+        entry["sources"] = entry_sources.get(entry["id"], [])
+    data["counts"] = {
+        "entries": len(data["entries"]),
+        "confirmed": sum(1 for e in data["entries"] if e["status"] == "confirmed"),
+        "candidate": sum(1 for e in data["entries"] if e["status"] == "candidate"),
+        "open": sum(1 for t in data["tasks"] if t["status"] == "open"),
+        "projects": len(data["linked_projects"]),
+    }
+    return data
+
+
+def _ledger_add_source(conn, lid: int, source: dict) -> int:
+    cur = conn.execute(
+        "INSERT INTO ledger_sources(ledger_id, external_id, role, source_name, source_url,"
+        " citation, retrieved_at, locator, quote, note) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        (lid, str(source.get("external_id") or source.get("id") or ""),
+         str(source.get("role") or _ledger_source_role(source)),
+         str(source.get("source_name") or source.get("label") or ""),
+         str(source.get("source_url") or source.get("url") or ""),
+         str(source.get("citation") or ""), str(source.get("retrieved_at") or now()),
+         str(source.get("locator") or ""), str(source.get("quote") or ""),
+         str(source.get("note") or source.get("status") or "")))
+    return cur.lastrowid
+
+
+def _ledger_add_entry(conn, lid: int, body: dict, source_map=None) -> int:
+    kind = _ledger_enum(body.get("kind"), db.LEDGER_ENTRY_KINDS, "note")
+    evidence = _ledger_enum(body.get("evidence_level"), db.LEDGER_EVIDENCE_LEVELS, "candidate")
+    status = _ledger_enum(body.get("status"), db.LEDGER_ENTRY_STATUSES, "candidate")
+    origin = body.get("origin", "external")
+    if origin not in db.ORIGINS:
+        origin = "external"
+    title = str(body.get("title") or body.get("source_term") or "").strip()
+    if not title:
+        raise HTTPException(400, "ledger entry title required")
+    cur = conn.execute(
+        "INSERT INTO ledger_entries(ledger_id, kind, title, body, source_term, target_term,"
+        " source_language, target_language, author, translator, work, edition, year, locator,"
+        " original_quote, translated_quote, preserved_meaning, lost_meaning, added_meaning,"
+        " evidence_level, status, origin, created_at, updated_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (lid, kind, title, str(body.get("body") or ""),
+         str(body.get("source_term") or ""), str(body.get("target_term") or ""),
+         str(body.get("source_language") or ""), str(body.get("target_language") or ""),
+         str(body.get("author") or ""), str(body.get("translator") or ""),
+         str(body.get("work") or ""), str(body.get("edition") or ""),
+         str(body.get("year") or ""), str(body.get("locator") or ""),
+         str(body.get("original_quote") or ""), str(body.get("translated_quote") or ""),
+         str(body.get("preserved_meaning") or ""), str(body.get("lost_meaning") or ""),
+         str(body.get("added_meaning") or ""), evidence, status, origin, now(), now()))
+    entry_id = cur.lastrowid
+    for source_id in body.get("source_ids") or []:
+        resolved = source_map.get(str(source_id)) if source_map else source_id
+        if resolved:
+            conn.execute("INSERT OR IGNORE INTO ledger_entry_sources(entry_id, source_id) VALUES(?,?)",
+                         (entry_id, int(resolved)))
+    return entry_id
+
+
+def _ledger_create(conn, body: dict, title: str | None = None, parent_id=None) -> int:
+    title = (title or body.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "ledger title required")
+    subject_type = _ledger_enum(body.get("subject_type"), db.LEDGER_SUBJECT_TYPES, "term")
+    status = _ledger_enum(body.get("status"), db.LEDGER_STATUSES, "draft")
+    cur = conn.execute(
+        "INSERT INTO ledgers(title, description, central_question, subject, subject_type,"
+        " domain, status, parent_ledger_id, version, created_at, updated_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        (title, str(body.get("description") or ""), str(body.get("central_question") or body.get("question") or ""),
+         str(body.get("subject") or ""), subject_type, str(body.get("domain") or "philosophy"),
+         status, parent_id, 1, now(), now()))
+    lid = cur.lastrowid
+    _record_ledger_version(conn, lid, "created")
+    return lid
+
+
+def _history_source_payloads(result: dict) -> list:
+    dossier = result.get("dossier") or {}
+    source_list = dossier.get("sources") or result.get("source_candidates") or []
+    return [s for s in source_list if isinstance(s, dict)]
+
+
+def _history_ledger_body(q: str, domain: str, result: dict, request_body: dict) -> dict:
+    dossier = result.get("dossier") or {}
+    brief = result.get("research_brief") or {}
+    title = request_body.get("title") or dossier.get("title") or brief.get("title") or f"「{q}」の研究台帳"
+    question = request_body.get("central_question") or dossier.get("center_question") or brief.get("center_question") or ""
+    subject_type = request_body.get("subject_type") or ("discipline" if q in {"哲学", "philosophy"} else "term")
+    return {"title": title, "central_question": question, "subject": q,
+            "subject_type": subject_type, "domain": domain,
+            "description": result.get("note") or dossier.get("scope_note") or "",
+            "status": "active" if dossier else "draft"}
+
+
+def _create_ledger_from_history(result: dict, request_body: dict) -> int:
+    q = str(result.get("query") or request_body.get("query") or "").strip()
+    domain = str(result.get("domain") or request_body.get("domain") or "philosophy")
+    conn = get_conn()
+    try:
+        lid = _ledger_create(conn, _history_ledger_body(q, domain, result, request_body))
+        source_map = {}
+        for source in _history_source_payloads(result):
+            external_id = str(source.get("id") or source.get("external_id") or "")
+            sid = _ledger_add_source(conn, lid, {**source, "external_id": external_id})
+            if external_id:
+                source_map[external_id] = sid
+        dossier = result.get("dossier") or {}
+        for item in dossier.get("term_map") or []:
+            if not isinstance(item, dict) or not item.get("source_term"):
+                continue
+            kind_text = str(item.get("kind") or "")
+            kind = "translation" if "翻訳" in kind_text or "原語" in kind_text else "term"
+            target = (item.get("japanese_candidates") or [q])[0]
+            _ledger_add_entry(conn, lid, {
+                "kind": kind, "title": item.get("source_term"),
+                "body": item.get("distinction") or "", "source_term": item.get("source_term"),
+                "target_term": target, "source_language": item.get("language"),
+                "preserved_meaning": item.get("preserved"),
+                "lost_meaning": item.get("lost_or_shifted"), "added_meaning": item.get("added"),
+                "evidence_level": _ledger_evidence_level(item.get("evidence"), ""),
+                "status": "confirmed" if item.get("evidence") == "confirmed" else "candidate",
+                "source_ids": item.get("source_ids") or []}, source_map)
+        for item in dossier.get("timeline") or []:
+            if not isinstance(item, dict) or not item.get("where"):
+                continue
+            body = "\n".join(x for x in [
+                f"Where: {item.get('where', '')}", f"What: {item.get('what', '')}",
+                f"Why: {item.get('why', '')}", f"How: {item.get('how', '')}",
+                item.get("evidence_note", "")
+            ] if x)
+            _ledger_add_entry(conn, lid, {
+                "kind": "edition", "title": item.get("where"), "body": body,
+                "author": item.get("who"), "year": item.get("when"),
+                "source_term": q,
+                "evidence_level": _ledger_evidence_level(item.get("evidence"), ""),
+                "status": "confirmed" if item.get("evidence") == "bibliography_confirmed" else "candidate",
+                "source_ids": item.get("source_ids") or []}, source_map)
+        for item in dossier.get("transformations") or []:
+            if isinstance(item, dict) and item.get("stage"):
+                _ledger_add_entry(conn, lid, {
+                    "kind": "interpretation", "title": item.get("stage"),
+                    "body": "\n".join(x for x in [
+                        f"保存: {item.get('preserved', '')}",
+                        f"移動・欠損: {item.get('lost', '')}",
+                        f"追加: {item.get('added', '')}",
+                        f"検証: {item.get('test', '')}"] if x),
+                    "evidence_level": _ledger_evidence_level(item.get("evidence"), ""),
+                    "status": "candidate", "source_ids": item.get("source_ids") or []}, source_map)
+        for item in dossier.get("reception_ledger") or []:
+            if isinstance(item, dict) and item.get("who"):
+                _ledger_add_entry(conn, lid, {
+                    "kind": "reception", "title": item.get("who"),
+                    "body": "\n".join(x for x in [
+                        f"Where: {item.get('where', '')}", f"What: {item.get('what', '')}",
+                        f"Why: {item.get('why', '')}", f"How: {item.get('how', '')}",
+                        f"Relation: {item.get('relation', '')}"] if x),
+                    "year": item.get("when"), "evidence_level": _ledger_evidence_level(item.get("evidence"), ""),
+                    "status": "candidate", "source_ids": item.get("source_ids") or []}, source_map)
+        for action in result.get("next_actions") or dossier.get("next_actions") or []:
+            if isinstance(action, dict) and action.get("label"):
+                conn.execute("INSERT INTO ledger_tasks(ledger_id, title, status, priority, created_at, updated_at)"
+                             " VALUES(?,?,?,?,?,?)", (lid, action["label"], "open", 1, now(), now()))
+        if not dossier:
+            note = result.get("note") or "この語の原典・翻訳・受容史を調査するための開始点です。"
+            _ledger_add_entry(conn, lid, {"kind": "open_question", "title": "調査開始",
+                                          "body": note, "source_term": q,
+                                          "evidence_level": "unverified", "status": "open"}, source_map)
+        _record_ledger_version(conn, lid, "saved from translation-history discovery", bump=True)
+        conn.commit()
+        return lid
+    finally:
+        conn.close()
+
+
+@app.get("/api/ledgers")
+def list_ledgers(status: str = ""):
+    conn = get_conn()
+    where = " WHERE l.status=?" if status in db.LEDGER_STATUSES else ""
+    params = (status,) if where else ()
+    data = rows(conn.execute(
+        "SELECT l.*,"
+        " (SELECT COUNT(*) FROM ledger_entries e WHERE e.ledger_id=l.id) entry_count,"
+        " (SELECT COUNT(*) FROM ledger_entries e WHERE e.ledger_id=l.id AND e.status='confirmed') confirmed_count,"
+        " (SELECT COUNT(*) FROM ledger_entries e WHERE e.ledger_id=l.id AND e.status='candidate') candidate_count,"
+        " (SELECT COUNT(*) FROM ledger_tasks t WHERE t.ledger_id=l.id AND t.status='open') open_task_count,"
+        " (SELECT COUNT(*) FROM project_ledger_links pll WHERE pll.ledger_id=l.id AND pll.status='active') project_count"
+        " FROM ledgers l" + where + " ORDER BY l.updated_at DESC", params))
+    conn.close()
+    return data
+
+
+@app.get("/api/ledgers/{lid}")
+def get_ledger(lid: int):
+    conn = get_conn()
+    try:
+        return _ledger_detail(conn, lid)
+    finally:
+        conn.close()
+
+
+@app.post("/api/ledgers")
+async def create_ledger(request: Request):
+    body = await request.json()
+    conn = get_conn()
+    try:
+        lid = _ledger_create(conn, body)
+        conn.commit()
+        return _ledger_detail(conn, lid)
+    finally:
+        conn.close()
+
+
+@app.patch("/api/ledgers/{lid}")
+async def update_ledger(lid: int, request: Request):
+    body = await request.json()
+    fields, values = [], []
+    for key in ("title", "description", "central_question", "subject", "domain"):
+        if key in body:
+            fields.append(f"{key}=?")
+            values.append(str(body[key] or ""))
+    if "status" in body:
+        status = _ledger_enum(body.get("status"), db.LEDGER_STATUSES, "draft")
+        fields.append("status=?")
+        values.append(status)
+    if not fields:
+        raise HTTPException(400, "nothing to update")
+    conn = get_conn()
+    try:
+        if not conn.execute("SELECT 1 FROM ledgers WHERE id=?", (lid,)).fetchone():
+            raise HTTPException(404, "unknown ledger")
+        values += [now(), lid]
+        conn.execute("UPDATE ledgers SET " + ", ".join(fields) + ", updated_at=? WHERE id=?", values)
+        _record_ledger_version(conn, lid, "metadata updated", bump=True)
+        conn.commit()
+        return _ledger_detail(conn, lid)
+    finally:
+        conn.close()
+
+
+@app.post("/api/ledgers/{lid}/entries")
+async def create_ledger_entry(lid: int, request: Request):
+    body = await request.json()
+    conn = get_conn()
+    try:
+        if not conn.execute("SELECT 1 FROM ledgers WHERE id=?", (lid,)).fetchone():
+            raise HTTPException(404, "unknown ledger")
+        entry_id = _ledger_add_entry(conn, lid, body)
+        _record_ledger_version(conn, lid, "entry added", bump=True)
+        conn.commit()
+        return {"id": entry_id, "ledger": _ledger_detail(conn, lid)}
+    finally:
+        conn.close()
+
+
+@app.patch("/api/ledger-entries/{entry_id}")
+async def update_ledger_entry(entry_id: int, request: Request):
+    body = await request.json()
+    conn = get_conn()
+    try:
+        entry = conn.execute("SELECT * FROM ledger_entries WHERE id=?", (entry_id,)).fetchone()
+        if not entry:
+            raise HTTPException(404, "unknown ledger entry")
+        fields, values = [], []
+        for key in ("title", "body", "source_term", "target_term", "source_language",
+                    "target_language", "author", "translator", "work", "edition", "year",
+                    "locator", "original_quote", "translated_quote", "preserved_meaning",
+                    "lost_meaning", "added_meaning"):
+            if key in body:
+                fields.append(f"{key}=?")
+                values.append(str(body[key] or ""))
+        if "kind" in body:
+            fields.append("kind=?")
+            values.append(_ledger_enum(body.get("kind"), db.LEDGER_ENTRY_KINDS, "note"))
+        if "evidence_level" in body:
+            fields.append("evidence_level=?")
+            values.append(_ledger_enum(body.get("evidence_level"), db.LEDGER_EVIDENCE_LEVELS, "candidate"))
+        if "status" in body:
+            fields.append("status=?")
+            values.append(_ledger_enum(body.get("status"), db.LEDGER_ENTRY_STATUSES, "candidate"))
+        if not fields:
+            raise HTTPException(400, "nothing to update")
+        values += [now(), entry_id]
+        conn.execute("UPDATE ledger_entries SET " + ", ".join(fields) + ", updated_at=? WHERE id=?", values)
+        _record_ledger_version(conn, entry["ledger_id"], "entry updated", bump=True)
+        conn.commit()
+        return _ledger_detail(conn, entry["ledger_id"])
+    finally:
+        conn.close()
+
+
+@app.post("/api/ledgers/{lid}/fork")
+async def fork_ledger(lid: int, request: Request):
+    body = await request.json()
+    conn = get_conn()
+    try:
+        source = _ledger_snapshot(conn, lid)
+        meta = source["ledger"]
+        new_lid = _ledger_create(conn, {
+            "title": body.get("title") or f"{meta['title']}（分岐）",
+            "description": meta["description"], "central_question": meta["central_question"],
+            "subject": meta["subject"], "subject_type": meta["subject_type"],
+            "domain": meta["domain"], "status": "draft"}, parent_id=lid)
+        source_map, entry_map = {}, {}
+        for s in source["sources"]:
+            ns = _ledger_add_source(conn, new_lid, s)
+            source_map[s["id"]] = ns
+        for e in source["entries"]:
+            ne = _ledger_add_entry(conn, new_lid, {k: e.get(k, "") for k in (
+                "kind", "title", "body", "source_term", "target_term", "source_language",
+                "target_language", "author", "translator", "work", "edition", "year", "locator",
+                "original_quote", "translated_quote", "preserved_meaning", "lost_meaning",
+                "added_meaning", "evidence_level", "status", "origin")},
+                {str(old): new for old, new in source_map.items()})
+            entry_map[e["id"]] = ne
+        for rel in source["relations"]:
+            conn.execute("INSERT OR IGNORE INTO ledger_relations(ledger_id, src_entry_id, dst_entry_id, relation, note, created_at)"
+                         " VALUES(?,?,?,?,?,?)", (new_lid, entry_map[rel["src_entry_id"]], entry_map[rel["dst_entry_id"]],
+                                                   rel["relation"], rel["note"], now()))
+        for task in source["tasks"]:
+            conn.execute("INSERT INTO ledger_tasks(ledger_id, entry_id, title, status, priority, created_at, updated_at)"
+                         " VALUES(?,?,?,?,?,?,?)", (new_lid, entry_map.get(task.get("entry_id")), task["title"],
+                                                      task["status"], task["priority"], now(), now()))
+        _record_ledger_version(conn, new_lid, f"forked from ledger {lid}", bump=True)
+        conn.commit()
+        return _ledger_detail(conn, new_lid)
+    finally:
+        conn.close()
+
+
+@app.post("/api/ledgers/from-translation-history")
+async def create_ledger_from_translation_history(request: Request):
+    body = await request.json()
+    q = str(body.get("query") or "").strip()
+    if not q:
+        raise HTTPException(400, "query required")
+    result = await api_translation_history(q, str(body.get("domain") or "philosophy"),
+                                           str(body.get("lang") or "ja"))
+    lid = _create_ledger_from_history(result, body)
+    conn = get_conn()
+    try:
+        return {"id": lid, "status": result.get("status"), "ledger": _ledger_detail(conn, lid)}
+    finally:
+        conn.close()
+
+
+def _project_or_404(conn, pid: int):
+    p = conn.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+    if not p:
+        raise HTTPException(404, "unknown project")
+    return p
+
+
+@app.get("/api/projects/{pid}/ledgers")
+def project_ledgers(pid: int):
+    conn = get_conn()
+    try:
+        _project_or_404(conn, pid)
+        return rows(conn.execute(
+            "SELECT l.*, pll.role, pll.pinned_version, pll.status AS link_status, pll.note AS link_note,"
+            " pll.created_at AS linked_at, pll.updated_at AS link_updated_at,"
+            " (SELECT COUNT(*) FROM project_ledger_entries ple WHERE ple.project_id=? AND ple.entry_id IN"
+            "   (SELECT id FROM ledger_entries WHERE ledger_id=l.id)) AS used_entry_count"
+            " FROM project_ledger_links pll JOIN ledgers l ON l.id=pll.ledger_id"
+            " WHERE pll.project_id=? ORDER BY l.updated_at DESC", (pid, pid)))
+    finally:
+        conn.close()
+
+
+@app.post("/api/projects/{pid}/ledgers")
+async def link_project_ledger(pid: int, request: Request):
+    body = await request.json()
+    lid = int(body.get("ledger_id") or 0)
+    role = _ledger_enum(body.get("role"), db.LEDGER_LINK_ROLES, "background")
+    conn = get_conn()
+    try:
+        _project_or_404(conn, pid)
+        ledger = conn.execute("SELECT * FROM ledgers WHERE id=?", (lid,)).fetchone()
+        if not ledger:
+            raise HTTPException(404, "unknown ledger")
+        pinned = int(body.get("pinned_version") or ledger["version"])
+        conn.execute(
+            "INSERT INTO project_ledger_links(project_id, ledger_id, role, pinned_version, status, note, created_at, updated_at)"
+            " VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(project_id, ledger_id) DO UPDATE SET role=excluded.role,"
+            " pinned_version=excluded.pinned_version, status='active', note=excluded.note, updated_at=excluded.updated_at",
+            (pid, lid, role, pinned, "active", str(body.get("note") or ""), now(), now()))
+        conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (now(), pid))
+        conn.commit()
+        return {"ok": True, "ledger_id": lid, "pinned_version": pinned}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/projects/{pid}/ledgers/{lid}")
+def unlink_project_ledger(pid: int, lid: int):
+    conn = get_conn()
+    try:
+        _project_or_404(conn, pid)
+        conn.execute("DELETE FROM project_ledger_links WHERE project_id=? AND ledger_id=?", (pid, lid))
+        conn.execute("DELETE FROM project_ledger_entries WHERE project_id=? AND entry_id IN"
+                     " (SELECT id FROM ledger_entries WHERE ledger_id=?)", (pid, lid))
+        conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (now(), pid))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.post("/api/projects/{pid}/ledger-entries")
+async def link_project_ledger_entry(pid: int, request: Request):
+    body = await request.json()
+    entry_id = int(body.get("entry_id") or 0)
+    relation = str(body.get("relation") or "evidence")
+    conn = get_conn()
+    try:
+        _project_or_404(conn, pid)
+        entry = conn.execute("SELECT e.*, l.version FROM ledger_entries e JOIN ledgers l ON l.id=e.ledger_id WHERE e.id=?",
+                             (entry_id,)).fetchone()
+        if not entry:
+            raise HTTPException(404, "unknown ledger entry")
+        link = conn.execute("SELECT 1 FROM project_ledger_links WHERE project_id=? AND ledger_id=? AND status='active'",
+                            (pid, entry["ledger_id"])).fetchone()
+        if not link:
+            raise HTTPException(409, "link the ledger to the project first")
+        conn.execute(
+            "INSERT INTO project_ledger_entries(project_id, entry_id, relation, adopted_version, use_note, created_at)"
+            " VALUES(?,?,?,?,?,?) ON CONFLICT(project_id, entry_id) DO UPDATE SET relation=excluded.relation,"
+            " adopted_version=excluded.adopted_version, use_note=excluded.use_note",
+            (pid, entry_id, relation, int(body.get("adopted_version") or entry["version"]),
+             str(body.get("use_note") or ""), now()))
+        conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (now(), pid))
+        conn.commit()
+        return {"ok": True, "entry_id": entry_id, "adopted_version": int(body.get("adopted_version") or entry["version"])}
+    finally:
+        conn.close()
+
+
+@app.get("/api/projects/{pid}/ledger-entries")
+def project_ledger_entries(pid: int):
+    conn = get_conn()
+    try:
+        _project_or_404(conn, pid)
+        return rows(conn.execute(
+            "SELECT ple.*, e.ledger_id, e.kind, e.title, e.body, e.evidence_level, e.status,"
+            " l.title AS ledger_title, l.version AS current_version"
+            " FROM project_ledger_entries ple JOIN ledger_entries e ON e.id=ple.entry_id"
+            " JOIN ledgers l ON l.id=e.ledger_id WHERE ple.project_id=? ORDER BY ple.created_at DESC", (pid,)))
+    finally:
+        conn.close()
+
+
 # ---------- research desk (research-process graph) ----------
 
 @app.get("/api/projects")
@@ -2083,9 +2648,25 @@ def project_graph(pid: int):
         "SELECT pr.* FROM provenance pr JOIN nodes n ON pr.node_id=n.id"
         " WHERE n.project_id=?", (pid,)))
     args = _load_arguments(conn, pid)
+    linked_ledgers = rows(conn.execute(
+        "SELECT l.*, pll.role, pll.pinned_version, pll.status AS link_status, pll.note AS link_note,"
+        " pll.created_at AS linked_at, pll.updated_at AS link_updated_at"
+        " FROM project_ledger_links pll JOIN ledgers l ON l.id=pll.ledger_id"
+        " WHERE pll.project_id=? ORDER BY l.updated_at DESC", (pid,)))
+    linked_entries = rows(conn.execute(
+        "SELECT ple.*, e.ledger_id, e.kind, e.title, e.body, e.evidence_level, e.status,"
+        " l.title AS ledger_title, l.version AS current_version"
+        " FROM project_ledger_entries ple JOIN ledger_entries e ON e.id=ple.entry_id"
+        " JOIN ledgers l ON l.id=e.ledger_id WHERE ple.project_id=? ORDER BY ple.created_at DESC", (pid,)))
+    linked_ledger_sources = rows(conn.execute(
+        "SELECT DISTINCT ls.* FROM project_ledger_links pll"
+        " JOIN ledger_sources ls ON ls.ledger_id=pll.ledger_id"
+        " WHERE pll.project_id=? AND pll.status='active' ORDER BY ls.id", (pid,)))
     conn.close()
     return {"project": dict(p), "nodes": nodes, "edges": edges,
-            "provenance": prov, "arguments": args}
+            "provenance": prov, "arguments": args,
+            "ledgers": linked_ledgers, "ledger_entries": linked_entries,
+            "ledger_sources": linked_ledger_sources}
 
 
 @app.post("/api/projects/{pid}/nodes")
@@ -2407,6 +2988,26 @@ def export_md(pid: int):
         lines += [f"**Initial question:** {p['question']}", ""]
     if p["description"]:
         lines += [p["description"], ""]
+    if g.get("ledgers"):
+        lines += ["## 参照研究台帳", ""]
+        for ledger in g["ledgers"]:
+            lines.append(f"### {ledger['title']}")
+            lines.append(f"- ledger_id: `{ledger['id']}` | role: **{ledger['role']}**"
+                         f" | pinned_version: **{ledger['pinned_version']}**"
+                         f" | current_version: **{ledger['version']}**")
+            lines.append(f"- status: {ledger['link_status']} | linked: {ledger['linked_at']}")
+            if ledger.get("link_note"):
+                lines.append(f"- note: {ledger['link_note']}")
+            lines.append("")
+        if g.get("ledger_entries"):
+            lines.append("### 採用した台帳エントリ")
+            for entry in g["ledger_entries"]:
+                lines.append(f"- [{entry['ledger_title']}#{entry['entry_id']}] {entry['title']}"
+                             f" — relation: **{entry['relation']}**, adopted_version: **{entry['adopted_version']}**"
+                             f" (current: {entry['current_version']})")
+                if entry.get("use_note"):
+                    lines.append(f"  - use note: {entry['use_note']}")
+            lines.append("")
     for ntype in TYPE_ORDER:
         group = [n for n in nodes if n["type"] == ntype]
         if not group:
@@ -2444,6 +3045,13 @@ def export_md(pid: int):
             quote = f" “{pr['quote']}”" if pr["quote"] else ""
             lines.append(f"P{i + 1}. {pr['text']}{tags}{loc}{src}{quote}")
         lines.append(f"∴ C. {a['conclusion']}")
+        lines.append("")
+    if g.get("ledger_sources"):
+        lines.append("## 台帳由来の参照資料")
+        for source in g["ledger_sources"]:
+            label = source["source_name"] or source["source_url"] or source["external_id"]
+            lines.append(f"- {label} ({source['source_url']}) retrieved {source['retrieved_at']}"
+                         + (f" @ {source['locator']}" if source.get("locator") else ""))
         lines.append("")
     return "\n".join(lines)
 
@@ -2496,6 +3104,18 @@ def export_jsonld(pid: int):
         if a["conclusion_node_id"]:
             arg["conclusionNode"] = f"node:{a['conclusion_node_id']}"
         graph.append(arg)
+    for ledger in g.get("ledgers", []):
+        graph.append({"@id": f"ledger:{ledger['id']}", "@type": "ResearchLedger",
+                      "title": ledger["title"], "role": ledger["role"],
+                      "pinnedVersion": ledger["pinned_version"],
+                      "currentVersion": ledger["version"]})
+    for entry in g.get("ledger_entries", []):
+        graph.append({"@id": f"ledger-entry:{entry['entry_id']}", "@type": "LedgerEntry",
+                      "title": entry["title"], "kind": entry["kind"],
+                      "ledger": f"ledger:{entry['ledger_id']}",
+                      "relation": entry["relation"],
+                      "adoptedVersion": entry["adopted_version"],
+                      "currentVersion": entry["current_version"]})
     return JSONResponse({"@context": ctx, "project": g["project"]["title"],
                          "exported_at": now(), "@graph": graph},
                         media_type="application/ld+json")
@@ -2538,6 +3158,10 @@ def _collect_refs(g: dict) -> list:
                 add(pr.get("source_name", ""), pr.get("source_url", ""),
                     pr.get("retrieved_at", ""), pr.get("quote", ""),
                     pr.get("locator", ""), pr.get("source_name", ""))
+    for source in g.get("ledger_sources", []):
+        add(source.get("source_name", ""), source.get("source_url", ""),
+            source.get("retrieved_at", ""), source.get("quote", ""),
+            source.get("locator", ""), source.get("source_name", ""))
     return list(seen.values())
 
 

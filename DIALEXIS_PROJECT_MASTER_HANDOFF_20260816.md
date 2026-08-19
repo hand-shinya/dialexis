@@ -225,6 +225,122 @@ VPS vps_update.sh: pytest 93 passed、healthz 200
 製品コード: 7cca756 / 検証マーカー: 2a418f1（markerが指す検証SHAは7cca756）
 ~~~
 
+### 1.6 2026-08-19追加：研究台帳を独立した再利用資産として実装
+
+利用者との設計確認で、単純な語検索、翻訳・受容史の調査台帳、研究プロジェクトを
+同じものとして扱ってはならないことを確定した。特に、ある台帳を複数の研究プロジェクトが
+参照する一方、一つの研究プロジェクトが複数台帳を使うという双方向の再利用が必要だった。
+この関係を画面だけで模倣せず、SQLiteに永続化した。
+
+#### 役割の分離
+
+~~~text
+単純検索
+  入力語 → 外部情報源から現在の結果を表示（保存しない）
+
+翻訳・受容史表示
+  入力語 + 分野 → curated seed または自動予備台帳を一画面に整理（表示段階）
+  「この結果を新しい研究台帳として保存」→ 永続台帳へ昇格
+
+研究台帳（Research Ledger）
+  原語、訳語、版、引用、受容、主張、解釈、未解決課題、出典を証拠レベル付きで保持
+  一つの台帳を複数プロジェクトから参照可能
+
+研究プロジェクト（Research Project）
+  利用者自身の問い、主張、証拠、反証、解釈、判断を研究過程グラフとして保持
+  複数台帳を背景・根拠・翻訳比較・反論・方法・文脈として参照可能
+~~~
+
+台帳はプロジェクトの親ノートではなく、独立した共有知識資産である。プロジェクトでの
+解釈や主張は台帳本体を自動変更しない。必要な記録だけを「このプロジェクトで使う」として
+選択し、プロジェクト側に採用関係を記録する。この分離がないと、同じ翻訳上の発見を複数研究で
+使うたびに複製・改変され、どれが原記録か分からなくなる。
+
+#### 永続モデルと版
+
+`app/db.py`に追加したテーブルは次のとおり。既存テーブルを削除・再作成しない追加型マイグレーションで、
+既存のプロジェクトDBを保持したまま初回起動時に作成される。
+
+~~~text
+ledgers                 台帳本体（title, central_question, subject, domain, status, version）
+ledger_versions         台帳のスナップショット（台帳の現在状態をJSONで保存）
+ledger_entries          台帳内の原語・版・訳語・受容・主張・解釈・課題等の記録
+ledger_sources          出典（URL、書誌、取得時刻、locator、引用、役割）
+ledger_entry_sources    記録と出典の多対多
+ledger_relations        記録間の翻訳・引用・支持・反証等の関係
+ledger_tasks            台帳から派生する次の照合課題
+project_ledger_links    プロジェクトと台帳の多対多（role, pinned_version）
+project_ledger_entries  プロジェクトが採用した台帳記録（relation, adopted_version, use_note）
+~~~
+
+固定語彙は`app/db.py`にある。台帳状態は`draft / active / reviewed / archived`、記録種別は
+`term / edition / translation / source_text / reception / claim / interpretation / open_question / note`、
+証拠レベルは辞書確認・書誌確認・原典本文確認・翻訳本文確認・受容史確認・strong・interpretive・candidate・unverifiedである。
+未確認の記録をconfirmedへ格上げする自動処理はない。
+
+台帳を更新するとバージョンを増やし、プロジェクト接続時の`pinned_version`を保存する。
+したがって、台帳が後で更新されても、過去のプロジェクトがどの版を参照したかを追跡できる。
+必要な場合は`POST /api/ledgers/{id}/fork`で親台帳を残した分岐を作る。
+
+#### APIと画面導線
+
+~~~text
+GET    /api/ledgers
+GET    /api/ledgers/{id}
+POST   /api/ledgers
+PATCH  /api/ledgers/{id}
+POST   /api/ledgers/{id}/entries
+PATCH  /api/ledger-entries/{id}
+POST   /api/ledgers/{id}/fork
+POST   /api/ledgers/from-translation-history
+GET    /api/projects/{id}/ledgers
+POST   /api/projects/{id}/ledgers
+DELETE /api/projects/{id}/ledgers/{ledger_id}
+POST   /api/projects/{id}/ledger-entries
+GET    /api/projects/{id}/ledger-entries
+~~~
+
+`/desk`では研究プロジェクト一覧と研究台帳一覧を同時に見られる。台帳画面`/ledger/{id}`では
+台帳の問い、版、記録、出典、利用プロジェクトを表示し、同じ台帳を別プロジェクトへ接続できる。
+プロジェクト画面`/project/{id}`では参照台帳、役割、固定版、接続解除を表示する。
+翻訳・受容史の結果面には保存ボタンと既存台帳への導線があり、保存後に台帳画面へ移動できる。
+上部navにも研究デスクへの入口を追加した。
+
+#### 実装で経験した失敗と回帰修正
+
+1. 以前の未登録語画面は、ユーザーが自分で空の調査台帳を作る入口だけを表示していた。辞書・概念・書誌から
+   取得できる予備情報まで先に整理してほしいという要求に対し不十分だったため、`discovery`表示と
+   「この結果を新しい研究台帳として保存」を追加した。
+2. 台帳navを追加した直後、Canvasの実クリックが層1・2だけ成功し、層3・4が前の層2を開いた。
+   原因は、実行結果を知らせる固定トーストが新しいヘッダー高さの分だけCanvas上に重なり、クリックを遮っていたことだった。
+   通知は表示専用で操作対象ではないため、`#dx-toast { pointer-events: none; }`とし、台帳導線を残したまま
+   `canvas_real_click.e2e.js`を13/17から17/17へ回復した。
+3. 外部レンズE2Eは`networkidle`待ちで30秒止まることがあり、さらに対象URLが「資本論」ではなく誤った文字列だった。
+   正しいUTF-8 URL、`domcontentloaded`、Graph構築完了の明示待機へ修正した。これは外部取得完了を画面遷移の条件にしない
+   という本番UX契約にも合う。
+
+#### 検証結果（2026-08-19）
+
+~~~text
+Python tests: 96 passed
+ledger.e2e.js: 5/5 PASS
+translation_history.e2e.js: 11/11 PASS
+canvas_real_click.e2e.js: 17/17 PASS
+failure_injection.e2e.js: 9/9 PASS
+lenses_full.e2e.js: 7/7 PASS
+applications_wave.e2e.js: 3/3 PASS
+全 verify.sh: 成功（決定論的E2E全件PASS）
+統合 origin: 19/23 または外部応答状態により変動（network依存・gate非対象）
+~~~
+
+#### 長文入力との境界（未実装）
+
+長文・センテンス入力は価値があるが、今回の台帳実装には混ぜていない。まず単語単位の検索、台帳、
+プロジェクト参照関係を安定させることを優先した。将来の文章入口は、入力された原文を`source_text`として
+保存し、候補語・前後文脈・関係候補を抽出した後、ユーザーが台帳へ採用する語を確認する別フローにする。
+文章から自動抽出した語を即座に研究事実へ格上げしてはならない。現時点で文章入力、文脈抽出、複数語の自動台帳化は
+**未実装・未検証**である。
+
 ## 2. 目的と背景
 
 ### 2.1 一行定義
