@@ -44,7 +44,19 @@ projects 1─n arguments 1─n argument_premises（P1..Pn・seq 順）
 watches 1─n watch_hits
 api_cache（URL→JSON、TTL付き）
 ai_ledger（AI呼び出しの追記型台帳）
+
+ledgers 1─n ledger_versions
+ledgers 1─n ledger_entries n─n ledger_sources
+ledgers 1─n ledger_relations / ledger_tasks
+projects n─n ledgers（project_ledger_links: role + pinned_version）
+projects n─n ledger_entries（project_ledger_entries: adopted_version + use_note）
 ```
+
+研究台帳（`ledgers`）は研究プロジェクトの子ノートではなく、複数プロジェクトから再利用できる
+独立した研究資産である。台帳の原語・翻訳・版・受容・主張・解釈・未解決課題とその出典を保持し、
+プロジェクト側は台帳の全体または選択記録を、背景・根拠・翻訳比較・反論・方法・文脈の役割で参照する。
+接続時の`pinned_version`と採用時の`adopted_version`により、台帳更新後も過去の研究がどの版を
+使ったかを追跡できる。プロジェクトの解釈・主張は台帳本体を自動変更しない。
 
 - `nodes.type`: question / claim / evidence / counterclaim / uncertainty / interpretation / decision / note / source
 - `nodes.confidence`: confirmed / high_probability / unverified / interpretive_hypothesis / speculation（**固定語彙。追加はGENESIS改版を要する**）

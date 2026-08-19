@@ -14,7 +14,9 @@ philosophy Wikipedia, a scholar search engine, or a chatbot. It offers:
 2. **A research desk** — a research-process graph whose first-class citizens
    are *questions, claims, evidence, counterclaims, uncertainties and
    decisions*, with per-node provenance, a fixed confidence scale, and full
-   export to Markdown / JSON-LD.
+   export to Markdown / JSON-LD. Reusable research ledgers hold translation,
+   reception and source records independently, so one ledger can be shared by
+   multiple projects and one project can cite multiple ledgers.
 3. **A counterargument engine** — six disciplinary perspectives interrogate
    any claim, free and keyless (Level 0); your own LLM API key elevates it to
    generated counterarguments (Level 2).

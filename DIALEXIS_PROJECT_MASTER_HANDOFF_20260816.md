@@ -1,6 +1,6 @@
 # Dialexis プロジェクト完全引継ぎ記録
 
-**スナップショット:** 2026-08-18（Asia/Tokyo）更新
+**スナップショット:** 2026-08-19（Asia/Tokyo）更新
 **対象:** Dialexis / 反省的哲学研究インフラ
 **目的:** 本プロジェクトを全く知らないAIまたは開発者が、この一ファイルと現行リポジトリだけで、目的・背景・画面・コード・データ契約・失敗史・検証・公開運用を理解し、同じ状態を再現して継続開発できるようにする。
 
@@ -21,7 +21,10 @@ Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を�
 | 開発リポジトリ | /home/handa/dialexis |
 | GitHub | https://github.com/hand-shinya/dialexis |
 | ブランチ | main |
-| 公開反映済みの製品コードHEAD | 2a418f1（公開コード本体: 7cca756、検証マーカー: 7cca756） |
+| 前回公開反映済みの製品コードHEAD | 2a418f1（公開コード本体: 7cca756、検証マーカー: 7cca756） |
+| 現在のローカルHEAD | `git rev-parse HEAD`で確認。固定値ではなく、直近の検証マーカーを正本とする |
+| 現在の検証SHA | `cat deploy/verified_sha.txt`で確認。正規デプロイ対象はこのSHA |
+| 今回の公開状態 | 研究台帳実装を公式verifyで検証済み。VPS反映後に公開URLのhealthz/API/UIを再確認する |
 | 入口修正（履歴） | 4e96a3b（ホーム・Question Doors・navを /originへ） |
 | 公開デプロイ時の検証SHA | 7cca7567d045ffd6b8bc9a0a204faa4b4f9c69eb |
 | 本書・回帰E2Eの追加 | `translation_history` 特別モード、台帳、公開E2Eを含む |
@@ -34,7 +37,7 @@ Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を�
 | 作業フォルダー（WSL） | /mnt/i/GoogleDriveMirror/MyKnowledgeBase/Main/論考/哲学DESK |
 | ライセンス | Code: AGPL-3.0 / Documentation: CC-BY-4.0 |
 
-7cca756は、未登録語にも辞書・概念・書誌情報を自動抽出する「自動予備台帳」を追加した製品コードである。
+7cca756は、未登録語にも辞書・概念・書誌情報を自動抽出する「自動予備台帳」を追加した前回公開製品コードである。
 2a418f1はその検証マーカーだけを記録した公開HEADであり、公式verify、VPS側pytest、サービス再起動、公開HTTP検査、
 公開実ブラウザ11/11を完了している。現在のGit先端はgit logとgit rev-parseで確認し、公開runtimeの基準は2a418f1とする。
 検証SHAはdeploy/verified_sha.txtで確認する。
