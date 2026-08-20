@@ -1,0 +1,128 @@
+{
+  "_meta": {
+    "purpose": "人物名を一般語の翻訳史へ誤投入せず、異表記・著作の翻訳・概念の受容を別レイヤーで表示するためのcurated seed。人物名の表記は翻訳ではなく、同一人物の表記・転写候補として扱う。",
+    "honesty": "CURATED SEED, NOT exhaustive. 書誌は著作・版の存在を示す入口であり、影響関係・引用・訳語の確定には本文と版面の照合が必要。",
+    "verified_at": "2026-08-20"
+  },
+  "profiles": [
+    {
+      "id": "karl-marx",
+      "match": ["カール・マルクス", "カールマルクス", "Karl Marx", "Karl Heinrich Marx", "Marx"],
+      "display_name": "カール・マルクス",
+      "latin_name": "Karl Marx",
+      "description": "19世紀ドイツの哲学者・経済学者・革命家。初期の疎外論から後期の政治経済学・物質代謝まで、著作と概念の変遷を分けて追跡します。",
+      "identity_note": "人物名の中黒・空白・ラテン文字・転写の違いを、別人物や別の意味への翻訳とみなさず、同一人物を指す表記・転写候補として整理します。",
+      "domains": ["哲学・思想", "経済学", "政治思想", "社会理論", "自然と労働"],
+      "name_forms": [
+        {"form": "カール・マルクス", "language": "日本語", "kind": "一般的なカタカナ表記", "evidence": "candidate"},
+        {"form": "カールマルクス", "language": "日本語", "kind": "中黒なしの検索表記", "evidence": "candidate"},
+        {"form": "Karl Marx", "language": "ドイツ語・英語", "kind": "ラテン文字表記", "evidence": "confirmed"},
+        {"form": "Karl Heinrich Marx", "language": "ラテン文字", "kind": "フルネーム候補", "evidence": "bibliography_confirmed"},
+        {"form": "کارل مارکس", "language": "アラビア語", "kind": "転写候補", "evidence": "candidate"}
+      ],
+      "works": [
+        {"original_title": "Ökonomisch-philosophische Manuskripte aus dem Jahre 1844", "original_language": "ドイツ語", "japanese_titles": ["経済学・哲学草稿", "1844年経済学・哲学草稿"], "year": "1844", "role": "初期草稿・疎外労働・自然", "evidence": "confirmed", "source_ids": ["marx-primary", "ndl-marx"]},
+        {"original_title": "Die deutsche Ideologie", "original_language": "ドイツ語", "japanese_titles": ["ドイツ・イデオロギー"], "year": "1845–46", "role": "唯物史観・社会的生産", "evidence": "bibliography_confirmed", "source_ids": ["marx-primary", "ndl-marx"]},
+        {"original_title": "Grundrisse der Kritik der politischen Ökonomie", "original_language": "ドイツ語", "japanese_titles": ["経済学批判要綱", "資本論草稿"], "year": "1857–58", "role": "所有・土地・生産条件・物質的関係", "evidence": "bibliography_confirmed", "source_ids": ["marx-primary", "ndl-marx"]},
+        {"original_title": "Das Kapital", "original_language": "ドイツ語", "japanese_titles": ["資本論"], "year": "1867–", "role": "商品・労働・価値・物質代謝", "evidence": "bibliography_confirmed", "source_ids": ["marx-primary", "ndl-marx"]},
+        {"original_title": "Manifest der Kommunistischen Partei", "original_language": "ドイツ語", "japanese_titles": ["共産党宣言"], "year": "1848", "role": "政治思想・歴史的運動", "evidence": "bibliography_confirmed", "source_ids": ["marx-primary", "ndl-marx"]}
+      ],
+      "concepts": [
+        {"source_term": "Entfremdung", "language": "ドイツ語", "japanese_candidates": ["疎外", "alienation"], "note": "著作・時期ごとの用法を本文で比較する概念語。人物名の翻訳ではありません。", "evidence": "strong"},
+        {"source_term": "Gattungswesen", "language": "ドイツ語", "japanese_candidates": ["類的存在", "類種的存在"], "note": "日本語訳の選択と受容者の再構成を分けて追跡する概念語。", "evidence": "candidate"},
+        {"source_term": "Mehrwert", "language": "ドイツ語", "japanese_candidates": ["剰余価値", "余剰価値"], "note": "経済学の専門訳語として版・訳者ごとの用例を照合する。", "evidence": "bibliography_confirmed"},
+        {"source_term": "Stoffwechsel", "language": "ドイツ語", "japanese_candidates": ["物質代謝"], "note": "1844年のunorganischer Leibと同一語とは扱わず、後期の接続語として比較する。", "evidence": "strong"},
+        {"source_term": "unorganischer Leib", "language": "ドイツ語", "japanese_candidates": ["非有機的身体", "非有機的肉体"], "note": "原典・翻訳・吉本隆明の受容を接続する本プロジェクトの重点語。", "evidence": "confirmed"}
+      ],
+      "timeline": [
+        {"when": "1844", "who": "Karl Marx", "where": "経済学・哲学草稿", "what": "疎外労働・自然・類的生活を論じる原典の接点", "relation": "原典", "evidence": "confirmed"},
+        {"when": "1867以降", "who": "Karl Marx", "where": "資本論", "what": "労働過程と人間‐自然のStoffwechselを追う接点", "relation": "原典・後期の再編", "evidence": "strong"},
+        {"when": "1966", "who": "吉本隆明", "where": "『カール・マルクス』", "what": "日本語思想圏でマルクスの初期思想を再構成した受容候補", "relation": "受容候補", "evidence": "bibliography_confirmed"},
+        {"when": "2000年代以降", "who": "環境思想・マルクス研究", "where": "英語圏の研究文献", "what": "自然・物質代謝・環境危機をめぐる再読の候補", "relation": "研究候補", "evidence": "candidate"}
+      ],
+      "reception": [
+        {"who": "城塚登・田中吉六", "when": "1964", "where": "岩波文庫『経済学・哲学草稿』", "what": "原語を日本語の身体／肉体へ移す翻訳媒介", "relation": "翻訳媒介", "evidence": "bibliography_confirmed"},
+        {"who": "吉本隆明", "when": "1966", "where": "『カール・マルクス』", "what": "マルクスの思想を日本語の思想語彙で再構成した重要な確認課題", "relation": "受容・再構成", "evidence": "bibliography_confirmed"},
+        {"who": "Foster／Burkett等", "when": "2000年代以降", "where": "エコロジカル・マルクス主義", "what": "自然と代謝の問題系を接続した研究候補。直接引用と頁は未確認", "relation": "受容候補", "evidence": "candidate"}
+      ],
+      "sources": [
+        {"id": "marx-primary", "label": "Marxists Internet Archive：Marx原典入口", "url": "https://www.marxists.org/archive/marx/", "status": "オンライン原典の探索入口。批判版・版・頁の最終照合は必要。", "evidence": "confirmed"},
+        {"id": "wikidata-marx", "label": "Wikidata：Karl Marx", "url": "https://www.wikidata.org/wiki/Q9068", "status": "人物同定・多言語ラベルの入口。思想的評価や影響関係の証明ではない。", "evidence": "confirmed"},
+        {"id": "ndl-marx", "label": "国立国会図書館サーチ：カール・マルクス", "url": "https://ndlsearch.ndl.go.jp/search?keyword=%E3%82%AB%E3%83%BC%E3%83%AB%E3%83%BB%E3%83%9E%E3%83%AB%E3%82%AF%E3%82%B9", "status": "日本語版・翻訳版の書誌と訳者を探す入口。本文の訳語は版面照合が必要。", "evidence": "candidate"},
+        {"id": "marx-name-variants", "label": "人物名の表記・転写比較", "status": "中黒・空白・文字体系の差を、翻訳された意味ではなく同一人物の識別候補として扱う。", "evidence": "candidate"}
+      ],
+      "next_actions": [
+        {"label": "人物名の表記・転写と同一人物性を確認する", "kind": "identity", "source_ids": ["wikidata-marx", "marx-name-variants"]},
+        {"label": "主要著作を原語・日本語題・訳者・版・標準ロケータで並置する", "kind": "translation", "source_ids": ["marx-primary", "ndl-marx"]},
+        {"label": "概念語の翻訳史と人物名の表記史を混同せず、別台帳として照合する", "kind": "concept", "source_ids": ["marx-primary"]}
+      ]
+    },
+    {
+      "id": "takaaki-yoshimoto",
+      "match": ["吉本隆明", "よしもとたかあき", "吉本 隆明", "Takaaki Yoshimoto", "Ryumei Yoshimoto", "Ryūmei Yoshimoto"],
+      "display_name": "吉本隆明",
+      "latin_name": "Takaaki Yoshimoto",
+      "description": "日本の詩人・思想家・批評家。マルクス受容、言語論、共同幻想論を、原典の翻訳と受容者自身の再構成を分けて確認します。",
+      "identity_note": "日本語表記、読み、ラテン文字転写の差を同一人物の識別候補として扱い、著作や思想の翻訳と分離します。",
+      "domains": ["日本思想", "詩・文学", "社会思想", "マルクス受容"],
+      "name_forms": [
+        {"form": "吉本隆明", "language": "日本語", "kind": "漢字表記", "evidence": "confirmed"},
+        {"form": "よしもとたかあき", "language": "日本語", "kind": "読み候補", "evidence": "candidate"},
+        {"form": "Takaaki Yoshimoto", "language": "ラテン文字", "kind": "転写候補", "evidence": "candidate"},
+        {"form": "Ryūmei Yoshimoto", "language": "ラテン文字", "kind": "別転写候補", "evidence": "candidate"}
+      ],
+      "works": [
+        {"original_title": "カール・マルクス", "original_language": "日本語", "japanese_titles": ["カール・マルクス"], "year": "1966", "role": "マルクス思想の日本語圏における受容・再構成", "evidence": "bibliography_confirmed", "source_ids": ["ndl-yoshimoto-marx", "cinii-yoshimoto-marx"]},
+        {"original_title": "共同幻想論", "original_language": "日本語", "japanese_titles": ["共同幻想論"], "year": "1968", "role": "共同幻想・対幻想・自己幻想の問題系", "evidence": "bibliography_confirmed", "source_ids": ["ndl-yoshimoto"]},
+        {"original_title": "言語にとって美とはなにか", "original_language": "日本語", "japanese_titles": ["言語にとって美とはなにか"], "year": "1965–", "role": "言語・表現・文学思想", "evidence": "candidate", "source_ids": ["ndl-yoshimoto"]}
+      ],
+      "concepts": [
+        {"source_term": "共同幻想", "language": "日本語", "japanese_candidates": ["共同幻想"], "note": "吉本隆明の著作・受容を中心に追う日本語思想の概念語。", "evidence": "bibliography_confirmed"},
+        {"source_term": "対幻想", "language": "日本語", "japanese_candidates": ["対幻想"], "note": "共同幻想論の内部構造として本文・版・引用を照合する。", "evidence": "candidate"},
+        {"source_term": "非有機的肉体", "language": "日本語", "japanese_candidates": ["非有機的肉体"], "note": "マルクス受容における重要語。吉本自身の本文引用と頁を確認するまでは解釈候補。", "evidence": "candidate"}
+      ],
+      "timeline": [
+        {"when": "1965", "who": "吉本隆明", "where": "言語・文学思想", "what": "言語と表現をめぐる著作群の形成", "relation": "原著・思想形成", "evidence": "candidate"},
+        {"when": "1966", "who": "吉本隆明", "where": "『カール・マルクス』", "what": "マルクスを日本語の思想語彙で読み直す受容テキスト", "relation": "マルクス受容", "evidence": "bibliography_confirmed"},
+        {"when": "1968", "who": "吉本隆明", "where": "『共同幻想論』", "what": "共同幻想を中心に社会・国家・関係を論じる著作", "relation": "原著・思想展開", "evidence": "bibliography_confirmed"}
+      ],
+      "reception": [
+        {"who": "Karl Marx", "when": "受容対象", "where": "『カール・マルクス』", "what": "原典・日本語訳・吉本隆明の再構成を区別して比較する", "relation": "受容対象", "evidence": "bibliography_confirmed"},
+        {"who": "日本語思想圏", "when": "1960年代以降", "where": "日本語の批評・思想・文学", "what": "概念語が後続の論考でどう再利用されたかを確認する", "relation": "受容候補", "evidence": "candidate"}
+      ],
+      "sources": [
+        {"id": "ndl-yoshimoto-marx", "label": "NDL：吉本隆明『カール・マルクス』", "url": "https://ndlsearch.ndl.go.jp/search?keyword=%E5%90%89%E6%9C%AC%E9%9A%86%E6%98%8E%20%E3%82%AB%E3%83%BC%E3%83%AB%E3%83%BB%E3%83%9E%E3%83%AB%E3%82%AF%E3%82%B9", "status": "著作・刊年・所蔵を確認する入口。核心引用と頁は本文照合が必要。", "evidence": "bibliography_confirmed"},
+        {"id": "cinii-yoshimoto-marx", "label": "CiNii Books：吉本隆明『カール・マルクス』", "url": "https://ci.nii.ac.jp/ncid/BN04692637", "status": "図書館総合目録の補助線。本文の証明ではない。", "evidence": "bibliography_confirmed"},
+        {"id": "ndl-yoshimoto", "label": "国立国会図書館サーチ：吉本隆明", "url": "https://ndlsearch.ndl.go.jp/search?keyword=%E5%90%89%E6%9C%AC%E9%9A%86%E6%98%8E", "status": "著作・版・受容研究を探索する入口。", "evidence": "candidate"}
+      ],
+      "next_actions": [
+        {"label": "『カール・マルクス』の版・刊年・該当頁・引用範囲を確認する", "kind": "verify", "source_ids": ["ndl-yoshimoto-marx", "cinii-yoshimoto-marx"]},
+        {"label": "吉本隆明の概念語をマルクス原典の語と同一視せず、対応と変形を並置する", "kind": "compare", "source_ids": ["ndl-yoshimoto-marx"]}
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "marx-yoshimoto",
+      "match": [["karl-marx", "takaaki-yoshimoto"], ["takaaki-yoshimoto", "karl-marx"]],
+      "title": "Karl Marx × 吉本隆明――翻訳・受容関係の比較台帳",
+      "center_question": "マルクスの原典・翻訳語が、吉本隆明のどの著作・どの時期・どの日本語の問題系で受容・再構成されたのか。",
+      "status_note": "人物名同士には、通常の語のような『翻訳語の対応』はありません。ここでは名前の異表記を別表にし、著作・概念・引用・受容関係を比較対象にします。影響関係は本文の直接引用と書誌順序を確認するまで確定しません。",
+      "shared_terms": [
+        {"term": "unorganischer Leib / 非有機的肉体", "role": "翻訳・受容の接点候補", "evidence": "candidate"},
+        {"term": "自然・労働・疎外", "role": "両者の著作を照合する比較軸", "evidence": "candidate"},
+        {"term": "共同幻想", "role": "吉本隆明側の固有概念。マルクスの原語の訳語とは扱わない", "evidence": "bibliography_confirmed"}
+      ],
+      "timeline": [
+        {"when": "1844", "who": "Karl Marx", "where": "経済学・哲学草稿", "what": "原典側の自然・疎外・非有機的身体の接点", "relation": "原典", "evidence": "confirmed"},
+        {"when": "1966", "who": "吉本隆明", "where": "『カール・マルクス』", "what": "日本語圏でマルクスを再構成する受容テキスト", "relation": "受容候補", "evidence": "bibliography_confirmed"},
+        {"when": "要照合", "who": "両者", "where": "版・本文・引用箇所", "what": "直接引用・参照訳・概念の変形を確認する", "relation": "未確認", "evidence": "unverified"}
+      ],
+      "counterchecks": [
+        {"claim": "吉本隆明の概念はマルクスの翻訳語そのものである", "counterargument": "受容者の再構成と原著者の語を混同している可能性がある", "test": "両者の本文を版・頁・引用単位で並置する"},
+        {"claim": "同時に名前が検索結果へ出るので影響関係が証明された", "counterargument": "検索共起は引用・継承・反論を証明しない", "test": "直接引用、参照文献、刊年順、反対読解を確認する"}
+      ],
+      "sources": ["marx-primary", "ndl-yoshimoto-marx", "cinii-yoshimoto-marx"]
+    }
+  ]
+}

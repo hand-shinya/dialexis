@@ -118,9 +118,11 @@ function routeReturnInit() {
   document.querySelectorAll("[data-route-back]").forEach(a => {
     const fallback = a.dataset.fallback || a.getAttribute("href") || "/";
     let target = rec ? rec.href : fallback;
-    // 元のURLだけでは、origin側で復元記録を識別できない。帰路リンクにも
-    // 同じtokenを渡し、復元成功後にoriginが一度だけ消費する。
-    if (rec) {
+    // originだけがViewStateを復元する。desk → ledger → project のような
+    // ページ間の帰路では、親ページのtokenを上書きせず、そのまま一段ずつ
+    // 返す。以前は全ページで現在tokenを付け替えていたため、deskへ戻る
+    // リンクがdesk自身を指す循環になり、クリックしても画面が変わらなかった。
+    if (rec && target.split("?")[0] === "/origin") {
       try {
         const u = new URL(target, location.origin);
         u.searchParams.set("return_token", rec.token);
@@ -1253,6 +1255,13 @@ function originInit(q) {
     res._dimBound = 1;
     res.addEventListener("click", (e) => {
       const cw = () => (G && G.rootQ) || ((res.dataset && res.dataset.q) || "");
+      const ph = e.target.closest(".person-history-open");
+      if (ph) {
+        e.preventDefault();
+        const query = ph.dataset.query || cw();
+        dispatchAction("translationHistory", { term: query, label: query, kind: "author" }, currentViewState(), { surface: "person-card" });
+        return;
+      }
       const b = e.target.closest(".dim");
       if (b && DIMS) { dispatchAction("dimension", { term: cw() }, currentViewState(), { surface: "dimension-card", dm: DIMS[Number(b.dataset.i)] }); return; }
       const th = e.target.closest(".origin-thinker");   // 概念を立てた思想家→経歴・著作・情報源
@@ -1330,8 +1339,9 @@ async function restoreViewState(s) {
   }
   if (s.context) await gPanorama({ term: s.context.term });
   if (s.panel && ACTIONS[s.panel.action]) {
-    PANEL_CTX = { action: s.panel.action, term: s.panel.term };
-    await ACTIONS[s.panel.action].run(normTarget(s.panel.term), {});
+    PANEL_CTX = { action: s.panel.action, term: s.panel.term, kind: s.panel.kind || null, pair: s.panel.pair || null };
+    const panelTarget = normTarget({ term: s.panel.term, kind: s.panel.kind || null, label: s.panel.term });
+    await ACTIONS[s.panel.action].run(panelTarget, s.panel.pair ? { pair: s.panel.pair } : {});
     if (s.panel_position && surfEl("action")) {
       SURF.position.action = { x: Number(s.panel_position.x), y: Number(s.panel_position.y) };
       surfPlace("action");
@@ -1874,7 +1884,11 @@ const ACTIONS = {
   meaning:      { label: "意味", effect: "action", run: (t) => gWordAspect(t.term, "meaning") },
   multilingual: { label: "多言語", effect: "action", run: (t) => gWordAspect(t.term, "breadth") },   // 中心を変えない（Aの是正・全入口統一）
   collapse:     { label: "埋没原語", effect: "action", run: (t) => gWordAspect(t.term, "collapse") },
-  translationHistory: { label: "翻訳・受容史", effect: "action", run: (t) => gTranslationHistoryPanel(t.term) },
+  translationHistory: { label: "翻訳・受容史", effect: "action", run: (t, ctx) => gTranslationHistoryPanel(t.term, { kind: t.kind, node: t, ...(ctx || {}) }) },
+  pairTranslationHistory: { label: "2人の著作・受容史", effect: "action", run: (t, ctx) => {
+    const pair = ctx && ctx.pair;
+    return pair && pair.a && pair.b ? gPairTranslationHistoryPanel(pair.a, pair.b) : false;
+  } },
   anatomy:      { label: "解剖", effect: "action", run: (t) => gAnatomyPanel(t.term) },
   contrast:     { label: "並置", effect: "action", run: (t) => gContrastPanel(t.term) },
   colloc:       { label: "共起", effect: "action", run: (t) => gColloc(t.term) },
@@ -2015,7 +2029,7 @@ async function dispatchAction(actionId, target, currentState, surfaceContext) {
   const eff = (a.effectWithArg && a.arg && ctx[a.arg]) ? a.effectWithArg : a.effect;
   _lastDispatch = { actionId, target: t, surface: t.surface, effect: eff, seq: ++_dispatchSeq, outcome: "running" };   // seq＝同一操作の反復も区別できる単調増加
   const prevPanel = PANEL_CTX, prevCombine = COMBINE_CTX, prevContext = CONTEXT_CTX;   // 失敗時に元へ戻す（A2）
-  if (eff === "action") { PANEL_CTX = a.transient ? null : { action: actionId, term: t.term }; }   // run が surfCreate で置換する
+  if (eff === "action") { PANEL_CTX = a.transient ? null : { action: actionId, term: t.term, kind: t.kind || null, pair: ctx.pair || null }; }   // run が surfCreate で置換する
   else if (eff === "store" || eff === "newpage") { /* 現在の画面の面も履歴も変えない */ }
   else { PANEL_CTX = null; surfClearAction(false); }   // context / center / map は Action とその親履歴を確実に閉じる
   NAV.txn = true;
@@ -2057,7 +2071,7 @@ function currentViewState() {
     lens: G_lens || "all",
     focus: (G && (G.focusId || G.focusLabel)) || null,   // stable ID優先（表示labelはfallback・A2）
     context: CONTEXT_CTX ? { term: CONTEXT_CTX.term } : null,
-    panel: PANEL_CTX ? { action: PANEL_CTX.action, term: PANEL_CTX.term } : null,
+    panel: PANEL_CTX ? { action: PANEL_CTX.action, term: PANEL_CTX.term, kind: PANEL_CTX.kind || null, pair: PANEL_CTX.pair || null } : null,
     // Action面の移動も「画面状態」の一部として帰路に保存する。panel本体へ
     // 混ぜないため、操作同値性（同じAction/target）と位置復元を分離する。
     panel_position: SURF.position.action ? { x: SURF.position.action.x, y: SURF.position.action.y } : null,
@@ -2119,7 +2133,7 @@ function regionOf(code) {
 }
 // 言語ノードを文化圏で束ねる再投影（語→圏→言語）。追加取得なし（G_rawの言語ノードから）。
 function applyRegion(d) {
-  const root = d.nodes.find(n => n.kind === "word");
+  const root = d.nodes.find(n => n.layer === 1) || d.nodes.find(n => n.kind === "word");
   const langs = d.nodes.filter(n => n.kind === "language");
   const nodes = root ? [{ ...root, layer: 1 }] : [];
   const edges = [], regs = {};
@@ -2136,7 +2150,7 @@ function applyRegion(d) {
 function applyLens(d, key) {
   const L = LENSES.find(x => x.key === key) || LENSES[0];
   if (!L.kinds) return d;
-  const root = d.nodes.find(n => n.kind === "word");
+  const root = d.nodes.find(n => n.layer === 1) || d.nodes.find(n => n.kind === "word");
   const keep = new Set(), nodes = [];
   if (root) { keep.add(root.id); nodes.push({ ...root }); }
   d.nodes.filter(n => L.kinds.includes(n.kind)).forEach(n => { keep.add(n.id); nodes.push({ ...n }); });
@@ -2158,8 +2172,13 @@ function lensLeafCount(d, L) {
 function renderTopMenu(d) {
   const el = $("graph-lens"); if (!el) return;
   const jp = LANG === "ja";
-  const rootNode = { kind: "word", label: d.query, q: d.query };
-  const items = gActions(rootNode);
+  const graphRoot = (d.nodes || []).find(n => n.layer === 1);
+  const rootNode = graphRoot || { kind: "word", label: d.query, q: d.query };
+  let items = gActions(rootNode);
+  if (d.research_mode === "person_pair" && d.person_pair) {
+    items = items.concat([{ s: "🧭 2人の著作・受容史", t: "🧭 この2人の著作・受容関係を比較する", action: "pairTranslationHistory",
+      target: rootNode, ctx: { pair: { a: d.person_pair.a.display_name || d.person_pair.a.latin_name, b: d.person_pair.b.display_name || d.person_pair.b.latin_name } } }]);
+  }
   el._items = items; el._word = d.query;
   el.innerHTML = `<span class="tm-label" title="${jp ? "この中心語のメニュー。どのノードをクリックしても同じ操作が出ます（普遍）。" : "menu of the centre word; every node offers the same"}">◉ ${esc(d.query)}</span>`
     + `<button type="button" class="tm-view" id="tm-view" title="${jp ? "今この地図を描いている見方（menu）。クリックで別の見方に切り替え。" : "the view this map is drawn from; click to switch"}"></button>`
@@ -2676,14 +2695,13 @@ async function gWordAspect(word, aspect) {
     if (co.length) h += `<p class="srcline">${jp ? "原語の候補：" : "original: "}${co.map(o => `<a href="#" class="ext-term" data-w="${esc(o.term)}">${esc(o.term)}</a>${o.name ? "（" + esc(o.name) + "）" : ""}`).join("　")}</p>`;
   } else if (aspect === "breadth") {
     const br = d.breadth || [];
-    if (br.length) h += `<p class="muted">${jp ? "この概念を担う世界の言語とその語（クリックでその語へ）。既知の数言語に縮めない。" : "World languages carrying this concept."}</p><div class="breadth-chips">`
-      + br.map(b => `<span class="breadth-chip">${esc(b.name)}${b.term ? "：<a href=\"#\" class=\"ext-term\" data-w=\"" + esc(b.term) + "\">" + esc(b.term) + "</a>" : ""}</span>`).join("") + `</div>`;
+    if (br.length) h += `<p class="muted">${jp ? "この概念を担う世界の言語とその語（必要な言語だけ開いて探せます）。" : "World languages carrying this concept; open the full list only when useful."}</p>${_breadthExplorerHtml(br)}`;
   } else if (aspect === "collapse") {
     const cw = d.collapse_warning;
     if (cw && cw.lemmas && cw.lemmas.length) h += `<p class="muted">${jp ? "この一語に埋没した複数の原語（区別の消失・クリックでその原語へ）：" : "Multiple originals collapsed into this one word:"}</p><div class="anat-comp">`
       + cw.lemmas.map(l => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(l.lemma)}">${esc(l.lemma)}</a>${l.gloss ? "＝" + esc(l.gloss) : ""}</span>`).join(`<span class="anat-plus">・</span>`) + `</div>`;
   }
-  if (h) body.innerHTML = h; else await autoFallback(word, aspect, body);   // A3: 空なら別源を実走行（softLine単独でない）
+  if (h) { body.innerHTML = h; bindBreadthExplorer(body); } else await autoFallback(word, aspect, body);   // A3: 空なら別源を実走行（softLine単独でない）
 }
 
 // ── 翻訳・受容史（通常の語源/外部検索とは別の証拠台帳モード） ────────────────
@@ -2743,7 +2761,9 @@ function _thLedgerActions(d) {
   if (!d || !d.query) return "";
   const jp = LANG === "ja";
   const existing = (d.saved_ledgers || []).map(l => `<a class="th-existing-ledger" href="${esc(routeHrefWithReturn(`/ledger/${l.id}?lang=${LANG}`))}">${esc(l.title)} · v${l.version} · ${l.entry_count} ${jp ? "記録" : "entries"}</a>`).join("");
-  return `<div class="th-ledger-actions"><button type="button" class="th-save-ledger" data-query="${esc(d.query)}" data-domain="${esc(d.domain || "philosophy")}">${jp ? "この結果を新しい研究台帳として保存" : "Save this result as a new research ledger"}</button>
+  const pairAttr = d.other_query ? ` data-other-query="${esc(d.other_query)}"` : "";
+  const saveLabel = d.subject_kind === "person_pair" ? (jp ? "この2人の比較台帳を保存" : "Save this pair dossier") : (jp ? "この結果を新しい研究台帳として保存" : "Save this result as a new research ledger");
+  return `<div class="th-ledger-actions"><button type="button" class="th-save-ledger" data-query="${esc(d.query)}" data-domain="${esc(d.domain || "philosophy")}"${pairAttr}>${saveLabel}</button>
     <a class="small" href="${esc(routeHrefWithReturn(`/desk?lang=${LANG}`))}">${jp ? "台帳一覧を見る" : "View ledgers"}</a>${existing ? `<span class="th-existing-label">${jp ? "既存の台帳：" : "Existing ledgers: "}${existing}</span>` : ""}</div>`;
 }
 async function _thSaveLedger(d, button) {
@@ -2755,7 +2775,8 @@ async function _thSaveLedger(d, button) {
   button.disabled = true;
   try {
     const saved = await api("/api/ledgers/from-translation-history", { method: "POST", timeout: 60000, body: {
-      query: d.query, domain: d.domain || "philosophy", lang: LANG } });
+      query: d.query, other_query: d.other_query || button.dataset.otherQuery || "",
+      domain: d.domain || "philosophy", lang: LANG } });
     button.dataset.savedLedgerId = String(saved.id);
     button.disabled = false;
     button.textContent = LANG === "ja" ? "保存しました。台帳を開く" : "Saved. Open ledger";
@@ -2777,8 +2798,41 @@ function _thBindLedgerActions(container, d) {
     });
   });
 }
+function _thPersonResponseHtml(d) {
+  const jp = LANG === "ja", ds = d.dossier || {}, p = ds.person || {}, levels = d.evidence_levels || [];
+  const forms = (ds.name_forms || p.name_forms || []).map(n => `<article class="th-term-card person-name-card"><div class="th-card-top"><code>${esc(n.form || "")}</code><span>${esc(n.language || "")}</span>${_thLevel(n.evidence, levels)}</div><p class="th-kind">${esc(n.kind || "人物名の表記・転写候補")}</p><p>${jp ? "人物名の翻訳ではなく、同一人物を指す表記・転写候補です。" : "A display/transliteration candidate for the same person, not a concept translation."}</p></article>`).join("");
+  const works = (ds.works || p.works || []).map(w => `<article class="th-term-card person-work-card"><div class="th-card-top"><code>${esc(w.original_title || "")}</code><span>${esc(w.original_language || "")}</span>${_thLevel(w.evidence, levels)}</div><p><b>${jp ? "日本語題：" : "Japanese titles: "}</b>${esc((w.japanese_titles || []).join(" ／ ") || "未確認")}</p><p><b>${jp ? "刊年：" : "Year: "}</b>${esc(w.year || "未取得")}</p><p class="th-distinction">${esc(w.role || "")}</p>${_thSourceLine(w.source_ids, ds.sources || [])}</article>`).join("");
+  const concepts = (ds.concepts || p.concepts || []).map(c => `<article class="th-term-card"><div class="th-card-top"><code>${esc(c.source_term || "")}</code><span>${esc(c.language || "")}</span>${_thLevel(c.evidence, levels)}</div><p><b>${jp ? "日本語候補：" : "Japanese candidates: "}</b>${esc((c.japanese_candidates || []).join(" ／ "))}</p><p class="th-distinction">${esc(c.note || "")}</p></article>`).join("");
+  const timeline = (ds.timeline || []).map(t => `<article class="th-timeline-card"><div class="th-card-top"><b>${esc(t.when || "")}</b><span>${esc(t.who || "")}</span>${_thLevel(t.evidence, levels)}</div><dl class="th-dl th-fivew">${_thField("Where", t.where)}${_thField("What", t.what)}${_thField("関係", t.relation)}</dl></article>`).join("");
+  const reception = (ds.reception_ledger || []).map(t => `<article class="th-ledger-card"><div class="th-card-top"><b>${esc(t.who || "")}</b><span>${esc(t.when || "")}</span>${_thLevel(t.evidence, levels)}</div><dl class="th-dl th-fivew">${_thField("Where", t.where)}${_thField("What", t.what)}${_thField("関係", t.relation)}</dl></article>`).join("");
+  const domains = (ds.domains || p.domains || []).map(x => `<span class="badge">${esc(x)}</span>`).join(" ");
+  let h = `<div class="th-result th-ready th-person-result"><div class="th-status-line"><b>人物研究モード：${esc(ds.title || p.display_name || d.query)}</b>${_thLevel("strong", levels)}</div>${_thLedgerActions(d)}<p class="th-honesty">${esc(d.note || "")}</p><div class="th-question"><b>${jp ? "この人物についての中心問い" : "Central question about this person"}</b><p>${esc(ds.center_question || "")}</p></div><p class="th-scope">${esc(ds.scope_note || ds.identity_note || "")}</p><p class="person-domain-row"><b>${jp ? "分野：" : "Domains: "}</b>${domains || (jp ? "未確認" : "not yet classified")}</p>`;
+  h += `<section class="th-section"><h3>人物名の異表記・転写（翻訳ではない）</h3><p class="muted">中黒・空白・文字体系の違いを、人物名の意味が翻訳された証拠とは扱いません。人物ID・書誌・各言語版を照合する入口です。</p><div class="th-term-grid">${forms || `<p class="muted">表記候補はまだありません。</p>`}</div></section>`;
+  h += `<section class="th-section"><h3>著作の原題・翻訳題・版</h3><p class="muted">人物の翻訳受容で中心になるのは、名前の語源ではなく、著作がどの題名・訳者・版で読まれたかです。</p><div class="th-term-grid">${works || `<p class="muted">主要著作候補は未取得です。</p>`}</div></section>`;
+  h += `<section class="th-section"><h3>著作に関係する概念語</h3><p class="muted">人物名と概念語を分離し、原語・日本語候補・用法の差を別の照合対象にします。</p><div class="th-term-grid">${concepts || `<p class="muted">概念語は本文照合待ちです。</p>`}</div></section>`;
+  h += `<section class="th-section"><h3>人物史・著作史の時系列</h3><div class="th-timeline">${timeline || `<p class="muted">時系列は書誌照合待ちです。</p>`}</div></section>`;
+  h += `<section class="th-section"><h3>受容史・影響関係（証拠付き候補）</h3><div class="th-ledger">${reception || `<p class="muted">人物の引用・影響関係は未確認です。検索共起を影響の証拠としません。</p>`}</div></section>`;
+  h += `<section class="th-section"><h3>人物名・著作題名・受容で何が変わるか</h3><div class="th-transform-grid">${(ds.transformations || []).map(t => `<article class="th-transform-card"><div class="th-card-top"><b>${esc(t.stage || "")}</b>${_thLevel(t.evidence, levels)}</div><dl class="th-dl">${_thField("保存", t.preserved)}${_thField("失われた／移動した焦点", t.lost)}${_thField("加わった焦点", t.added)}${_thField("検証方法", t.test)}</dl></article>`).join("")}</div></section>`;
+  h += `<section class="th-section"><h3>最強の反証・注意点</h3><div class="th-counter-grid">${(ds.counterchecks || []).map(t => `<article class="th-counter-card"><p><b>主張：</b>${esc(t.claim || "")}</p><p><b>反証候補：</b>${esc(t.counterargument || "")}</p><p><b>検査：</b>${esc(t.test || "")}</p></article>`).join("")}</div></section>`;
+  h += `<section class="th-section"><h3>参照先</h3><div class="th-source-list">${(ds.sources || []).map(s => `<article class="th-source-card"><div class="th-card-top"><b>${s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id || "source")}</a>` : esc(s.label || s.id || "source")}</b>${_thLevel(s.evidence, levels)}</div><p>${esc(s.status || "")}</p></article>`).join("")}</div></section>`;
+  h += `<section class="th-section th-next"><h3>次の調査</h3>${_thNextActions(d.next_actions || ds.next_actions || [], ds.sources || [])}</section>`;
+  return h + `</div>`;
+}
+function _thPairResponseHtml(d) {
+  const jp = LANG === "ja", ds = d.dossier || {}, pair = ds.pair || {}, rel = ds.relation || {}, levels = d.evidence_levels || [];
+  const side = p => `<article class="th-term-card pair-person-card"><div class="th-card-top"><b>${esc(p.display_name || "")}</b><span>${esc(p.latin_name || "")}</span></div><p>${esc(p.identity_note || "")}</p><p>${(p.domains || []).map(x => `<span class="badge">${esc(x)}</span>`).join(" ")}</p></article>`;
+  const shared = (rel.shared_terms || []).map(x => `<article class="th-term-card"><div class="th-card-top"><code>${esc(x.term || "")}</code>${_thLevel(x.evidence, levels)}</div><p>${esc(x.role || "")}</p></article>`).join("");
+  const timeline = (ds.timeline || []).map(t => `<article class="th-timeline-card"><div class="th-card-top"><b>${esc(t.when || "")}</b><span>${esc(t.who || "")}</span>${_thLevel(t.evidence, levels)}</div><dl class="th-dl th-fivew">${_thField("Where", t.where)}${_thField("What", t.what)}${_thField("関係", t.relation)}</dl></article>`).join("");
+  let h = `<div class="th-result th-ready th-person-pair-result"><div class="th-status-line"><b>${esc(ds.title || "人物ペア研究モード")}</b>${_thLevel("candidate", levels)}</div>${_thLedgerActions(d)}<p class="th-honesty">${esc(d.note || ds.scope_note || "")}</p><div class="th-question"><b>中心問い</b><p>${esc(ds.center_question || "")}</p></div><div class="th-pair-grid">${side(pair.a || {})}${side(pair.b || {})}</div>`;
+  h += `<section class="th-section"><h3>まず分けるべき対象</h3><p class="muted">人物名同士に通常の語のような翻訳対応を設定しません。名前の異表記、著作題名、概念語、引用・受容関係を別々に比較します。</p><div class="th-term-grid">${(ds.term_map || []).slice(0, 18).map(t => `<article class="th-term-card"><div class="th-card-top"><code>${esc(t.source_term || "")}</code><span>${esc(t.language || "")}</span>${_thLevel(t.evidence, levels)}</div><p class="th-kind">${esc(t.kind || "")}</p><p>${esc(t.distinction || "")}</p></article>`).join("")}</div></section>`;
+  h += `<section class="th-section"><h3>共有語彙・接点候補</h3><div class="th-term-grid">${shared || `<p class="muted">共有語彙は未確認です。</p>`}</div></section><section class="th-section"><h3>比較時系列</h3><div class="th-timeline">${timeline || `<p class="muted">本文・版の照合待ちです。</p>`}</div></section>`;
+  h += `<section class="th-section"><h3>最強の反証・注意点</h3><div class="th-counter-grid">${(ds.counterchecks || []).map(t => `<article class="th-counter-card"><p><b>主張：</b>${esc(t.claim || "")}</p><p><b>反証候補：</b>${esc(t.counterargument || "")}</p><p><b>検査：</b>${esc(t.test || "")}</p></article>`).join("")}</div></section><section class="th-section"><h3>参照先</h3><div class="th-source-list">${(ds.sources || []).map(s => `<article class="th-source-card"><div class="th-card-top"><b>${s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id || "source")}</a>` : esc(s.label || s.id || "source")}</b>${_thLevel(s.evidence, levels)}</div><p>${esc(s.status || "")}</p></article>`).join("")}</div></section><section class="th-section th-next"><h3>次の調査</h3>${_thNextActions(d.next_actions || ds.next_actions || [], ds.sources || [])}</section></div>`;
+  return h;
+}
 function _thResponseHtml(d) {
   const jp = LANG === "ja";
+  if (d && d.dossier && d.dossier.mode === "person_pair") return _thPairResponseHtml(d);
+  if (d && d.dossier && d.dossier.mode === "person") return _thPersonResponseHtml(d);
   if (!d || (d.status !== "ready" && d.status !== "discovery") || !d.dossier) {
     const sources = (d && d.source_candidates) || [];
     const brief = (d && d.research_brief) || {};
@@ -2851,12 +2905,17 @@ function _thResponseHtml(d) {
   h += `<section class="th-section th-next"><h3>次の調査</h3>${_thNextActions(d.next_actions || ds.next_actions || [], sources)}</section>`;
   return h + `</div>`;
 }
-async function gTranslationHistoryPanel(word) {
+async function gTranslationHistoryPanel(word, targetContext = {}) {
   const jp = LANG === "ja";
+  const modeTitle = targetContext.kind === "author"
+    ? (jp ? "🧭 人物・著作の翻訳・受容史を追跡：" : "Person / works translation & reception: ")
+    : targetContext.kind === "work"
+      ? (jp ? "🧭 著作の翻訳・受容史を追跡：" : "Work translation & reception: ")
+      : (jp ? "🧭 翻訳・受容史を追跡：" : "Translation / reception history: ");
   const controls = `<div class="th-controls"><label for="th-domain">分野</label><select id="th-domain">${TH_DOMAIN_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select><button type="button" class="th-run">この条件で調査を開始</button></div>
     <p class="th-intro">通常の意味検索や単純な語源検索とは別に、「誰が・いつ・どの版で・どの言語へ移し、何が保存／欠損／追加されたか」を証拠階層つきで追跡します。登録済み台帳がある語は詳細台帳を表示し、未登録語でも既存情報源から自動予備台帳を作って調査を始めます。</p>
     <div class="th-results"><p class="muted">${jp ? "台帳を読み込んでいます…" : "Loading the evidence dossier…"}</p></div>`;
-  const p = gPanel((jp ? "🧭 翻訳・受容史を追跡：" : "Translation / reception history: ") + word, controls, word);
+  const p = gPanel(modeTitle + word, controls, word);
   if (!p) return false;
   const results = p.querySelector(".th-results"), select = p.querySelector("#th-domain"), runButton = p.querySelector(".th-run");
   const run = async () => {
@@ -2880,6 +2939,28 @@ async function gTranslationHistoryPanel(word) {
   runButton.addEventListener("click", run);
   await run();
   return true;
+}
+async function gPairTranslationHistoryPanel(a, b) {
+  const jp = LANG === "ja";
+  // Pair context is part of the restorable ViewState, not merely a heading.
+  PANEL_CTX = { ...(PANEL_CTX || {}), action: "pairTranslationHistory", term: a, kind: "author", pair: { a, b } };
+  const controls = `<div class="th-controls"><label for="th-pair-domain">分野</label><select id="th-pair-domain">${TH_DOMAIN_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select><button type="button" class="th-run">この2人の比較台帳を開く</button></div><p class="th-intro">人物名同士の翻訳対応を作るのではなく、異表記・著作・概念語・引用・受容関係を比較します。</p><div class="th-results"><p class="muted">比較台帳を読み込んでいます…</p></div>`;
+  const p = gPanel((jp ? "🧭 2人の著作・受容史を比較：" : "Compare works / reception: ") + a + " × " + b, controls, a);
+  if (!p) return false;
+  const results = p.querySelector(".th-results"), select = p.querySelector("#th-pair-domain"), runButton = p.querySelector(".th-run");
+  const run = async () => {
+    if (!results || !select || !runButton) return;
+    runButton.disabled = true;
+    results.innerHTML = `<p class="muted"><span class="spin"></span> ${esc(jp ? "2人の表記・著作・受容関係を照合中…" : "Comparing identity, works and reception…")}</p>`;
+    try {
+      const d = await api(`/api/translation-history/pair?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&domain=${encodeURIComponent(select.value || "philosophy")}&lang=${LANG}`, { timeout: 45000 });
+      if (results.isConnected) { results.innerHTML = _thResponseHtml(d); _thBindLedgerActions(results, d); }
+    } catch (e) {
+      console.error("pair translation history", e);
+      if (results.isConnected) results.innerHTML = `<div class="th-result th-unseeded"><div class="th-status-line"><b>比較台帳は追加確認を要します</b><span class="th-badge th-unverified">未確認</span></div><p>2人を個別の人物として同定し、著作・版・引用から関係を確認してください。</p><p class="srcline">${esc(String(e && e.message || e))}</p></div>`;
+    } finally { if (runButton.isConnected) runButton.disabled = false; }
+  };
+  runButton.addEventListener("click", run); await run(); return true;
 }
 
 // 普遍的な語源解剖（半田様指摘の弁証法ケース＝dia-対話性の復元）。原語へ辿り構成要素と
@@ -3035,7 +3116,11 @@ function gActions(n) {
       { s: "🎯 中心に据える", t: "🎯 これを地図の中心に据え直す（グラフを再構成）", action: "center" },
       { s: "🔗 組み合わせ", t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", action: "combine" },
       { s: "👓 見方", t: "👓 見方を選ぶ（この地図の切り口）", action: "lens" },
-      { s: "🧭 翻訳・受容史", t: "🧭 この語・人物・著作の翻訳・受容史を追跡する（原典・版・変容・欠損を証拠付きで整理）", action: "translationHistory" },
+      { s: n.kind === "author" ? "🧭 人物・著作史" : n.kind === "work" ? "🧭 著作の翻訳・受容史" : "🧭 翻訳・受容史", t: n.kind === "author"
+          ? "🧭 この人物の異表記・著作の翻訳・受容史を追跡する（人物名を一般語の語源とは扱いません）"
+          : n.kind === "work"
+            ? "🧭 この著作の原題・翻訳版・訳者・受容史を追跡する"
+            : "🧭 この語の原典・版・変容・欠損を証拠付きで整理する", action: "translationHistory" },
     ];
     const CORE_TAIL = [
       { s: "🌐 外部で調べる", t: "🌐 外部の専門情報で調べる（各サイトの言語で・新タブ）", action: "external" },
@@ -3061,6 +3146,10 @@ function gActions(n) {
       ];
     }
     items = [...CORE_HEAD, ...extra, ...CORE_TAIL];
+    if (COMBINE_CTX && COMBINE_CTX.a && COMBINE_CTX.b && G_raw && G_raw.research_mode === "person_pair") {
+      items.splice(5, 0, { s: "🧭 2人の著作・受容史", t: "🧭 この2人の著作・受容関係を比較する", action: "pairTranslationHistory",
+        ctx: { pair: { a: COMBINE_CTX.a, b: COMBINE_CTX.b } } });
+    }
   }
   return items.map(it => ({ ...it, target: tgt }));   // 全項目に正規化targetを付す
 }
@@ -3211,7 +3300,11 @@ function gPanel(title, bodyHtml, term) {
     if (footEl) { footEl.dataset.busy = "1"; footEl.querySelectorAll(".gp-cont-b").forEach(x => { x.disabled = true; }); }
     const r = btn.getBoundingClientRect();
     try {
-      await dispatchAction(a, { term: continueTerm }, currentViewState(), { surface: "panel-footer", anchor: { x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom + 6) } });
+      await dispatchAction(a, {
+        term: continueTerm,
+        kind: PANEL_CTX && PANEL_CTX.kind ? PANEL_CTX.kind : null,
+        pair: PANEL_CTX && PANEL_CTX.pair ? PANEL_CTX.pair : null,
+      }, currentViewState(), { surface: "panel-footer", anchor: { x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom + 6) } });
     } catch (err) {
       console.error("panel footer action", err);
     } finally {
@@ -3647,7 +3740,7 @@ function gCombinePanel(a, initialB = "", initialOp = "and") {
   const ops = [["and", "絞り込み（AND）"], ["semand", "意味で絞る"], ["not", "除外（NOT）"],
                ["or", "合わせる（OR）"], ["compare", "比較（vs）"]];
   const html = `<p class="muted">${jp ? `「${esc(a)}」に別の語を組み合わせて探索します。語を入れて操作を選んでください。` : `Combine “${esc(a)}” with another word.`}</p>
-    <input id="cmb-b" class="cmb-in" value="${esc(initialB)}" placeholder="${jp ? "組み合わせる語（例：教育／労働／音楽）" : "second word"}" autocomplete="off" />
+    <input id="cmb-b" class="cmb-in" value="${esc(initialB)}" placeholder="${jp ? "組み合わせる語（例：吉本隆明／労働／音楽）" : "second word"}" autocomplete="off" />
     <div class="cmb-ops">${ops.map(([k, l]) => `<button type="button" class="cmb-op${k === initialOp ? " on" : ""}" data-op="${k}">${esc(l)}</button>`).join("")}</div>
     <p class="srcline muted">${jp ? "AND=両方に関わる／意味で絞る=意味の近縁をその観点で／NOT=除外／OR=合わせる／比較=共有と差分。ORと比較は空でも可。" : ""}</p>
     <p id="cmb-note" class="combine-form-note" role="status" aria-live="polite"></p>`;
@@ -3693,9 +3786,11 @@ async function gCombineRun(a, b, op) {
   }
   showCanvas();
   G_raw = d; G_lens = "all";                    // 組み合わせ結果を今のグラフに描く
+  COMBINE_CTX = { a, b, op };                   // pair専用メニューを描画前から確定
+  renderTopMenu(d);
   const note = $("graph-note"); if (note) note.textContent = d.note || "";
   gBuild(d);
-  COMBINE_CTX = { a, b, op }; PANEL_CTX = null;  // 組合せ結果は確定状態（戻る/進むで復元）
+  PANEL_CTX = null;                              // 組合せ結果は確定状態（戻る/進むで復元）
   const w = $("origin-graph-wrap"); if (w) w.scrollIntoView({ behavior: "smooth", block: "start" });
   navCommit(currentViewState());                 // 1操作1commit（restoring/txn中は no-op）
 }
@@ -4025,6 +4120,73 @@ function cleanWikt(s) {
   return String(s || "").replace(/:?\[(\d+)\]/g, "$1.").replace(/\{\{[^}]*\}\}/g, "")
     .replace(/\s+/g, " ").trim();
 }
+
+// 多言語は初期画面を圧迫しない。代表例を先に見せ、全件は同じカード内の
+// 開閉・言語選択・文字検索で辿れるようにする（全言語の自動羅列を既定にしない）。
+function _breadthItemHtml(b, extraClass = "breadth-filter-item") {
+  const name = String((b && b.name) || "表記").trim();
+  const term = String((b && b.term) || "").trim();
+  const via = String((b && b.via) || "").trim();
+  const hay = `${name} ${term} ${via}`.toLocaleLowerCase();
+  return `<span class="${extraClass}" data-breadth-lang="${esc(name)}" data-breadth-text="${esc(hay)}" title="${esc(via)}">${esc(name)}${term ? `：<span class="breadth-term">${esc(term)}</span>` : ""}</span>`;
+}
+function _breadthExplorerHtml(entries, opts = {}) {
+  const br = (Array.isArray(entries) ? entries : []).filter(Boolean);
+  if (!br.length) return "";
+  const representative = Math.max(1, Number(opts.representative || 8));
+  const rep = br.slice(0, representative).map(b => _breadthItemHtml(b, "blang breadth-summary-item")).join("");
+  const langs = [...new Set(br.map(b => String((b && b.name) || "表記").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, LANG === "ja" ? "ja" : undefined));
+  const all = br.map(b => _breadthItemHtml(b)).join("");
+  const rest = br.length - Math.min(br.length, representative);
+  const more = rest > 0 ? `<details class="breadth-more"><summary>${LANG === "ja" ? `全ての表記を見る（${br.length}件・${langs.length}言語）` : `Show all forms (${br.length} entries · ${langs.length} languages)`}</summary>
+    <div class="breadth-filter" role="search"><input class="breadth-filter-input" type="search" placeholder="${LANG === "ja" ? "言語名・語形・出所を検索" : "Search language, form or source"}" aria-label="${LANG === "ja" ? "多言語表記を検索" : "Search multilingual forms"}">
+      <select class="breadth-filter-select" aria-label="${LANG === "ja" ? "言語で絞り込む" : "Filter by language"}"><option value="">${LANG === "ja" ? "全ての言語" : "All languages"}</option>${langs.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("")}</select></div>
+    <div class="breadth-filter-list">${all}</div><p class="breadth-filter-empty muted" hidden>${LANG === "ja" ? "条件に一致する表記はありません。検索語か言語を変えてください。" : "No form matches these filters."}</p></details>` : "";
+  return `<div class="breadth-explorer" data-breadth-explorer><p class="breadth-summary-note">${LANG === "ja" ? `代表 ${Math.min(br.length, representative)}件を表示しています。必要な言語だけ全件表示から探せます。` : `Showing ${Math.min(br.length, representative)} representative forms. Open all forms to filter by language.`}</p><div class="breadth breadth-summary-list">${rep}</div>${more}</div>`;
+}
+function bindBreadthExplorer(root) {
+  if (!root) return;
+  root.querySelectorAll("[data-breadth-explorer]").forEach(box => {
+    if (box.dataset.breadthBound === "1") return;
+    box.dataset.breadthBound = "1";
+    const input = box.querySelector(".breadth-filter-input"), select = box.querySelector(".breadth-filter-select");
+    const empty = box.querySelector(".breadth-filter-empty"), rows = [...box.querySelectorAll(".breadth-filter-item")];
+    const update = () => {
+      const needle = String((input && input.value) || "").trim().toLocaleLowerCase();
+      const language = String((select && select.value) || "");
+      let shown = 0;
+      rows.forEach(row => {
+        const visible = (!needle || String(row.dataset.breadthText || "").includes(needle))
+          && (!language || row.dataset.breadthLang === language);
+        row.hidden = !visible;
+        if (visible) shown += 1;
+      });
+      if (empty) empty.hidden = shown !== 0;
+    };
+    if (input) input.addEventListener("input", update);
+    if (select) select.addEventListener("change", update);
+  });
+}
+
+function _personOriginHtml(d, q, jp) {
+  const p = d.person_profile || {}, forms = (p.name_forms || []).slice(0, 8), works = (p.works || []).slice(0, 6), concepts = (p.concepts || []).slice(0, 8);
+  const formHtml = forms.map(x => `<span class="person-origin-chip"><b>${esc(x.form || "")}</b><small>${esc(x.language || "")}</small></span>`).join("");
+  const workHtml = works.map(x => `<li><b>${esc(x.japanese_titles && x.japanese_titles[0] || x.original_title || "")}</b><span>${esc(x.original_title || "")}</span><small>${esc(x.year || "")}</small></li>`).join("");
+  const conceptHtml = concepts.map(x => `<span class="person-origin-concept"><code>${esc(x.source_term || "")}</code> → ${esc((x.japanese_candidates || []).join(" ／ "))}</span>`).join("");
+  const domains = (p.domains || []).map(x => `<span class="badge">${esc(x)}</span>`).join(" ");
+  const sourceHtml = (p.sources || []).slice(0, 4).map(x => x.url ? `<a class="ext-link" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.label || "出典")}</a>` : `<span class="badge">${esc(x.label || x.id || "出典")}</span>`).join(" ");
+  return `<div class="card person-origin-card" id="card-person">
+    <div class="person-origin-kicker"><span class="th-badge th-confirmed">人物研究モード</span><span>${jp ? "人物名を一般語の語源として扱いません" : "A person is not treated as a concept word."}</span></div>
+    <h2>${esc(p.display_name || q)}</h2><p class="person-origin-identity">${esc(p.identity_note || "表記・転写と著作・思想を分けて確認します。")}</p>
+    <p class="person-origin-description">${esc(p.description || "")}</p><p class="person-origin-domains"><b>${jp ? "分野" : "Domains"}：</b>${domains || (jp ? "未確認" : "not yet classified")}</p>
+    <div class="person-origin-question"><b>${jp ? "この人物から始められる問い" : "Questions opened by this person"}</b><p>${jp ? "どの著作が、どの原語・翻訳題・訳者・版を経て読まれ、どの概念が後続の思想や研究で再構成されたのか。" : "Which works, editions and concepts were translated and received, and how were they reconstructed?"}</p></div>
+    <section><h3>${jp ? "人物名の表記・転写（翻訳ではない）" : "Name forms / transliterations (not translations)"}</h3><div class="person-origin-forms">${formHtml || `<span class="muted">未確認</span>`}</div></section>
+    <section><h3>${jp ? "主要著作と翻訳研究の入口" : "Major works and translation-research entry points"}</h3><ul class="person-origin-works">${workHtml || `<li class="muted">主要著作は未確認</li>`}</ul></section>
+    <section><h3>${jp ? "著作に関係する概念語" : "Concept terms connected to the works"}</h3><div class="person-origin-concepts">${conceptHtml || `<span class="muted">概念語は未確認</span>`}</div></section>
+    <p class="person-origin-actions"><button type="button" class="person-history-open" data-query="${esc(q)}">🧭 ${jp ? "この人物の著作・翻訳・受容史を開く" : "Open this person's works and reception history"}</button></p>
+    ${sourceHtml ? `<p class="srcline">${jp ? "人物同定・著作探索の出所" : "Identity / works sources"}：${sourceHtml}</p>` : ""}
+  </div>`;
+}
 async function originRun(q, tok) {
   if (tok == null) tok = originClaim(q);   // standalone caller (newtab re-render) claims its own token
   const jp = LANG === "ja";
@@ -4047,8 +4209,9 @@ async function originRun(q, tok) {
   const resolvedNote = (rf && rt && rf !== rt)
     ? `<p class="srcline">${jp ? `「${esc(rf)}」の記事は無いため、通常検索が見つける` : `no exact article for “${esc(rf)}”; followed `}<b>${olink(rt)}</b>${jp ? "（同じ概念）として辿りました" : " (same concept)"}</p>`
     : "";
+  const isPerson = d.subject_kind === "person" && d.person_profile;
   html += `<div class="card word-card">
-    <p class="srcline">${jp ? "この探求は、まず言葉そのものから始まります" : "This inquiry begins with the word itself"}</p>
+    <p class="srcline">${isPerson ? (jp ? "この探求は、まず人物の同定と著作から始まります" : "This inquiry begins with identifying the person and their works") : (jp ? "この探求は、まず言葉そのものから始まります" : "This inquiry begins with the word itself")}</p>
     <h2 class="theword">「${esc((d.word || {}).query || q)}」</h2>${resolvedNote}</div>`;
 
   if (!d.found) {
@@ -4061,6 +4224,14 @@ async function originRun(q, tok) {
       html += `<div class="card">${noMiss(q, { lead: jp ? `「${q}」は、次の入り口から探索できます（別表記・語幹・ローマ字でも辿れます）。` : `Explore “${q}” from these entry points.` })}</div>`;
     }
     $("origin-results").innerHTML = html; return;
+  }
+
+  // 人物は一般語の次元へ落とさない。グラフだけでなく本文カードにも
+  // 哲学・思想・著作・受容へ進む明示的な入口を置く。
+  if (isPerson) {
+    html += _personOriginHtml(d, q, jp);
+    $("origin-results").innerHTML = html;
+    return;
   }
 
   // ── 探究の次元（ベンチマークの広さ・深さへ辿れる路の一覧・構造の保証） ──
@@ -4175,7 +4346,7 @@ async function originRun(q, tok) {
   if (d.breadth && d.breadth.length) {
     html += `<div class="card" id="card-breadth"><h3>${jp ? "この概念を担う、世界の言語とその語" : "The world's languages that carry this concept, and their word"} <span class="srcline">${d.breadth_count}</span></h3>
       <p class="muted">${jp ? "どの言語を出すかは、私（AI）でなくデータが決めています。既知の数言語に縮めない——見知らぬ言語こそ現れるべきだからです。" : "Which languages appear is decided by the data, not by me (the AI) — the unfamiliar ones are exactly what should surface."}</p>
-      <div class="breadth">${d.breadth.map(b => `<span class="blang" title="${esc(b.via)}">${esc(b.name)}${b.term ? `：<span lang="">${esc(b.term)}</span>` : ""}</span>`).join("")}</div></div>`;
+      ${_breadthExplorerHtml(d.breadth)}</div>`;
   }
 
   // ── 出所・確度・限界 ──
@@ -4187,6 +4358,7 @@ async function originRun(q, tok) {
   if (d.note) html += `<p class="srcline muted">${esc(d.note)}</p>`;
 
   $("origin-results").innerHTML = html;
+  bindBreadthExplorer($("origin-results"));
   gDiscoverDims(q, tok);   // #1: concept-specific dimensions from the article's own structure
 }
 

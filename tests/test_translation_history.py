@@ -7,7 +7,9 @@ import urllib.parse
 os.environ["DIALEXIS_DB"] = os.path.join(tempfile.mkdtemp(), "translation-history-test.db")
 
 from app.main import (TRANSLATION_HISTORY, _history_domain, _history_dossier,
-                      _history_discovery_from_sources, api_translation_history)  # noqa: E402
+                      _history_discovery_from_sources, _history_ledger_body,
+                      api_translation_history,
+                      api_translation_history_pair, api_combine)  # noqa: E402
 
 
 def test_body_dossier_matches_japanese_and_original_aliases():
@@ -91,3 +93,32 @@ def test_unknown_term_returns_a_research_workspace_when_discovery_has_no_source_
     assert {"candidate-wiktionary-ja", "candidate-ndl", "candidate-cinii"} <= ids
     assert all("自由" in urllib.parse.unquote(s["url"]) for s in result["source_candidates"])
     assert all(a.get("source_ids") for a in result["next_actions"])
+
+
+def test_person_names_use_person_contract_not_generic_word_history():
+    latin = asyncio.run(api_translation_history("Karl Marx", "philosophy", "ja"))
+    japanese = asyncio.run(api_translation_history("カールマルクス", "哲学", "ja"))
+    assert latin["status"] == japanese["status"] == "ready"
+    assert latin["subject_kind"] == japanese["subject_kind"] == "person"
+    assert latin["dossier"]["mode"] == "person"
+    assert latin["dossier"]["person"]["id"] == japanese["dossier"]["person"]["id"] == "karl-marx"
+    assert any(x["kind"].startswith("人物名の表記") for x in latin["dossier"]["term_map"])
+    assert any(x["kind"] == "著作題名・翻訳版" for x in latin["dossier"]["term_map"])
+
+
+def test_person_pair_and_search_have_a_comparison_contract():
+    pair = asyncio.run(api_translation_history_pair("Karl Marx", "吉本隆明", "philosophy", "ja"))
+    combined = asyncio.run(api_combine("Karl Marx", "吉本隆明", "and", "ja"))
+    assert pair["status"] == "ready" and pair["subject_kind"] == "person_pair"
+    assert pair["dossier"]["mode"] == "person_pair"
+    assert "名前の翻訳対応ではなく" in pair["note"]
+    assert combined["research_mode"] == "person_pair"
+    assert combined["entity_kind"] == "person_pair"
+    assert any(n["kind"] == "work" for n in combined["nodes"])
+
+
+def test_person_and_pair_ledgers_keep_their_subject_types():
+    person = asyncio.run(api_translation_history("Karl Marx", "philosophy", "ja"))
+    pair = asyncio.run(api_translation_history_pair("Karl Marx", "吉本隆明", "philosophy", "ja"))
+    assert _history_ledger_body("Karl Marx", "philosophy", person, {})["subject_type"] == "person"
+    assert _history_ledger_body("Karl Marx", "philosophy", pair, {})["subject_type"] == "research_question"

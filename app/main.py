@@ -74,6 +74,8 @@ ORIG_CLUSTER_INDEX = {
 }
 with open(os.path.join(APP_DIR, "data", "translation_history_seed.json"), encoding="utf-8") as f:
     TRANSLATION_HISTORY = json.load(f)
+with open(os.path.join(APP_DIR, "data", "person_profiles.json"), encoding="utf-8") as f:
+    PERSON_PROFILES = json.load(f)
 with open(os.path.join(APP_DIR, "data", "author_lineage.json"), encoding="utf-8") as f:
     AUTHOR_LINEAGE = json.load(f)
 AUTHOR_LINEAGE_INDEX = {
@@ -563,9 +565,15 @@ async def api_origin(q: str, lang: str = "ja"):
     言語と語形の連鎖（翻訳による変容＝宿痾を可視化）と、その語を担う言語の広がりを
     示す。いかなる言語も中心に置かない。原点は「推定」で断定せず、連鎖は常に全て示し、
     breadthはモデルでなくデータの和集合に語らせる。"""
-    await wiktionary.ensure_langnames(lang)   # 全言語コード→日本語名を用意（生コード表示の解消）
     if not q.strip():
         raise HTTPException(400, "empty query")
+    # A person name is not a concept word.  Resolve curated identity aliases
+    # before the word-origin engine so カールマルクス and Karl Marx enter the
+    # same person-first surface rather than an empty/irrelevant etymology card.
+    person = _person_profile_for_query(q)
+    if person:
+        return _person_origin(person, q, lang)
+    await wiktionary.ensure_langnames(lang)   # 全言語コード→日本語名を用意（生コード表示の解消）
     SECTION = {"ja": "Japanese", "en": "English", "de": "German", "zh": "Chinese",
                "ko": "Korean", "fr": "French", "la": "Latin"}
     section_lang = SECTION.get(lang, "Japanese")
@@ -671,6 +679,416 @@ async def api_origin(q: str, lang: str = "ja"):
         "sources": [{"source": r["source"], "retrieved_at": r["retrieved_at"],
                      "error": r["error"]} for r in (tr, cn)],
     }
+
+
+def _person_norm(value: str) -> str:
+    """Normalize a person-name query for identity matching only.
+
+    This deliberately removes punctuation/spacing used by Japanese and Latin
+    name displays, but never changes the text shown as evidence.  A name match
+    is therefore an identity/display decision, not a translation claim.
+    """
+    s = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    return re.sub(r"[\s\u3000・･.,，．:：;；'’\"“”()（）\[\]【】{}｛｝_\-‐‑‒–—]+", "", s)
+
+
+def _person_profile_for_query(q: str) -> dict | None:
+    """Resolve the curated person registry without treating a name as a word.
+
+    Exact normalized aliases are preferred.  The registry is intentionally
+    small and explicit: a generic fuzzy hit must not silently turn an ordinary
+    concept into a person.
+    """
+    nq = _person_norm(q)
+    if not nq:
+        return None
+    for profile in PERSON_PROFILES.get("profiles", []):
+        for alias in profile.get("match", []):
+            if nq == _person_norm(alias):
+                return copy.deepcopy(profile)
+    return None
+
+
+def _person_profile_from_entity(q: str, entity, lang: str = "ja") -> dict | None:
+    """Build a cautious generic person dossier from a Wikidata entity.
+
+    It supplies identity/name/work discovery but does not invent a reception
+    history.  The latter remains an explicit next verification task.
+    """
+    ed = entity.get("data", entity) if isinstance(entity, dict) else {}
+    if not isinstance(ed, dict) or not ed.get("is_person"):
+        return None
+    label = str(ed.get("label") or ed.get("label_en") or q).strip()
+    latin = str(ed.get("label_en") or ed.get("wikipedia", {}).get("en") or label).strip()
+    forms, seen = [], set()
+
+    def add_form(form, language, kind, evidence="candidate"):
+        form = str(form or "").strip()
+        key = (form, language)
+        if form and key not in seen:
+            seen.add(key)
+            forms.append({"form": form, "language": language, "kind": kind, "evidence": evidence})
+
+    add_form(q, lang, "入力された人物名", "candidate")
+    add_form(label, lang, "Wikidataラベル", "confirmed")
+    add_form(latin, "英語・ラテン文字", "ラテン文字表記", "candidate")
+    for lg, form in (ed.get("orig_labels") or {}).items():
+        add_form(form, lg, "多言語ラベル", "candidate")
+    for lg, title in (ed.get("wikipedia") or {}).items():
+        add_form(title, lg, "Wikipedia記事名", "candidate")
+
+    works = []
+    for title in (ed.get("claims", {}).get("notable_work") or [])[:12]:
+        title = str(title or "").strip()
+        if title and not title.startswith("Q"):
+            works.append({"original_title": title, "original_language": "要確認",
+                          "japanese_titles": [title] if lang == "ja" else [],
+                          "year": "刊年未取得", "role": "Wikidataの主要著作候補",
+                          "evidence": "candidate", "source_ids": ["dynamic-wikidata"]})
+    wiki_url = ""
+    if ed.get("wikipedia", {}).get(lang):
+        wiki_url = f"https://{lang}.wikipedia.org/wiki/{urllib.parse.quote(ed['wikipedia'][lang])}"
+    elif ed.get("wikipedia", {}).get("en"):
+        wiki_url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(ed['wikipedia']['en'])}"
+    sources = [
+        {"id": "dynamic-wikidata", "label": f"Wikidata：{label}", "url": ed.get("url") or "https://www.wikidata.org/",
+         "status": "人物同定・多言語ラベル・著作候補の入口。引用・影響関係の証明ではない。", "evidence": "confirmed"},
+        {"id": "dynamic-wikipedia", "label": f"Wikipedia：{label}", "url": wiki_url,
+         "status": "人物紹介・著作候補の探索入口。一次資料や訳語の証明には使わない。", "evidence": "candidate"},
+        {"id": "dynamic-ndl", "label": f"NDLサーチ：{label}",
+         "url": f"https://ndlsearch.ndl.go.jp/search?keyword={urllib.parse.quote(label)}",
+         "status": "日本語版・翻訳版・受容研究の書誌を確認する入口。", "evidence": "candidate"},
+    ]
+    return {
+        "id": "wikidata-person:" + str(ed.get("qid") or _person_norm(label)),
+        "match": [q, label, latin], "display_name": label, "latin_name": latin,
+        "identity_note": "人物名の異表記・転写は、意味の翻訳ではなく同一人物の識別候補として表示します。",
+        "description": ed.get("description") or "Wikidataが人物として解決した対象。",
+        "domains": [ed.get("description") or "分野未確定"], "name_forms": forms,
+        "works": works, "concepts": [], "timeline": [], "reception": [], "sources": sources,
+        "next_actions": [
+            {"label": "人物名の表記・転写と同一人物性を確認する", "kind": "identity", "source_ids": ["dynamic-wikidata"]},
+            {"label": "主要著作を原語・翻訳題・訳者・版・標準ロケータで確認する", "kind": "translation", "source_ids": ["dynamic-wikidata", "dynamic-ndl"]},
+            {"label": "受容者の引用・影響関係を本文と書誌順で確認する", "kind": "reception", "source_ids": ["dynamic-ndl"]},
+        ],
+    }
+
+
+def _person_dossier(profile: dict, domain: str, query: str) -> dict:
+    """Turn a person profile into the same ledger contract as a term dossier.
+
+    The fields are deliberately typed: name_forms are identity variants,
+    works are title/edition candidates, and concepts are separate translation
+    objects.  This is the structural correction that prevents Karl Marx from
+    being rendered as if his name itself had a philosophical etymology.
+    """
+    p = copy.deepcopy(profile)
+    display = p.get("display_name") or query
+    term_map = []
+    for n in p.get("name_forms", []):
+        term_map.append({
+            "source_term": n.get("form"), "language": n.get("language"),
+            "kind": "人物名の表記・転写（翻訳ではない）",
+            "japanese_candidates": [display],
+            "distinction": n.get("kind") or "同一人物の識別候補",
+            "preserved": "人物同一性の候補",
+            "lost_or_shifted": "表記体系を変えると発音・中黒・語順などの情報が見えにくくなる",
+            "added": "各言語・文字体系の転写慣行",
+            "evidence": n.get("evidence", "candidate"), "source_ids": ["marx-name-variants"] if p.get("id") == "karl-marx" else [],
+        })
+    for w in p.get("works", []):
+        term_map.append({
+            "source_term": w.get("original_title"), "language": w.get("original_language"),
+            "kind": "著作題名・翻訳版",
+            "japanese_candidates": w.get("japanese_titles") or [query],
+            "distinction": w.get("role") or "著作と翻訳版を照合する候補",
+            "preserved": "著作を同定する題名・刊年の手がかり",
+            "lost_or_shifted": "題名の翻訳で語順・語感・概念の焦点が変わる可能性",
+            "added": "受け入れ言語の出版・思想上の連想",
+            "evidence": w.get("evidence", "candidate"), "source_ids": w.get("source_ids") or [],
+        })
+    for c in p.get("concepts", []):
+        term_map.append({
+            "source_term": c.get("source_term"), "language": c.get("language"),
+            "kind": "人物に関係する概念語（人物名とは別）",
+            "japanese_candidates": c.get("japanese_candidates") or [query],
+            "distinction": c.get("note") or "著作・時期ごとに本文を照合する概念語",
+            "preserved": "概念の比較対象となる語形",
+            "lost_or_shifted": "訳者・版・受容者による意味の移動",
+            "added": "受容言語の専門語彙",
+            "evidence": c.get("evidence", "candidate"), "source_ids": c.get("source_ids") or [],
+        })
+    sources = p.get("sources", [])
+    source_ids = {s.get("id") for s in sources if isinstance(s, dict)}
+    for item in term_map:
+        item["source_ids"] = [x for x in item.get("source_ids", []) if x in source_ids]
+    transformations = [
+        {"stage": "人物名の表記・転写", "preserved": "同一人物を指す候補", "lost": "文字体系を越えると発音・表記慣行の差が圧縮される", "added": "各言語圏の表記・転写慣行", "test": "Wikidata・図書館書誌・各言語の著作記録を人物IDで照合する", "evidence": "candidate", "source_ids": [s["id"] for s in sources[:2] if isinstance(s, dict) and s.get("id")]},
+        {"stage": "著作題名の翻訳・版の差", "preserved": "著作の同一性を示す書誌的手がかり", "lost": "題名の語順・語感・概念の焦点が変わる可能性", "added": "受容言語の出版・思想的連想", "test": "原題・訳題・訳者・出版社・刊年・該当頁を版ごとに並置する", "evidence": "unverified", "source_ids": [s["id"] for s in sources if isinstance(s, dict) and s.get("id")]},
+    ]
+    default_counter = [
+        {"claim": "人物名のラテン文字表記が見つかったので、名前が翻訳された意味も確定した", "counterargument": "人物名の違いは多くの場合、翻訳ではなく表記・転写の差である", "test": "同一人物ID、書誌、各言語版の著作記録を照合する"},
+        {"claim": "人物が検索結果で共起したので影響関係が証明された", "counterargument": "共起は引用・継承・反論を証明しない", "test": "直接引用、参照文献、刊年順、反対解釈を確認する"},
+    ]
+    return {
+        "id": p.get("id"), "mode": "person", "subject_kind": "person", "person": p,
+        "domain": domain, "query": query,
+        "title": f"「{display}」――人物・著作の翻訳／受容史台帳",
+        "center_question": f"「{display}」は、{domain}の人物史・著作翻訳・受容史の中で、どの表記・どの著作・どの版を通って受け取られてきたのか。",
+        "scope_note": "人物名そのものの表記・転写と、人物の著作・概念の翻訳・受容を分離して表示します。自動抽出は候補であり、引用・影響関係は本文照合まで確定しません。",
+        "identity_note": p.get("identity_note", ""), "domains": p.get("domains", []),
+        "name_forms": p.get("name_forms", []), "works": p.get("works", []),
+        "concepts": p.get("concepts", []), "term_map": term_map,
+        "timeline": p.get("timeline", []), "reception_ledger": p.get("reception", []),
+        "transformations": transformations, "counterchecks": p.get("counterchecks") or default_counter,
+        "sources": sources, "next_actions": p.get("next_actions", []),
+    }
+
+
+def _person_graph(profile: dict, query: str, lang: str = "ja") -> dict:
+    """A person-first graph: identity → domains → works/concepts → reception."""
+    display = profile.get("display_name") or query
+    nodes, edges, seen = [], [], set()
+
+    def add(nid, label, kind, layer, weight=1.0, q=None, extra=None):
+        if nid in seen or not label:
+            return
+        seen.add(nid)
+        nodes.append({"id": nid, "label": label, "kind": kind, "layer": layer,
+                      "weight": weight, "q": q, **(extra or {})})
+
+    def link(a, b, strength=1.0):
+        edges.append({"from": a, "to": b, "strength": strength})
+
+    add("root", display, "author", 1, 5.5, query,
+        {"person_id": profile.get("id"), "person_mode": True, "search": display})
+    add("dom:identity", "人物同定・異表記", "domain", 2, 2.3)
+    add("dom:works", "著作・翻訳版", "domain", 2, 2.8)
+    add("dom:concepts", "概念・思想", "domain", 2, 2.5)
+    add("dom:reception", "受容・影響の検証", "domain", 2, 2.1)
+    for did in ("dom:identity", "dom:works", "dom:concepts", "dom:reception"):
+        link("root", did, 1.25)
+    for i, n in enumerate(profile.get("name_forms", [])[:12]):
+        add(f"name:{i}:{n.get('form')}", n.get("form"), "language", 3, 1.2,
+            n.get("form"), {"language": n.get("language"), "person_id": profile.get("id")})
+        link("dom:identity", f"name:{i}:{n.get('form')}", 0.8)
+    for i, w in enumerate(profile.get("works", [])[:10]):
+        title = w.get("japanese_titles", [None])[0] or w.get("original_title")
+        wid = f"work:{i}:{title}"
+        add(wid, title, "work", 3, 1.7, w.get("original_title") or title,
+            {"original_title": w.get("original_title"), "year": w.get("year"), "person_id": profile.get("id")})
+        link("dom:works", wid, 0.9)
+    for i, c in enumerate(profile.get("concepts", [])[:12]):
+        term = c.get("source_term") or (c.get("japanese_candidates") or [""])[0]
+        cid = f"concept:{i}:{term}"
+        add(cid, term, "related", 3, 1.4, term,
+            {"language": c.get("language"), "japanese_candidates": c.get("japanese_candidates", []), "person_id": profile.get("id")})
+        link("dom:concepts", cid, 0.8)
+    for i, r in enumerate(profile.get("reception", [])[:8]):
+        who = r.get("who")
+        if not who or _person_norm(who) == _person_norm(display):
+            continue
+        rid = f"reception:{i}:{who}"
+        add(rid, who, "author", 4, 1.0, who, {"search": who, "person_id": profile.get("id")})
+        link("dom:reception", rid, 0.65)
+    return {
+        "query": query, "queried_at": now(), "qid": profile.get("qid"),
+        "research_mode": "person", "entity_kind": "person", "person_profile": profile,
+        "nodes": nodes, "edges": edges,
+        "note": "人物研究モード：名前の表記・著作の翻訳・概念の受容・影響関係を別レイヤーで表示しています。人物名を一般語の語源としては扱いません。",
+        "sources": [{"source": "person-profile", "retrieved_at": now(), "error": None}],
+    }
+
+
+def _person_origin(profile: dict, query: str, lang: str = "ja") -> dict:
+    display = profile.get("display_name") or query
+    forms = profile.get("name_forms", [])
+    return {
+        "query": query, "lang": lang, "queried_at": now(), "found": True,
+        "subject_kind": "person", "person_profile": profile,
+        "word": {"query": query}, "resolved_to": display,
+        "general_meaning": [], "segment_layers": [], "collapse_warning": None,
+        "concept_origin": [], "originators": [{"label": display, "is_person": True}],
+        "associated": [], "relations": {"near": [], "opposite": []}, "named_after": [],
+        "word_origin": None, "chain": [], "senses": [],
+        "breadth": [{"name": x.get("language", "表記"), "term": x.get("form"), "via": "person-name-form"} for x in forms],
+        "breadth_count": len(forms), "qid": profile.get("qid"),
+        "article_url": next((s.get("url") for s in profile.get("sources", []) if "Wikipedia" in str(s.get("label"))), None),
+        "wikidata_url": next((s.get("url") for s in profile.get("sources", []) if "Wikidata" in str(s.get("label"))), None),
+        "wiktionary_url": None,
+        "dimensions": [
+            {"key": "identity", "label": "人物同定・異表記", "status": "ok", "act": "person:identity"},
+            {"key": "works", "label": "著作・翻訳版", "status": "ok", "act": "person:works"},
+            {"key": "concepts", "label": "概念・思想", "status": "ok", "act": "person:concepts"},
+            {"key": "reception", "label": "受容・影響関係", "status": "partial", "act": "person:reception"},
+        ],
+        "confidence": {"identity": "表記・人物同定の候補", "works": "書誌・原典入口", "reception": "本文照合前の候補"},
+        "sources": [{"source": "person-profile", "retrieved_at": now(), "error": None}],
+    }
+
+
+def _person_pair_for_queries(a: str, b: str) -> dict | None:
+    """Return a curated person pair only when both sides are explicit people."""
+    pa, pb = _person_profile_for_query(a), _person_profile_for_query(b)
+    if not pa or not pb or pa.get("id") == pb.get("id"):
+        return None
+    ids = (pa.get("id"), pb.get("id"))
+    relation = None
+    for candidate in PERSON_PROFILES.get("relations", []):
+        matches = candidate.get("match") or []
+        if any(tuple(x) == ids for x in matches if isinstance(x, list)):
+            relation = copy.deepcopy(candidate)
+            break
+    if relation is None:
+        relation = {
+            "id": f"pair:{ids[0]}:{ids[1]}",
+            "title": f"{pa.get('display_name', a)} × {pb.get('display_name', b)}――比較・受容の調査台帳",
+            "center_question": f"{pa.get('display_name', a)}と{pb.get('display_name', b)}は、どの著作・概念・引用を通じて関係づけられるのか。",
+            "status_note": "人物名同士には通常の語のような翻訳語対応はありません。表記・著作・概念・引用・受容関係を別々に確認します。",
+            "shared_terms": [], "timeline": [], "counterchecks": [], "sources": [],
+        }
+    return {"a": pa, "b": pb, "relation": relation, "ids": ids}
+
+
+def _person_pair_dossier(pair: dict, domain: str, a: str, b: str) -> dict:
+    pa, pb, relation = pair["a"], pair["b"], pair["relation"]
+    profiles = [pa, pb]
+    sources, seen_sources = [], set()
+    for profile in profiles:
+        for source in profile.get("sources", []):
+            if isinstance(source, dict) and source.get("id") not in seen_sources:
+                seen_sources.add(source["id"])
+                sources.append(copy.deepcopy(source))
+    shared = copy.deepcopy(relation.get("shared_terms") or [])
+    relation_source_ids = [s for s in relation.get("sources", []) if s in seen_sources]
+    term_map = []
+    for profile in profiles:
+        label = profile.get("display_name")
+        for form in profile.get("name_forms", [])[:8]:
+            term_map.append({
+                "source_term": form.get("form"), "language": form.get("language"),
+                "kind": f"人物名の表記・転写（{label}）",
+                "japanese_candidates": [label],
+                "distinction": "同一人物の識別候補。人物名同士の翻訳対応とは扱わない。",
+                "preserved": "人物同一性の候補", "lost_or_shifted": "発音・中黒・文字体系の差",
+                "added": "各言語圏の転写慣行", "evidence": form.get("evidence", "candidate"),
+                "source_ids": [x.get("id") for x in profile.get("sources", [])[:1] if x.get("id")],
+            })
+        for work in profile.get("works", [])[:8]:
+            term_map.append({
+                "source_term": work.get("original_title"), "language": work.get("original_language"),
+                "kind": f"著作題名・翻訳版（{label}）",
+                "japanese_candidates": work.get("japanese_titles") or [label],
+                "distinction": work.get("role") or "著作の同定・翻訳版照合",
+                "preserved": "著作の同一性を示す書誌情報", "lost_or_shifted": "題名・概念の焦点差",
+                "added": "受容言語の出版・思想的連想", "evidence": work.get("evidence", "candidate"),
+                "source_ids": [x for x in work.get("source_ids", []) if x in seen_sources],
+            })
+    for item in shared:
+        term_map.append({
+            "source_term": item.get("term"), "language": "比較軸", "kind": "共有語彙・接点候補",
+            "japanese_candidates": [item.get("term")], "distinction": item.get("role"),
+            "preserved": "両者を比較するための問題設定", "lost_or_shifted": "直接引用・版・文脈は未確認",
+            "added": "比較研究上の仮説", "evidence": item.get("evidence", "candidate"),
+            "source_ids": relation_source_ids,
+        })
+    return {
+        "id": relation.get("id"), "mode": "person_pair", "subject_kind": "person_pair",
+        "pair": {"a": pa, "b": pb}, "relation": relation, "domain": domain,
+        "title": relation.get("title") or f"{pa.get('display_name')} × {pb.get('display_name')}",
+        "center_question": relation.get("center_question") or "2人の著作・概念・受容関係を確認する。",
+        "scope_note": relation.get("status_note") or "人物名の表記と著作・概念・引用関係を分離して確認します。",
+        "term_map": term_map, "timeline": relation.get("timeline") or [],
+        "transformations": [{
+            "stage": "人物名 → 著作・概念・受容関係",
+            "preserved": "2人を比較する検索条件",
+            "lost": "AND共起だけでは引用・影響・反論の向きは分からない",
+            "added": "共有語彙・接点候補という比較仮説",
+            "test": "本文の直接引用、参照文献、刊年順、対立解釈を確認する",
+            "evidence": "candidate", "source_ids": relation_source_ids,
+        }],
+        "reception_ledger": relation.get("timeline") or [],
+        "counterchecks": relation.get("counterchecks") or [], "sources": sources,
+        "next_actions": [
+            {"label": "2人の人物名の表記・転写を別々に確認する", "kind": "identity", "source_ids": relation_source_ids},
+            {"label": "著作・版・訳者・標準ロケータを人物ごとに並置する", "kind": "translation", "source_ids": relation_source_ids},
+            {"label": "引用・影響関係を本文で確認し、検索共起を証拠と混同しない", "kind": "reception", "source_ids": relation_source_ids},
+        ],
+    }
+
+
+def _person_pair_graph(pair: dict, a: str, b: str, lang: str = "ja") -> dict:
+    """Return a structured pair map instead of a generic web-result cloud."""
+    pa, pb, relation = pair["a"], pair["b"], pair["relation"]
+    nodes, edges, seen = [], [], set()
+
+    def add(nid, label, kind, layer, weight=1.0, q=None, extra=None):
+        if nid in seen or not label:
+            return
+        seen.add(nid)
+        nodes.append({"id": nid, "label": label, "kind": kind, "layer": layer,
+                      "weight": weight, "q": q, **(extra or {})})
+
+    def link(x, y, strength=1.0):
+        edges.append({"from": x, "to": y, "strength": strength})
+
+    add("rootA", pa.get("display_name", a), "author", 1, 5.2, a,
+        {"person_id": pa.get("id"), "search": pa.get("display_name", a)})
+    add("rootB", pb.get("display_name", b), "author", 1, 5.2, b,
+        {"person_id": pb.get("id"), "search": pb.get("display_name", b)})
+    add("pair:relation", "翻訳・著作・受容関係", "domain", 2, 3.0)
+    link("rootA", "pair:relation", 1.2); link("rootB", "pair:relation", 1.2)
+    for i, item in enumerate(relation.get("shared_terms") or []):
+        term = item.get("term")
+        nid = f"pair:term:{i}"
+        add(nid, term, "related", 3, 1.8, term, {"role": item.get("role"), "evidence": item.get("evidence")})
+        link("pair:relation", nid, 0.9)
+    for side, profile, root in (("a", pa, "rootA"), ("b", pb, "rootB")):
+        for i, work in enumerate(profile.get("works", [])[:6]):
+            title = work.get("japanese_titles", [None])[0] or work.get("original_title")
+            nid = f"pair:{side}:work:{i}"
+            add(nid, title, "work", 3, 1.35, work.get("original_title") or title,
+                {"original_title": work.get("original_title"), "year": work.get("year"), "person_id": profile.get("id")})
+            link(root, nid, 0.7)
+    return {
+        "query": a, "queried_at": now(), "research_mode": "person_pair",
+        "entity_kind": "person_pair", "person_pair": {"a": pa, "b": pb, "relation": relation},
+        "nodes": nodes, "edges": edges,
+        "note": "人物ペア研究モード：人物名の翻訳語を作るのではなく、表記・著作・概念・引用・受容関係を比較します。検索共起は影響関係の証拠ではありません。",
+        "has_results": True, "sources": [{"source": "person-pair-profile", "retrieved_at": now(), "error": None}],
+    }
+
+
+def _history_person_candidate(q: str) -> bool:
+    """Avoid sending every ordinary concept word to the remote person probe.
+
+    Curated aliases are resolved before this gate.  The fallback probe is only
+    useful for name-shaped input; a kanji concept such as 「自由」 must go
+    straight to the ordinary evidence/discovery path without waiting on
+    Wikidata.
+    """
+    s = str(q or "").strip()
+    if not s:
+        return False
+    if re.search(r"[A-Za-z]", s) and (re.search(r"\s", s) or re.search(r"[A-Z]", s)):
+        return True
+    if re.fullmatch(r"[ァ-ヶー・\s]+", s) and len(re.sub(r"[・\s]", "", s)) >= 3:
+        return True
+    return bool(re.search(r"\s", s))
+
+
+async def _history_person_discovery(q: str, lang: str) -> dict | None:
+    """Best-effort generic person detection for names outside the curated seed."""
+    try:
+        wd = await _history_bounded(wikidata.search(q, lang, limit=8), timeout=6.0)
+        cands = wd.get("data") if isinstance(wd, dict) else None
+        if not cands:
+            return None
+        entity = await _history_bounded(_resolve_entity(cands, lang, n=8, probes=4), timeout=8.0)
+        profile = _person_profile_from_entity(q, entity, lang)
+        return profile
+    except Exception:
+        return None
 
 
 def _history_norm(value: str) -> str:
@@ -1076,6 +1494,7 @@ async def api_translation_history(q: str, domain: str = "philosophy", lang: str 
         "query": q,
         "lang": lang,
         "domain": domain_key,
+        "subject_kind": "term",
         "queried_at": now(),
         "verified_at": meta.get("verified_at"),
         "honesty": meta.get("honesty"),
@@ -1087,6 +1506,22 @@ async def api_translation_history(q: str, domain: str = "philosophy", lang: str 
         "saved_ledgers": _saved_ledgers_for_query(q, domain_key),
     }
     if not dossier:
+        # Person names use a different contract: identity variants are not
+        # word translations, and the useful translation/reception object is the
+        # person's works and concepts.  Prefer the curated registry, then use a
+        # cautious Wikidata person probe for names outside the seed.
+        person = _person_profile_for_query(q)
+        if person is None and _history_person_candidate(q):
+            person = await _history_person_discovery(q, lang)
+        if person:
+            pd = _person_dossier(person, domain_key, q)
+            base.update({
+                "status": "ready", "matched": True, "matched_term": person.get("display_name"),
+                "subject_kind": "person", "dossier": pd,
+                "note": "人物研究モードです。人物名の表記・転写、著作題名の翻訳・版、概念語の受容、影響関係の証拠を別々に表示します。人物名を一般語の語源としては扱いません。",
+                "next_actions": copy.deepcopy(pd.get("next_actions", [])),
+            })
+            return base
         discovery = await _history_discovery(q, domain_key, lang)
         if discovery:
             base.update({
@@ -1127,6 +1562,32 @@ async def api_translation_history(q: str, domain: str = "philosophy", lang: str 
     return base
 
 
+@app.get("/api/translation-history/pair")
+async def api_translation_history_pair(a: str, b: str, domain: str = "philosophy", lang: str = "ja"):
+    """人物同士を語の翻訳辞書として扱わず、比較・受容台帳として束ねる。"""
+    if not a.strip() or not b.strip():
+        raise HTTPException(400, "two person queries required")
+    domain_key = _history_domain(domain)
+    pair = _person_pair_for_queries(a, b)
+    if not pair:
+        return {
+            "status": "not_seeded", "matched": False, "subject_kind": "person_pair",
+            "query": a, "other_query": b, "domain": domain_key, "dossier": None,
+            "note": "2人とも人物として同定できる記録が揃っていないため、人物ペア台帳は作成していません。まず各人物を別々に同定してください。",
+            "next_actions": [{"label": "2人を個別に人物として調査する", "kind": "identity", "source_ids": ["candidate-wikidata"]}],
+        }
+    dossier = _person_pair_dossier(pair, domain_key, a, b)
+    return {
+        "status": "ready", "matched": True, "subject_kind": "person_pair",
+        "query": a, "other_query": b, "domain": domain_key, "dossier": dossier,
+        "person_pair": pair, "queried_at": now(),
+        "evidence_levels": copy.deepcopy(TRANSLATION_HISTORY.get("_meta", {}).get("evidence_levels", [])),
+        "source_plan": copy.deepcopy(TRANSLATION_HISTORY.get("_meta", {}).get("source_plan", [])),
+        "saved_ledgers": [], "next_actions": copy.deepcopy(dossier.get("next_actions", [])),
+        "note": "人物ペア研究モードです。名前の翻訳対応ではなく、表記・著作・概念・引用・受容関係を比較します。",
+    }
+
+
 @app.get("/api/origin/graph")
 async def api_origin_graph(q: str, lang: str = "ja"):
     """言語空間の重力分布グラフ（第1〜4階層）。第1=入力語／第2=重力分布の分岐（意味の
@@ -1134,9 +1595,12 @@ async def api_origin_graph(q: str, lang: str = "ja"):
     関与する著者・著作（重要度順）。node の大きさ＝重力（密度の代理指標＝推定）、edge＝
     関係。データのある枝は濃く、無い枝は薄い（捏造しない・A3）。各 node は q を持てば
     クリックで新たな第1階層として展開できる。"""
-    await wiktionary.ensure_langnames(lang)   # 全言語コード→日本語名を用意（生コード表示の解消）
     if not q.strip():
         raise HTTPException(400, "empty query")
+    person = _person_profile_for_query(q)
+    if person:
+        return _person_graph(person, q, lang)
+    await wiktionary.ensure_langnames(lang)   # 全言語コード→日本語名を用意（生コード表示の解消）
     cn = await concept.node(q, lang)
     cd = cn["data"] if not cn["error"] else {}
     _sec = {"ja": "Japanese", "en": "English", "de": "German", "zh": "Chinese"}.get(lang, "Japanese")
@@ -1682,6 +2146,15 @@ async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
         return {"id": wid, "label": label, "kind": "word", "layer": layer, "weight": w, "q": q or label}
     nodes, edges = [], []
 
+    # A person pair is not a generic AND word query.  If both names are
+    # explicitly identifiable, return a structured comparison surface even
+    # when the general web search has no useful hit.  This prevents the old
+    # failure mode where Karl Marx × 吉本隆明 became an empty cloud or a list
+    # of unrelated page titles.
+    person_pair = _person_pair_for_queries(a, b) if op in {"and", "compare", "semand"} else None
+    if person_pair:
+        return _person_pair_graph(person_pair, a, b, lang)
+
     if op == "compare":   # 2語を並べ、共有(中央)と各固有(左右)を見る
         ra, sa = await _combine_web_search(a, lang, n=16)
         rb, sb = await _combine_web_search(b, lang, n=16)
@@ -2214,7 +2687,16 @@ def _history_ledger_body(q: str, domain: str, result: dict, request_body: dict) 
     brief = result.get("research_brief") or {}
     title = request_body.get("title") or dossier.get("title") or brief.get("title") or f"「{q}」の研究台帳"
     question = request_body.get("central_question") or dossier.get("center_question") or brief.get("center_question") or ""
-    subject_type = request_body.get("subject_type") or ("discipline" if q in {"哲学", "philosophy"} else "term")
+    subject_type = request_body.get("subject_type")
+    if not subject_type:
+        if result.get("subject_kind") == "person_pair":
+            # 二人の人物を比較する調査は単語台帳ではない。既存DBの
+            # enumを増やさず、研究課題として扱い、本文の dossier が型を持つ。
+            subject_type = "research_question"
+        elif result.get("subject_kind") == "person":
+            subject_type = "person"
+        else:
+            subject_type = "discipline" if q in {"哲学", "philosophy"} else "term"
     return {"title": title, "central_question": question, "subject": q,
             "subject_type": subject_type, "domain": domain,
             "description": result.get("note") or dossier.get("scope_note") or "",
@@ -2462,8 +2944,13 @@ async def create_ledger_from_translation_history(request: Request):
     q = str(body.get("query") or "").strip()
     if not q:
         raise HTTPException(400, "query required")
-    result = await api_translation_history(q, str(body.get("domain") or "philosophy"),
-                                           str(body.get("lang") or "ja"))
+    other_query = str(body.get("other_query") or "").strip()
+    if other_query:
+        result = await api_translation_history_pair(
+            q, other_query, str(body.get("domain") or "philosophy"), str(body.get("lang") or "ja"))
+    else:
+        result = await api_translation_history(q, str(body.get("domain") or "philosophy"),
+                                               str(body.get("lang") or "ja"))
     lid = _create_ledger_from_history(result, body)
     conn = get_conn()
     try:
