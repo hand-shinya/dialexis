@@ -43,6 +43,109 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+/* ---------- 共通のページ帰路（route return） ----------
+   台帳一覧・台帳詳細・研究プロジェクトは、意味Mapの外側にある別ページである。
+   そこへ移動する時に location.href だけを使うと、Mapの中心語・見方・Context・
+   Action面が失われる。ここでは「遷移先が元のページを知る」のではなく、ブラウザの
+   sessionStorage に一時的な復元記録を置く。記録は同一ブラウザ・短期・同一originに
+   限定し、研究データや外部情報は保存しない。
+
+   ルールは全ページ共通:
+     1. 内部ページへ移るリンクは routeHrefWithReturn() を通す。
+     2. 遷移先の [data-route-back] は記録された元hrefへ戻す。
+     3. originへ戻った時だけ保存済みViewStateを再構築し、成功後に記録を消費する。
+   これにより「戻る」と「初期化」を別画面ごとに実装しない。 */
+const DX_ROUTE_RETURN_PREFIX = "dialexis.route-return.v1.";
+const DX_ROUTE_RETURN_MAX_AGE = 1000 * 60 * 60 * 24 * 7;
+
+function _routeCurrentHref() {
+  return location.pathname + location.search;
+}
+function _routeReturnToken() {
+  try { return new URL(location.href).searchParams.get("return_token") || ""; }
+  catch (e) { return ""; }
+}
+function _routeSnapshot() {
+  let view = null;
+  try {
+    if (location.pathname === "/origin" && typeof currentViewState === "function") view = currentViewState();
+  } catch (e) { /* 初期ロード中はViewStateがまだ存在しない */ }
+  return { href: _routeCurrentHref(), view, savedAt: Date.now() };
+}
+function _routeSafeHref(href) {
+  try {
+    const u = new URL(String(href || ""), location.origin);
+    if (u.origin !== location.origin || !u.pathname.startsWith("/")) return "";
+    return u.pathname + u.search + u.hash;
+  } catch (e) { return ""; }
+}
+function routeHrefWithReturn(path) {
+  const target = _routeSafeHref(path);
+  if (!target) return path;
+  try {
+    const token = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+    sessionStorage.setItem(DX_ROUTE_RETURN_PREFIX + token, JSON.stringify(_routeSnapshot()));
+    const u = new URL(target, location.origin);
+    u.searchParams.set("return_token", token);
+    return u.pathname + u.search + u.hash;
+  } catch (e) {
+    // Private browsingやStorage拒否でも通常のリンクは有効にする。
+    return target;
+  }
+}
+function routeReturnRecord() {
+  const token = _routeReturnToken();
+  if (!token) return null;
+  try {
+    const raw = sessionStorage.getItem(DX_ROUTE_RETURN_PREFIX + token);
+    if (!raw) return null;
+    const rec = JSON.parse(raw);
+    if (!rec || !rec.savedAt || Date.now() - Number(rec.savedAt) > DX_ROUTE_RETURN_MAX_AGE) {
+      sessionStorage.removeItem(DX_ROUTE_RETURN_PREFIX + token);
+      return null;
+    }
+    const href = _routeSafeHref(rec.href);
+    if (!href) return null;
+    return { ...rec, href, token };
+  } catch (e) { return null; }
+}
+function routeReturnHref(fallback) {
+  const rec = routeReturnRecord();
+  return rec ? rec.href : (fallback || "/");
+}
+function routeReturnInit() {
+  const rec = routeReturnRecord();
+  document.querySelectorAll("[data-route-back]").forEach(a => {
+    const fallback = a.dataset.fallback || a.getAttribute("href") || "/";
+    let target = rec ? rec.href : fallback;
+    // 元のURLだけでは、origin側で復元記録を識別できない。帰路リンクにも
+    // 同じtokenを渡し、復元成功後にoriginが一度だけ消費する。
+    if (rec) {
+      try {
+        const u = new URL(target, location.origin);
+        u.searchParams.set("return_token", rec.token);
+        target = u.pathname + u.search + u.hash;
+      } catch (e) { /* fallback URL is still safer than a broken link */ }
+    }
+    a.setAttribute("href", target);
+    if (rec && a.dataset.returnLabel) a.textContent = a.dataset.returnLabel;
+    if (rec) a.classList.add("route-return-active");
+  });
+}
+function routeReturnConsume(token) {
+  const t = token || _routeReturnToken();
+  if (!t) return;
+  try { sessionStorage.removeItem(DX_ROUTE_RETURN_PREFIX + t); } catch (e) {}
+  // URLに期限切れのtokenを残さない。履歴を増やさず、復元後の再読込も通常のoriginにする。
+  try {
+    const u = new URL(location.href); u.searchParams.delete("return_token");
+    history.replaceState(history.state, document.title, u.pathname + u.search + u.hash);
+  } catch (e) {}
+}
+try { window.routeHrefWithReturn = routeHrefWithReturn; } catch (e) {}
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", routeReturnInit, { once: true });
+else routeReturnInit();
+
 // 外部情報源の応答が返らない時も、画面を「読み込み中」のまま固定しない。
 // 個別の呼び出し側で timeout を書かず、全てのAPI操作に同じ安全弁を掛ける。
 const API_TIMEOUT_MS = 20000;
@@ -352,7 +455,7 @@ async function deskInit() {
   const [list, ledgers] = await Promise.all([api("/api/projects"), api("/api/ledgers")]);
   $("project-list").innerHTML = list.length
     ? `<div class="card"><table class="plain">` + list.map(p => `<tr>
-        <td><a href="/project/${p.id}?lang=${LANG}"><b>${esc(p.title)}</b></a>
+        <td><a href="${esc(routeHrefWithReturn(`/project/${p.id}?lang=${LANG}`))}"><b>${esc(p.title)}</b></a>
             <div class="srcline">${esc(p.question || "")}</div></td>
         <td>${p.node_count} nodes</td>
         <td class="srcline">${esc(p.updated_at)}</td>
@@ -361,12 +464,12 @@ async function deskInit() {
     : `<p class="muted">${T.none}</p>`;
   $("ledger-list").innerHTML = ledgers.length
     ? `<div class="ledger-list">${ledgers.map(l => `<article class="ledger-row">
-        <div><a href="/ledger/${l.id}?lang=${LANG}"><b>${esc(l.title)}</b></a>
+        <div><a href="${esc(routeHrefWithReturn(`/ledger/${l.id}?lang=${LANG}`))}"><b>${esc(l.title)}</b></a>
           <div class="srcline">${esc(l.central_question || l.subject || "")}</div></div>
         <div class="ledger-metrics"><span>${l.entry_count} ${T.ledgerEntries}</span>
           <span>${l.project_count} ${T.ledgerProjects}</span><span>v${l.version}</span></div>
         <div><span class="badge">${esc(l.status)}</span>
-          <a class="small" href="/ledger/${l.id}?lang=${LANG}">${T.ledgerOpen}</a></div>
+          <a class="small" href="${esc(routeHrefWithReturn(`/ledger/${l.id}?lang=${LANG}`))}">${T.ledgerOpen}</a></div>
       </article>`).join("")}</div>`
     : `<p class="muted">${LANG === "ja" ? "台帳一覧はここに表示されます。" : "Your ledgers will appear here."}</p>`;
 }
@@ -377,7 +480,7 @@ async function ledgerCreate() {
   const r = await api("/api/ledgers", { method: "POST", body: {
     title, subject: $("nl-subject").value.trim(),
     central_question: $("nl-question").value.trim(), subject_type: "term" } });
-  location.href = `/ledger/${r.ledger.id}?lang=${LANG}`;
+  location.href = routeHrefWithReturn(`/ledger/${r.ledger.id}?lang=${LANG}`);
 }
 
 async function ledgerLinkProject(lid, pid, role) {
@@ -391,7 +494,7 @@ async function ledgerFork(lid) {
   const title = window.prompt(LANG === "ja" ? "分岐台帳の名前" : "Title for the fork", "");
   if (title === null) return;
   const r = await api(`/api/ledgers/${lid}/fork`, { method: "POST", body: { title } });
-  location.href = `/ledger/${r.ledger.id}?lang=${LANG}`;
+  location.href = routeHrefWithReturn(`/ledger/${r.ledger.id}?lang=${LANG}`);
 }
 
 async function ledgerAdoptEntry(lid, eid, pid) {
@@ -413,20 +516,51 @@ async function ledgerInit(lid) {
     const projectOptions = projects.map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join("");
     const entrySources = {};
     (d.entry_sources || []).forEach(x => (entrySources[x.entry_id] ||= []).push(x.source_id));
-    const entries = (d.entries || []).map(e => `<article class="ledger-entry">
+    const entries = (d.entries || []).map(e => {
+      const jpLabels = {
+        source: "原語・入力語", target: "訳語・対象語", languages: "言語",
+        author: "著者・発話者", work: "著作・資料", edition: "版・刊年",
+        translator: "翻訳者", locator: "標準ロケータ", original: "原文引用",
+        translated: "翻訳引用", preserved: "保存された意味", lost: "欠損・移動した意味",
+        added: "追加された意味"
+      };
+      const enLabels = {
+        source: "Source/input term", target: "Translation/target", languages: "Languages",
+        author: "Author/speaker", work: "Work/source", edition: "Edition/year",
+        translator: "Translator", locator: "Standard locator", original: "Original quote",
+        translated: "Translated quote", preserved: "Meaning preserved", lost: "Meaning lost/shifted",
+        added: "Meaning added"
+      };
+      const labels = jp ? jpLabels : enLabels;
+      const bibliography = _ledgerDl([
+        [labels.source, e.source_term], [labels.target, e.target_term],
+        [labels.languages, [e.source_language, e.target_language].filter(Boolean).join(" → ")],
+        [labels.author, e.author], [labels.work, e.work], [labels.edition, e.edition || e.year],
+        [labels.translator, e.translator], [labels.locator, e.locator]
+      ]);
+      const meanings = _ledgerDl([
+        [labels.preserved, e.preserved_meaning], [labels.lost, e.lost_meaning],
+        [labels.added, e.added_meaning]
+      ], "ledger-meanings");
+      const quotations = (e.original_quote || e.translated_quote)
+        ? `<div class="ledger-quotes">${e.original_quote ? `<p><b>${esc(labels.original)}</b></p><blockquote>${esc(e.original_quote)}</blockquote>` : ""}${e.translated_quote ? `<p><b>${esc(labels.translated)}</b></p><blockquote>${esc(e.translated_quote)}</blockquote>` : ""}</div>`
+        : "";
+      return `<article class="ledger-entry">
       <div class="ledger-entry-head"><span class="badge">${esc(e.kind)}</span>
         <b>${esc(e.title)}</b><span class="badge ${e.status === "confirmed" ? "conf-confirmed" : "conf-unverified"}">${esc(e.status)}</span></div>
       <p class="srcline">${esc(e.source_term || "")} ${e.target_term ? `→ ${esc(e.target_term)}` : ""}
         ${e.year ? ` · ${esc(e.year)}` : ""} ${e.locator ? ` · ${esc(e.locator)}` : ""}</p>
+      ${bibliography}${meanings}
       ${e.body ? `<p>${esc(e.body)}</p>` : ""}
-      ${e.original_quote ? `<blockquote>${esc(e.original_quote)}</blockquote>` : ""}
+      ${quotations}
       <details><summary>${jp ? "この記録をプロジェクトで使う" : "Use this entry in a project"}</summary>
         <div class="formrow"><select id="ledger-entry-project-${e.id}">${projectOptions || `<option value="">${T.ledgerNoProject}</option>`}</select>
           <button class="small" onclick="ledgerAdoptEntry(${lid}, ${e.id}, Number($('ledger-entry-project-${e.id}').value))">${T.ledgerLink}</button></div>
       </details>
       ${e.sources && e.sources.length ? `<p class="srcline">${e.sources.map(s => s.source_url ? `<a href="${esc(s.source_url)}" target="_blank">${esc(s.source_name || s.source_url)}</a>` : esc(s.source_name)).join(" · ")}</p>` : ""}
-    </article>`).join("");
-    const linked = (d.linked_projects || []).map(p => `<li><a href="/project/${p.id}?lang=${LANG}">${esc(p.title)}</a> · ${esc(p.role)} · v${p.pinned_version}</li>`).join("");
+    </article>`;
+    }).join("");
+    const linked = (d.linked_projects || []).map(p => `<li><a href="${esc(routeHrefWithReturn(`/project/${p.id}?lang=${LANG}`))}">${esc(p.title)}</a> · ${esc(p.role)} · v${p.pinned_version}</li>`).join("");
     box.innerHTML = `<div class="card ledger-head-card">
       <div class="th-status-line"><b>${esc(l.title)}</b><span class="badge">${esc(l.status)}</span><span class="badge">v${l.version}</span></div>
       <p class="muted">${esc(l.central_question || "")}</p>
@@ -448,7 +582,7 @@ async function deskCreate() {
   if (!title) return;
   const r = await api("/api/projects", { method: "POST",
     body: { title, question: $("np-question").value.trim() } });
-  location.href = `/project/${r.id}?lang=${LANG}`;
+  location.href = routeHrefWithReturn(`/project/${r.id}?lang=${LANG}`);
 }
 
 async function deskDelete(id) {
@@ -528,7 +662,7 @@ function renderProjectLedgers(g, allLedgers) {
   const options = (allLedgers || []).filter(l => !linkedIds.has(Number(l.id)))
     .map(l => `<option value="${l.id}">${esc(l.title)}</option>`).join("");
   const rows = linked.length ? linked.map(l => `<tr>
-    <td><a href="/ledger/${l.id}?lang=${LANG}"><b>${esc(l.title)}</b></a></td>
+    <td><a href="${esc(routeHrefWithReturn(`/ledger/${l.id}?lang=${LANG}`))}"><b>${esc(l.title)}</b></a></td>
     <td>${esc(l.role)}</td><td>v${l.pinned_version} / ${jp ? "現在" : "current"} v${l.version}</td>
     <td><button class="small secondary" onclick="projectUnlinkLedger(${PROJ}, ${l.id})">${jp ? "接続解除" : "Unlink"}</button></td>
   </tr>`).join("") : `<tr><td class="muted" colspan="4">${jp ? "まだ台帳を参照していません。" : "No ledgers linked yet."}</td></tr>`;
@@ -1049,6 +1183,32 @@ function settingsClear() {
 
 /* ---------- 原語による探求 (origin) — 言葉が先にありきの階層 ---------- */
 function originInit(q) {
+  const returnRecord = routeReturnRecord();
+  // 後編の長文入口は今は解析しないが、注目語を前編の正典探索へ接続する。
+  // 入力単位・著者・著作・版・翻訳者・標準ロケータの欄は、将来同じ研究台帳の
+  // text/excerpt targetへ接続するためのUI契約として先に存在させる。
+  const longTextToTerm = $("long-text-to-term");
+  if (longTextToTerm && !longTextToTerm._bound) {
+    longTextToTerm._bound = 1;
+    longTextToTerm.addEventListener("click", () => {
+      const anchor = $("long-text-anchor");
+      const input = document.querySelector('.searchbox input[name="q"]');
+      const term = anchor && anchor.value.trim();
+      const note = $("long-text-entry-note");
+      if (!term) {
+        if (note) note.textContent = LANG === "ja"
+          ? "まず文章の中で前編から調べる注目語を1つ入力してください。文章全体は後編で同じ台帳へ接続します。"
+          : "Enter one term from the text to examine in Part I; the full text will connect to the same ledger in Part II.";
+        if (anchor) anchor.focus();
+        return;
+      }
+      if (input) input.value = term;
+      if (note) note.textContent = LANG === "ja"
+        ? `「${term}」を前編の入力欄へ接続しました。検索を実行すると、この語の意味Mapから続けられます。`
+        : `“${term}” is connected to the Part I input. Submit the search to continue from its meaning Map.`;
+      if (input) input.focus();
+    });
+  }
   const cb = $("origin-newtab");
   if (cb) {
     cb.checked = localStorage.getItem("origin_newtab") === "1";
@@ -1087,7 +1247,7 @@ function originInit(q) {
     window._dxResizeBound = 1;
     window.addEventListener("resize", () => surfSyncLayout());
   }
-  if (q) { NAV.stack = [{ q, lens: "all", focus: null, context: null, panel: null, combine: null }]; NAV.idx = 0; navUpdate(); }   // 初期ViewState
+  if (q) { NAV.stack = [{ q, lens: "all", focus: null, context: null, panel: null, panel_position: null, combine: null }]; NAV.idx = 0; navUpdate(); }   // 初期ViewState
   const res = $("origin-results");
   if (res && !res._dimBound) {
     res._dimBound = 1;
@@ -1111,8 +1271,17 @@ function originInit(q) {
       try { await originExplore(q, { tok: t, initial: true }); }
       catch (e) { console.error("initial explore", e); }
       finally {
+        // 台帳・プロジェクトから戻った場合、初期探索を完了してから元の
+        // Context/Action/見方/位置を再構築する。先に履歴を初期化しない。
+        if (returnRecord && returnRecord.view && returnRecord.view.q) {
+          NAV.restoring = true;
+          try { await restoreViewState(returnRecord.view); }
+          catch (e) { console.error("route return restore", e); }
+          finally { NAV.restoring = false; }
+        }
         NAV.txn = false; gBusy(false);
         NAV.stack = [currentViewState()]; NAV.idx = 0; navUpdate();   // 履歴commitは1回だけ
+        if (returnRecord) routeReturnConsume(returnRecord.token);
       }
     })();
   }
@@ -1126,10 +1295,11 @@ function navSame(a, b) {
   return a.q === b.q && a.lens === b.lens && a.focus === b.focus
     && JSON.stringify(a.context || null) === JSON.stringify(b.context || null)
     && JSON.stringify(a.panel || null) === JSON.stringify(b.panel || null)
+    && JSON.stringify(a.panel_position || null) === JSON.stringify(b.panel_position || null)
     && JSON.stringify(a.combine || null) === JSON.stringify(b.combine || null);
 }
 function navCommit(s) {   // 確定した ViewState を履歴に積む（復元中・トランザクション中は積まない）
-  if (typeof s === "string") s = { q: s, lens: "all", focus: null, context: null, panel: null, combine: null };
+  if (typeof s === "string") s = { q: s, lens: "all", focus: null, context: null, panel: null, panel_position: null, combine: null };
   if (NAV.restoring || NAV.txn) return;
   if (!s || !s.q) return;
   if (navSame(NAV.stack[NAV.idx], s)) return;
@@ -1141,6 +1311,34 @@ function navUpdate() {
   if (b) b.disabled = NAV.idx <= 0;
   if (f) f.disabled = NAV.idx >= NAV.stack.length - 1;
 }
+// 履歴・ページ帰路で共用するViewState復元本体。画面ごとに「戻る処理」を複製しない。
+async function restoreViewState(s) {
+  if (!s || !s.q) return false;
+  surfDestroy("menu");
+  surfClearAction(false);
+  MENUCTX = null; _panelFromMenu = false;
+  surfDestroy("context");
+  if (!G || G.rootQ !== s.q) {
+    const ok = await originExplore(s.q, { nav: true, noContext: true });
+    if (!ok && (!G || G.rootQ !== s.q)) return false;
+  }
+  if (s.combine) { COMBINE_CTX = null; await gCombineRun(s.combine.a, s.combine.b, s.combine.op); }
+  else { COMBINE_CTX = null; await applyLensBuild(s.lens || "all"); }
+  if (s.focus) {
+    const idx = (G.nodes || []).findIndex(n => n.kind === "domain" && (n.id === s.focus || n.label === s.focus));
+    if (idx >= 0) gFocusSubtree(idx, { nav: true });
+  }
+  if (s.context) await gPanorama({ term: s.context.term });
+  if (s.panel && ACTIONS[s.panel.action]) {
+    PANEL_CTX = { action: s.panel.action, term: s.panel.term };
+    await ACTIONS[s.panel.action].run(normTarget(s.panel.term), {});
+    if (s.panel_position && surfEl("action")) {
+      SURF.position.action = { x: Number(s.panel_position.x), y: Number(s.panel_position.y) };
+      surfPlace("action");
+    }
+  }
+  return true;
+}
 async function navGo(d) {
   const i = NAV.idx + d;
   if (i < 0 || i >= NAV.stack.length) return;
@@ -1149,20 +1347,7 @@ async function navGo(d) {
   const s = NAV.stack[i];
   NAV.restoring = true; NAV.txn = true;
   try {
-    surfDestroy("menu"); surfDestroy("action"); PANEL_CTX = null;            // 一旦Menu/Actionを閉じる
-    surfDestroy("context");                                                 // Contextも一旦閉じる（stateが言えば開き直す）
-    if (!G || G.rootQ !== s.q) { await originExplore(s.q, { nav: true, noContext: true }); }   // 中心語を復元
-    if (s.combine) { COMBINE_CTX = null; await gCombineRun(s.combine.a, s.combine.b, s.combine.op); }  // 組合せ結果を復元
-    else { COMBINE_CTX = null; await applyLensBuild(s.lens || "all"); }      // 見方を復元（focusも一旦解除）
-    if (s.focus) {                                                          // 分岐focusを復元（stable ID基準・表示labelでない）
-      const idx = (G.nodes || []).findIndex(n => n.kind === "domain" && (n.id === s.focus || n.label === s.focus));
-      if (idx >= 0) gFocusSubtree(idx, { nav: true });
-    }
-    if (s.context) await gPanorama({ term: s.context.term });               // Contextを復元（Mapと一緒に戻る/進む）
-    if (s.panel && ACTIONS[s.panel.action]) {                               // Actionを復元（開き直す）
-      PANEL_CTX = { action: s.panel.action, term: s.panel.term };
-      await ACTIONS[s.panel.action].run(normTarget(s.panel.term), {});
-    }
+    await restoreViewState(s);
   } catch (e) {                                  // 復元中の失敗＝indexをprevへ巻き戻す（履歴カーソルの真偽を保つ・A2）
     console.error("navGo restore rolled back", e);
     NAV.idx = prevIdx; navUpdate();
@@ -1252,6 +1437,7 @@ async function originExplore(q, opts) {
   originShellShow(term);
   graphThin(null);
   gApplyGraph(res.data);
+  if (opts.initial) originRevealMap();
   if (thinResult) {
     // root-onlyでも主語・カード・履歴は新語へ進める。ただし、情報量の少ない
     // Mapを豊富な地図のように見せず、薄い表示と常設の次入口を残す。
@@ -1475,7 +1661,16 @@ let _dispatchSeq = 0;     // dispatch の単調増加連番（同じ操作の反
    個別の語・個別Actionごとの座標指定は禁止（配置は surfPlace だけが行う）。 */
 const SURFACE_ID = { context: "dx-context", menu: "graph-menu", action: "graph-panel" };
 const SURF_MARGIN = 8;
-const SURF = { z: 200, anchor: { menu: null, action: null }, menuCloser: null };
+const SURF = {
+  z: 200,
+  anchor: { menu: null, action: null },
+  position: { menu: null, action: null },
+  menuCloser: null,
+  // Action→Actionの置換を積み重ねず、直前の結果面を保持する。×で閉じたら
+  // 親面へ戻るため、どのActionから別Actionへ進んでも同じ帰路になる。
+  actionHistory: [],
+  activeActionCtx: null,
+};
 
 function surfEl(kind) { return document.getElementById(SURFACE_ID[kind]); }
 function surfRect(kind) {
@@ -1497,6 +1692,43 @@ function surfAnchorDefault() {
   const av = surfAvail();
   return { x: (av.left + av.right) / 2, y: av.top + Math.min(120, Math.max(40, (av.bottom - av.top) / 4)) };
 }
+function surfClampPosition(kind, x, y) {
+  const el = surfEl(kind), av = surfAvail();
+  if (!el) return { x, y };
+  const w = Math.min(el.offsetWidth || 300, Math.max(200, av.right - av.left - SURF_MARGIN * 2));
+  const h = Math.min(el.offsetHeight || 200, Math.max(160, av.bottom - av.top - SURF_MARGIN * 2));
+  return {
+    x: Math.round(Math.max(av.left + SURF_MARGIN, Math.min(Number(x) || 0, av.right - w - SURF_MARGIN))),
+    y: Math.round(Math.max(av.top + SURF_MARGIN, Math.min(Number(y) || 0, av.bottom - h - SURF_MARGIN))),
+  };
+}
+// Menuのタイトル／Actionのヘッダ全体をドラッグ面にする。左上の小さな把手を
+// 探す必要はなく、ボタン以外の広いヘッダ領域を押せば移動できる。
+function surfMakeDraggable(kind, handle) {
+  if (!handle || handle.dataset.dxDragBound === "1") return;
+  handle.dataset.dxDragBound = "1";
+  handle.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0 || ev.target.closest("button,a,input,select,textarea,summary")) return;
+    const el = surfEl(kind); if (!el) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const r = el.getBoundingClientRect();
+    const sx = ev.clientX, sy = ev.clientY, ox = r.left, oy = r.top;
+    const move = (e) => {
+      if (!surfEl(kind)) return;
+      const pos = surfClampPosition(kind, ox + e.clientX - sx, oy + e.clientY - sy);
+      SURF.position[kind] = pos;
+      el.style.left = pos.x + "px"; el.style.top = pos.y + "px";
+    };
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
+  });
+}
 // 面の配置。Context は右ドック（CSS）。Menu/Action は利用可能領域内へ収める。
 function surfPlace(kind) {
   const el = surfEl(kind); if (!el || kind === "context") return;
@@ -1513,6 +1745,14 @@ function surfPlace(kind) {
   el.style.overflowX = "hidden";
   const w = Math.min(el.offsetWidth || 300, availW);
   el.style.width = w + "px";
+  const remembered = SURF.position[kind];
+  if (remembered && Number.isFinite(Number(remembered.x)) && Number.isFinite(Number(remembered.y))) {
+    const pos = surfClampPosition(kind, remembered.x, remembered.y);
+    SURF.position[kind] = pos;
+    el.style.left = pos.x + "px";
+    el.style.top = pos.y + "px";
+    return;
+  }
   const a = SURF.anchor[kind] || surfAnchorDefault();
   let x = a.x + 20;
   if (x + w > av.right - SURF_MARGIN) x = a.x - w - 20;
@@ -1545,16 +1785,71 @@ function surfDestroy(kind) {
   if (kind === "context") { CONTEXT_CTX = null; surfSyncLayout(); }
   return true;
 }
-// Action を閉じる＝「Action無し」も1つの確定状態（A2）。PANEL_CTXを消して1回だけcommitする。
+function surfClearAction(commit) {
+  const had = !!surfEl("action") || !!PANEL_CTX || SURF.actionHistory.length > 0;
+  const el = surfEl("action"); if (el) el.remove();
+  SURF.actionHistory = [];
+  SURF.activeActionCtx = null;
+  SURF.position.action = null;
+  if (PANEL_CTX) {
+    PANEL_CTX = null;
+    if (commit && !NAV.txn && !NAV.restoring) navCommit(currentViewState());
+  }
+  return had;
+}
+function surfArchiveCurrentAction() {
+  const el = surfEl("action");
+  if (!el) return false;
+  if (SURF.activeActionCtx) {
+    SURF.actionHistory.push({
+      el, ctx: { ...SURF.activeActionCtx },
+      position: SURF.position.action ? { ...SURF.position.action } : null,
+    });
+  }
+  el.remove();
+  return true;
+}
+function surfRestoreAction() {
+  const rec = SURF.actionHistory.pop();
+  if (!rec || !rec.el) return false;
+  rec.el.id = SURFACE_ID.action;
+  document.body.appendChild(rec.el);
+  rec.el.style.zIndex = String(++SURF.z);
+  PANEL_CTX = { ...rec.ctx };
+  SURF.activeActionCtx = { ...rec.ctx };
+  SURF.position.action = rec.position ? { ...rec.position } : null;
+  surfPlace("action");
+  return true;
+}
+// Actionを閉じる＝「Action無し」も1つの確定状態（A2）。親Actionがあれば復元し、
+// 最後の面まで閉じた時だけPANEL_CTXを消して1回だけcommitする。
 function surfCloseAction(commit) {
-  const had = surfDestroy("action");
-  if (had && PANEL_CTX) { PANEL_CTX = null; if (commit && !NAV.txn && !NAV.restoring) navCommit(currentViewState()); }
+  const el = surfEl("action");
+  const had = !!el;
+  if (!el) return false;
+  el.remove();
+  if (surfRestoreAction()) {
+    if (commit && !NAV.txn && !NAV.restoring) navCommit(currentViewState());
+    return true;
+  }
+  SURF.activeActionCtx = null;
+  SURF.position.action = null;
+  if (PANEL_CTX) {
+    PANEL_CTX = null;
+    if (commit && !NAV.txn && !NAV.restoring) navCommit(currentViewState());
+  }
   return had;
 }
 function surfCreate(kind, el, anchor) {
-  if (kind === "menu") { surfCloseAction(true); surfDestroy("menu"); }              // Menu/Action は排他
-  else if (kind === "action") { surfDestroy("menu"); surfDestroy("action"); }       // 同種は積層しない
-  else if (kind === "context") { surfDestroy("menu"); surfCloseAction(true); surfDestroy("context"); }
+  if (kind === "menu") { surfClearAction(false); surfDestroy("menu"); }              // Menu/Action は排他
+  else if (kind === "action") {
+    surfDestroy("menu");
+    // 既存のActionを消して置換する時だけ親面として保存する。直接DOMを
+    // remove()された古い面はactiveActionCtxが残っていても復元対象にしない。
+    if (surfEl("action")) surfArchiveCurrentAction();
+    SURF.position.action = null;
+  }       // 同種は積層しない（ただし閉じる時の帰路は保持）
+  else if (kind === "context") { surfDestroy("menu"); surfClearAction(false); surfDestroy("context"); }
   el.id = SURFACE_ID[kind];
   el.classList.add("dx-surface");
   document.body.appendChild(el);          // DOM順で常に最後＝後から開いた面が古い面の背後に出ない
@@ -1722,7 +2017,7 @@ async function dispatchAction(actionId, target, currentState, surfaceContext) {
   const prevPanel = PANEL_CTX, prevCombine = COMBINE_CTX, prevContext = CONTEXT_CTX;   // 失敗時に元へ戻す（A2）
   if (eff === "action") { PANEL_CTX = a.transient ? null : { action: actionId, term: t.term }; }   // run が surfCreate で置換する
   else if (eff === "store" || eff === "newpage") { /* 現在の画面の面も履歴も変えない */ }
-  else { PANEL_CTX = null; surfDestroy("action"); }   // context / center / map は Action を確実に閉じる（面と状態を一致させる）
+  else { PANEL_CTX = null; surfClearAction(false); }   // context / center / map は Action とその親履歴を確実に閉じる
   NAV.txn = true;
   let ok = true, runResult;
   try { runResult = await a.run(t, ctx); }
@@ -1763,6 +2058,9 @@ function currentViewState() {
     focus: (G && (G.focusId || G.focusLabel)) || null,   // stable ID優先（表示labelはfallback・A2）
     context: CONTEXT_CTX ? { term: CONTEXT_CTX.term } : null,
     panel: PANEL_CTX ? { action: PANEL_CTX.action, term: PANEL_CTX.term } : null,
+    // Action面の移動も「画面状態」の一部として帰路に保存する。panel本体へ
+    // 混ぜないため、操作同値性（同じAction/target）と位置復元を分離する。
+    panel_position: SURF.position.action ? { x: SURF.position.action.x, y: SURF.position.action.y } : null,
     combine: COMBINE_CTX ? { a: COMBINE_CTX.a, b: COMBINE_CTX.b, op: COMBINE_CTX.op } : null,
   };
 }
@@ -2049,6 +2347,17 @@ async function gCounter(claim) {
 function originShellShow(q) {
   const sh = $("origin-shell"); if (sh) sh.style.display = "block";
   renderTopMenu({ query: q });
+}
+// Search starts below the Part I boundary declaration and the Part II entry.
+// Once the graph itself exists, reveal that working surface so a real pointer
+// can reach it without making the user hunt/scroll before the next action.
+function originRevealMap() {
+  const wrap = $("origin-graph-wrap");
+  if (!wrap || getComputedStyle(wrap).display === "none") return;
+  const r = wrap.getBoundingClientRect();
+  if (r.top < 0 || r.bottom > window.innerHeight) {
+    wrap.scrollIntoView({ behavior: "auto", block: "center" });
+  }
 }
 // グラフ本体と「薄い/失敗」代替表示の切替。msg=null でグラフ表示、msg文字列で代替表示（メニューは常設のまま）。
 function graphThin(msg, term) {
@@ -2405,6 +2714,12 @@ function _thField(label, value) {
   if (value == null || value === "") return "";
   return `<dt>${esc(label)}</dt><dd>${esc(String(value))}</dd>`;
 }
+
+function _ledgerDl(fields, cls = "ledger-bibliography") {
+  const rows = (fields || []).filter(x => x && x[1] != null && String(x[1]) !== "")
+    .map(x => `<dt>${esc(x[0])}</dt><dd>${esc(String(x[1]))}</dd>`).join("");
+  return rows ? `<dl class="${cls}">${rows}</dl>` : "";
+}
 function _thSourceLine(ids, sources) {
   const links = _thSources(ids, sources);
   return links ? `<p class="th-source-line"><span>出所：</span>${links}</p>` : "";
@@ -2427,18 +2742,23 @@ function _thCandidateCards(sources, levels) {
 function _thLedgerActions(d) {
   if (!d || !d.query) return "";
   const jp = LANG === "ja";
-  const existing = (d.saved_ledgers || []).map(l => `<a class="th-existing-ledger" href="/ledger/${l.id}?lang=${LANG}">${esc(l.title)} · v${l.version} · ${l.entry_count} ${jp ? "記録" : "entries"}</a>`).join("");
+  const existing = (d.saved_ledgers || []).map(l => `<a class="th-existing-ledger" href="${esc(routeHrefWithReturn(`/ledger/${l.id}?lang=${LANG}`))}">${esc(l.title)} · v${l.version} · ${l.entry_count} ${jp ? "記録" : "entries"}</a>`).join("");
   return `<div class="th-ledger-actions"><button type="button" class="th-save-ledger" data-query="${esc(d.query)}" data-domain="${esc(d.domain || "philosophy")}">${jp ? "この結果を新しい研究台帳として保存" : "Save this result as a new research ledger"}</button>
-    <a class="small" href="/desk?lang=${LANG}">${jp ? "台帳一覧を見る" : "View ledgers"}</a>${existing ? `<span class="th-existing-label">${jp ? "既存の台帳：" : "Existing ledgers: "}${existing}</span>` : ""}</div>`;
+    <a class="small" href="${esc(routeHrefWithReturn(`/desk?lang=${LANG}`))}">${jp ? "台帳一覧を見る" : "View ledgers"}</a>${existing ? `<span class="th-existing-label">${jp ? "既存の台帳：" : "Existing ledgers: "}${existing}</span>` : ""}</div>`;
 }
 async function _thSaveLedger(d, button) {
   if (!d || !d.query || !button) return;
+  if (button.dataset.savedLedgerId) {
+    location.href = routeHrefWithReturn(`/ledger/${button.dataset.savedLedgerId}?lang=${LANG}`);
+    return;
+  }
   button.disabled = true;
   try {
     const saved = await api("/api/ledgers/from-translation-history", { method: "POST", timeout: 60000, body: {
       query: d.query, domain: d.domain || "philosophy", lang: LANG } });
+    button.dataset.savedLedgerId = String(saved.id);
+    button.disabled = false;
     button.textContent = LANG === "ja" ? "保存しました。台帳を開く" : "Saved. Open ledger";
-    button.onclick = () => { location.href = `/ledger/${saved.id}?lang=${LANG}`; };
   } catch (e) {
     button.disabled = false;
       button.textContent = LANG === "ja" ? "保存処理をもう一度実行" : "Retry saving this ledger";
@@ -2448,7 +2768,13 @@ async function _thSaveLedger(d, button) {
 function _thBindLedgerActions(container, d) {
   if (!container) return;
   container.querySelectorAll(".th-save-ledger").forEach(button => {
-    button.addEventListener("click", () => _thSaveLedger(d, button));
+    button.addEventListener("click", () => {
+      if (button.dataset.savedLedgerId) {
+        location.href = routeHrefWithReturn(`/ledger/${button.dataset.savedLedgerId}?lang=${LANG}`);
+        return;
+      }
+      _thSaveLedger(d, button);
+    });
   });
 }
 function _thResponseHtml(d) {
@@ -2807,13 +3133,7 @@ function _gmFill(m, title, items) {
   m.innerHTML = `<div class="gm-title" title="ドラッグで移動できます">⠿ ${esc(title)}</div>` + items.map((it, i) =>
     `<button type="button" class="gm-item${it.soon ? " gm-soon" : ""}" data-i="${i}">${esc(it.t)}${it.soon ? "（次段）" : ""}</button>`).join("");
   const tt = m.querySelector(".gm-title");
-  tt.addEventListener("pointerdown", (ev) => {
-    ev.stopPropagation(); ev.preventDefault();
-    const sx = ev.clientX, sy = ev.clientY, ox = parseFloat(m.style.left), oy = parseFloat(m.style.top);
-    const mv = (e) => { m.style.left = (ox + e.clientX - sx) + "px"; m.style.top = (oy + e.clientY - sy) + "px"; };
-    const up = () => { document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up); };
-    document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up);
-  });
+  surfMakeDraggable("menu", tt);
 }
 // ホバー追従: メニューを出したまま別factorにホバーしたら、そのノードへ内容(タイトル+項目)を差し替える
 function gMenuRetarget(n) {
@@ -2877,6 +3197,8 @@ function gPanel(title, bodyHtml, term) {
     <div class="gp-body">${bodyHtml}</div>${foot}`;
   // Action面の生成・置換・配置・z は surface manager が一元決定する（Context は破壊しない）
   surfCreate("action", p, SURF.anchor.menu || ((G && G.lastX != null) ? { x: G.lastX, y: G.lastY } : null));
+  SURF.activeActionCtx = PANEL_CTX ? { ...PANEL_CTX } : null;
+  surfMakeDraggable("action", p.querySelector(".gp-head"));
   const closePanel = () => surfCloseAction(true);
   p.querySelector(".gp-x").addEventListener("click", closePanel);
   const bb = p.querySelector(".gp-back");
@@ -3916,6 +4238,8 @@ try {
                z: { context: surfEl("context") && +surfEl("context").style.zIndex,
                     menu: surfEl("menu") && +surfEl("menu").style.zIndex,
                     action: surfEl("action") && +surfEl("action").style.zIndex },
+               position: { menu: SURF.position.menu ? { ...SURF.position.menu } : null,
+                           action: SURF.position.action ? { ...SURF.position.action } : null },
                rects: { context: r("context"), menu: r("menu"), action: r("action") },
                avail: surfAvail() };
     },

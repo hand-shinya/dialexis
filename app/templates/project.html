@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ project.title }}{% endblock %}
 {% block content %}
+<p><a data-route-back data-fallback="/desk?lang={{ lang }}" data-return-label="← 元の画面へ戻る" href="/desk?lang={{ lang }}">← {{ '研究デスクへ' if lang=='ja' else 'Back to research desk' }}</a></p>
 <h1>{{ project.title }}</h1>
 {% if project.question %}<p class="muted">Q: {{ project.question }}</p>{% endif %}
 <p>

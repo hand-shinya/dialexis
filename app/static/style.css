@@ -36,6 +36,18 @@ h2 { font-size: 1.15rem; border-left: 4px solid var(--accent); padding-left: .6r
 .qdoor:hover, .qdoor:focus { background: var(--accent2); color: var(--paper); }
 .qdoors-hint { margin: .8rem 0 0; }
 @media (prefers-reduced-motion: reduce) { .qdoor { transition: none; } }
+.scope-boundary { border-left: 4px solid var(--accent2); background: #f4f8fa; }
+.scope-boundary h2 { margin-top: 0; }
+.scope-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+.scope-columns > div { border: 1px solid var(--line); border-radius: 6px; padding: .55rem .7rem; background: var(--card); }
+.scope-columns p { margin: .2rem 0 0; font-size: .88rem; }
+.long-text-entry { border-left: 4px solid var(--accent); }
+.long-text-entry summary { cursor: pointer; font-family: system-ui, sans-serif; font-size: .88rem; }
+.long-text-entry textarea { margin: .35rem 0; resize: vertical; }
+.long-text-entry .two-col { gap: .5rem; margin: .45rem 0; }
+.long-text-entry .formrow label { min-width: 5.5rem; }
+.route-return-active { color: var(--accent2); font-weight: 600; }
+@media (max-width: 720px) { .scope-columns { grid-template-columns: 1fr; } }
 input, select, textarea { font: inherit; padding: .5rem .7rem; border: 1px solid var(--line);
   border-radius: 4px; background: var(--card); width: 100%; }
 .formrow { display: flex; gap: .5rem; margin: .5rem 0; }
@@ -249,7 +261,7 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 #graph-menu { position: fixed; z-index: 50; width: 300px; box-sizing: border-box; background: var(--card);
   border: 1px solid var(--ink); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.18);
   font-family: system-ui, sans-serif; overflow: hidden; }
-.gm-title { font-size: .78rem; color: var(--paper); background: var(--ink); padding: .45rem .7rem; cursor: move; user-select: none; }
+.gm-title { font-size: .78rem; color: var(--paper); background: var(--ink); padding: .65rem .85rem; cursor: move; user-select: none; touch-action: none; }
 #graph-menu { box-shadow: 0 6px 24px rgba(0,0,0,.28); }
 .gm-item { display: block; width: 100%; text-align: left; padding: .5rem .7rem; font-size: .86rem;
   font-family: system-ui, sans-serif; cursor: pointer; border: 0; border-top: 1px solid var(--line);
@@ -262,8 +274,9 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
   width: min(680px, 92vw); max-height: 80vh; overflow: auto; box-sizing: border-box; background: var(--card);
   border: 1px solid var(--ink); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
 .gp-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: .6rem .9rem; border-bottom: 1px solid var(--line); font-family: system-ui, sans-serif;
-  position: sticky; top: 0; background: var(--card); }
+  padding: .75rem 1rem; border-bottom: 1px solid var(--line); font-family: system-ui, sans-serif;
+  position: sticky; top: 0; background: var(--card); cursor: move; touch-action: none; user-select: none; }
+.gp-head button, .gp-head a, .gp-head input, .gp-head select { cursor: pointer; user-select: auto; }
 .gp-x { background: none; color: var(--muted); font-size: 1.3rem; padding: 0 .3rem; }
 .gp-body { padding: .8rem .9rem 1.1rem; }
 
@@ -338,6 +351,12 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .ledger-entry-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .ledger-entry-head b { overflow-wrap: anywhere; }
 .ledger-entry blockquote { margin: .45rem 0; padding: .35rem .55rem; border-left: 3px solid var(--accent); background: #faf7ee; white-space: pre-wrap; }
+.ledger-bibliography, .ledger-meanings { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .18rem .55rem; margin: .5rem 0; padding: .45rem .55rem; border-left: 3px solid var(--accent2); background: #f7fafb; }
+.ledger-meanings { border-left-color: var(--warn); background: #fffaf2; }
+.ledger-bibliography dt, .ledger-meanings dt { color: var(--muted); font-family: system-ui, sans-serif; font-size: .72rem; }
+.ledger-bibliography dd, .ledger-meanings dd { margin: 0; min-width: 0; font-size: .8rem; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.ledger-quotes { margin: .5rem 0; }
+.ledger-quotes p { margin: .35rem 0 .1rem; font-family: system-ui, sans-serif; font-size: .75rem; color: var(--muted); }
 .th-ledger-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; margin: .65rem 0; padding: .5rem .6rem; border: 1px solid var(--line); border-radius: 7px; background: #f7f3e8; }
 .th-save-ledger { border: 1px solid var(--accent); border-radius: 999px; padding: .35rem .7rem; background: var(--accent); color: #fff; cursor: pointer; }
 .th-save-ledger:disabled { opacity: .55; cursor: wait; }

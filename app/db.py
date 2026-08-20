@@ -34,8 +34,11 @@ VOICES = ("author", "commentator", "self")
 # user's arguments and interpretations).  These vocabularies are deliberately
 # kept separate from NODE_TYPES/CONFIDENCE: a ledger record can be a candidate
 # translation without becoming a confirmed project claim.
+# A ledger may begin with a word, but a later research pass can attach a
+# sentence/quotation/excerpt without creating a second, unrelated workspace.
+# These are target types, not claims of evidence or confirmation.
 LEDGER_SUBJECT_TYPES = ("term", "concept", "discipline", "person", "work",
-                        "translation", "research_question")
+                        "translation", "research_question", "text", "excerpt")
 LEDGER_STATUSES = ("draft", "active", "reviewed", "archived")
 LEDGER_ENTRY_KINDS = ("term", "edition", "translation", "source_text",
                       "reception", "claim", "interpretation", "open_question",

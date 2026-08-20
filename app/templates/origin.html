@@ -3,6 +3,46 @@
 {% block content %}
 <h1>{{ t.origin_title }}</h1>
 <p class="muted">{{ t.origin_lede }}</p>
+<section class="card scope-boundary" id="scope-boundary">
+  <h2>{{ '前編の境界宣言' if lang=='ja' else 'Boundary declaration for Part I' }}</h2>
+  {% if lang=='ja' %}
+  <p><b>これは人類の知を網羅する装置ではありません。</b>自動抽出は証拠ではなく候補です。グラフは真理の地図ではなく、出典へ進むための探索レンズです。</p>
+  <div class="scope-columns">
+    <div><b>前編：現在の中心</b><p>語・短い句・翻訳・原語・受容史・出典・研究台帳。候補／証拠／解釈／人間の判断を分けて扱います。</p></div>
+    <div><b>後編：接続だけ先に設計</b><p>長文・原典全文・版比較・用例・翻訳アラインメント・論証再構成。今は文章を入力単位として受け止める入口だけを用意します。</p></div>
+  </div>
+  <p class="srcline">前編の目的は、検索結果を答えに見せることではなく、翻訳・検索で失われる差異を、出典と反証可能性を保った研究過程へ変換することです。</p>
+  {% else %}
+  <p><b>This is not a device that exhaustively maps human knowledge.</b> Automatic extraction is a candidate, not evidence. The graph is an exploration lens, not a map of truth.</p>
+  <div class="scope-columns">
+    <div><b>Part I: current scope</b><p>Terms, short phrases, translations, original forms, reception, sources and research ledgers—with candidates, evidence, interpretation and human judgment kept distinct.</p></div>
+    <div><b>Part II: connection designed now</b><p>Long text, full originals, edition comparison, usage, translation alignment and argument reconstruction. For now, only the text-entry boundary is prepared.</p></div>
+  </div>
+  <p class="srcline">Part I converts differences lost by translation and search into a research process that preserves sources and falsifiability.</p>
+  {% endif %}
+</section>
+<details class="card long-text-entry" id="long-text-entry">
+  <summary>{{ '文章・引用を研究台帳へ接続する入口（後編準備）' if lang=='ja' else 'Connect a sentence or quotation to a research ledger (Part II preparation)' }}</summary>
+  {% if lang=='ja' %}
+  <p class="muted">単語だけを入力単位に固定しません。本文解析は後編で実装しますが、文・段落・引用を同じ研究台帳へ接続できるよう、入力単位と出典項目を先に定義します。</p>
+  <div class="formrow"><label class="srcline" for="long-text-unit">入力単位</label><select id="long-text-unit"><option value="sentence">文</option><option value="paragraph">段落</option><option value="quotation">引用</option><option value="text">まとまった文章</option></select></div>
+  <textarea id="long-text-input" rows="5" placeholder="理解したい文・段落・引用を貼り付けます（現在はこの画面内の設計確認用）"></textarea>
+  <div class="formrow"><input id="long-text-anchor" placeholder="前編で先に調べる注目語（任意）"><button type="button" id="long-text-to-term">注目語を前編の入力欄へ接続</button></div>
+  <div class="two-col"><input id="long-text-author" placeholder="著者（任意）"><input id="long-text-work" placeholder="著作・資料名（任意）"></div>
+  <div class="two-col"><input id="long-text-edition" placeholder="版・刊年（任意）"><input id="long-text-translator" placeholder="翻訳者（任意）"></div>
+  <input id="long-text-locator" placeholder="標準ロケータ（頁・節・行・Stephanus/Bekker等）">
+  <p id="long-text-entry-note" class="srcline">文章そのものの解析・保存・翻訳アラインメントは後編で実装します。注目語を接続すると、現在の前編の語探索へ進めます。</p>
+  {% else %}
+  <p class="muted">The input unit is not restricted to a single word. Full text analysis is Part II; this entry defines the future connection of sentences, paragraphs and quotations to the same ledger.</p>
+  <div class="formrow"><label class="srcline" for="long-text-unit">Input unit</label><select id="long-text-unit"><option value="sentence">Sentence</option><option value="paragraph">Paragraph</option><option value="quotation">Quotation</option><option value="text">Text</option></select></div>
+  <textarea id="long-text-input" rows="5" placeholder="Paste the sentence, paragraph or quotation to understand"></textarea>
+  <div class="formrow"><input id="long-text-anchor" placeholder="Optional term to examine in Part I"><button type="button" id="long-text-to-term">Connect term to Part I</button></div>
+  <div class="two-col"><input id="long-text-author" placeholder="Author"><input id="long-text-work" placeholder="Work / source"></div>
+  <div class="two-col"><input id="long-text-edition" placeholder="Edition / year"><input id="long-text-translator" placeholder="Translator"></div>
+  <input id="long-text-locator" placeholder="Standard locator (page, section, line, Stephanus/Bekker, etc.)">
+  <p id="long-text-entry-note" class="srcline">Text analysis, storage and translation alignment are Part II. Connecting a term continues to the current Part I exploration.</p>
+  {% endif %}
+</details>
 <form action="/origin" method="get" class="searchbox">
   <input type="text" name="q" value="{{ q }}" placeholder="{{ t.origin_placeholder }}">
   <input type="hidden" name="lang" value="{{ lang }}">
