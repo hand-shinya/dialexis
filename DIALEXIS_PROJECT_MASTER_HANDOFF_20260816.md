@@ -1435,14 +1435,17 @@ Menu、Action、Context は `SURF` が一元管理する。共通規則は次の
 - AND検索、空結果、外部情報源の遅延・失敗を試す。条件、原因、出所、再試行または次のActionが残るか。
 - 画面を見た人が、どれが候補でどれが証拠でどれが解釈か、そして次に何を確認すべきかを説明できるか。
 
-未検証: この2026-08-20作業ツリーの変更を公開VPSへ反映した状態での人間検証。未検証: 長文本文の解析・
-翻訳アラインメント・文章からの複数語抽出。本番反映前に、決定論的テスト、実DOMブラウザテスト、公開後の
-healthz／対象API／主要UI確認を別々の証拠として実施する。
+公開反映確認済み: `69de8a1` を正規経路でVPSへ反映し、VPS側の `vps_update.sh` でSHA gate、pytest
+`96 passed`、サービス再起動後の `healthz 200` を確認した。VPS上の対象APIも `/api/anatomy`、
+`/api/combine` が `200`、`/origin` に境界宣言・長文入口が存在することを確認した。
+未検証: 公開サイトを人間が操作して「理解が深まった」と判断する効果検証。未検証: 長文本文の解析・
+翻訳アラインメント・文章からの複数語抽出。公開後も決定論的テスト、実DOMブラウザテスト、healthz／
+対象API／主要UI確認を別々の証拠として扱う。
 
 2026-08-20のローカル公式ゲートは、Python `96 passed`、決定論的E2E全件PASS（`canvas_real_click 17/17`、
 `combine_resilience 6/6`、`route_return_surface 10/10`、`translation_history 11/11` を含む）だった。
 統合系は `origin 21/23`、`thinkers_graph 4/4`、`thinkers_recall 6/6` で、originの未通過2件は
-network依存・gate非対象として扱う。これは公開VPS上の結果ではない。
+network依存・gate非対象として扱う。公開VPS上では対象APIと入口HTMLの到達性を別途確認した。
 
 ### 優先順位
 
