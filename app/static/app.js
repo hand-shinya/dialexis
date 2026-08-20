@@ -3120,7 +3120,7 @@ function gActions(n) {
           ? "🧭 この人物の異表記・著作の翻訳・受容史を追跡する（人物名を一般語の語源とは扱いません）"
           : n.kind === "work"
             ? "🧭 この著作の原題・翻訳版・訳者・受容史を追跡する"
-            : "🧭 この語の原典・版・変容・欠損を証拠付きで整理する", action: "translationHistory" },
+            : "🧭 この語の翻訳・受容史（原典・版・変容・欠損）を証拠付きで整理する", action: "translationHistory" },
     ];
     const CORE_TAIL = [
       { s: "🌐 外部で調べる", t: "🌐 外部の専門情報で調べる（各サイトの言語で・新タブ）", action: "external" },
