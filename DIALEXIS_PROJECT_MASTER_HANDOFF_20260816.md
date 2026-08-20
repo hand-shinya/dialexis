@@ -1488,12 +1488,20 @@ UIで確認できる失敗原因と修正は次の通り。
 `subject_type: research_question` として作る。人物・二人比較が「単語台帳」として保存されないことを、DB上の型でも保証する。
 一つの台帳を複数プロジェクトが参照できる既存の多対多設計は維持し、人物の予備台帳も研究プロジェクトへ接続可能な再利用資産とする。
 
-実装検証（ローカル）: `python -m py_compile`、JSON検証、`node --check app/static/app.js`、`git diff --check`、
+実装検証: `python -m py_compile`、JSON検証、`node --check app/static/app.js`、`git diff --check`、
 翻訳受容史・人物・人物間・Action registry等の対象テストを通過した。`tests/test_translation_history.py` には、
-日本語／英語人物名の同一人物契約と、人物間ANDの比較契約を追加した。
-未検証: この実行環境ではFastAPI TestClientが単純なhealthzでも停止し、Chromium子プロセス間のlocalhost接続も分離されるため、
-今回のブラウザ実DOM操作とTestClient経由の台帳POSTはローカルサンドボックスで再実行できていない。公開反映後はVPS上のpytest、healthz、
-人物API、人物間API、実ブラウザで同じ受入手順を確認し、未検証を成功扱いしない。
+日本語／英語人物名の同一人物契約、人物間ANDの比較契約、人物／人物間台帳のsubject_type契約を追加した。
+公式 `./verify.sh` は `df9be544e9a1cc78d61c3f0c76fea225c3d12aee` で Python `99 passed`、決定論的E2E全件PASSを記録した。
+途中の初回実行では、通常語の翻訳受容史ボタン本文からメニュー名を消した回帰をE2Eが検出し、表示名を復元して再実行した。
+再実行では `translation_history 11/11`、`route_return_surface 10/10`、`canvas_real_click 17/17`、`combine_resilience 6/6`、
+`universal_menu 13/13` などが通過した。`origin` 統合スイートは外部ネットワーク依存で `17/23` だったが、定義済みのゲート非対象表示である。
+
+公開検証: `6d1333b` を正規VPSデプロイ経路で反映し、VPS側pytest `99 passed`、`healthz 200`、HTML `origin_http=200`、
+履歴API `history_http=200` を確認した。公開サービス上で、`カールマルクス` は `subject_kind=person`・`resolved_to=カール・マルクス`、
+`Karl Marx` のグラフは `research_mode=person`・`entity_kind=person`・23ノード、`Karl Marx × 吉本隆明` のANDは
+`research_mode=person_pair`・`entity_kind=person_pair` と返った。人物名が一般語のWeb検索へ落ちる旧経路ではなく、今回の契約が実サービスに到達している。
+未検証: 人間が公開画面を操作して「知的好奇心が喚起された」「理解が深まった」と評価する主観的効果、ならびに人物プロフィールの全著作・全訳版・
+全受容史を網羅できているか。これらは自動テストやHTTP 200からは証明できず、実際の研究者による段階的検証を残す。
 
 ### 優先順位
 
