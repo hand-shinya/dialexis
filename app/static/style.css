@@ -133,12 +133,14 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .graph-stage { position: relative; }
 /* 処理中インジケータ（選択した付近に出す・おしゃれなスピナー） */
 #graph-busy { position: absolute; z-index: 40; display: flex; align-items: center; gap: .5rem;
-  background: rgba(20,24,34,.92); color: #fff; padding: .5rem .8rem; border-radius: 999px;
-  font-family: system-ui, sans-serif; font-size: .82rem; box-shadow: 0 6px 20px rgba(0,0,0,.3);
-  transform: translate(-50%, -50%); pointer-events: none; }
-#graph-busy .spin { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.3);
+  min-width: 220px; justify-content: center; background: rgba(20,24,34,.96); color: #fff; padding: .62rem .9rem; border-radius: 999px;
+  font-family: system-ui, sans-serif; font-size: .86rem; font-weight: 650; box-shadow: 0 6px 20px rgba(0,0,0,.32);
+  transform: translate(-50%, -50%); pointer-events: none; animation: busyPulse 1.4s ease-in-out infinite; }
+#graph-busy .busy-kicker { color: #fbbf24; font-size: .7rem; letter-spacing: .05em; }
+#graph-busy .spin { width: 16px; height: 16px; flex: 0 0 auto; border: 2px solid rgba(255,255,255,.3);
   border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes busyPulse { 0%, 100% { box-shadow: 0 6px 20px rgba(0,0,0,.32); } 50% { box-shadow: 0 6px 26px rgba(180,83,9,.46); } }
 /* A: 組み合わせ探索パネル（AND/意味/NOT/OR/比較） */
 .cmb-in { width: 100%; padding: .5rem .6rem; font-size: .95rem; border: 1px solid var(--line);
   border-radius: 6px; margin: .3rem 0 .6rem; box-sizing: border-box; }
@@ -279,6 +281,46 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .gp-head button, .gp-head a, .gp-head input, .gp-head select { cursor: pointer; user-select: auto; }
 .gp-x { background: none; color: var(--muted); font-size: 1.3rem; padding: 0 .3rem; }
 .gp-body { padding: .8rem .9rem 1.1rem; }
+.dx-progress { display: flex; align-items: center; gap: .5rem; margin: 0 .9rem; padding: .48rem .62rem;
+  border: 1px solid #d97706; border-radius: 6px; background: #fff7ed; color: #7c2d12;
+  font: .82rem system-ui, sans-serif; }
+.dx-progress .spin { width: 15px; height: 15px; flex: 0 0 auto; border: 2px solid #fed7aa;
+  border-top-color: #c2410c; border-radius: 50%; animation: spin .7s linear infinite; }
+/* 中心命題から派生項目へ進む関係面。探索候補と証拠を同じカードに混ぜず、
+   経路・証拠階層・次の問いを分けて表示する。 */
+.rel-hero { border-left: 4px solid var(--accent2); background: #eef3f7; padding: .65rem .8rem; border-radius: 0 6px 6px 0; }
+.rel-hero p { margin: .25rem 0; }
+.rel-route { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .55rem; font-family: system-ui, sans-serif; }
+.rel-route span { color: var(--muted); font-size: .74rem; }
+.rel-route b { color: var(--ink); }
+.rel-section { border-top: 1px solid var(--line); padding-top: .65rem; margin-top: .75rem; }
+.rel-section h4 { margin: 0 0 .45rem; font-family: system-ui, sans-serif; font-size: .9rem; }
+.rel-dl { display: grid; grid-template-columns: max-content 1fr; gap: .18rem .55rem; margin: .35rem 0; }
+.rel-dl dt { color: var(--muted); font: .73rem system-ui, sans-serif; }
+.rel-dl dd { margin: 0; font-size: .82rem; }
+.rel-detail { border-left: 3px solid var(--accent); padding-left: .5rem; }
+.rel-evidence { display: inline-block; padding: .08rem .4rem; border-radius: 999px; background: #f4e4dc; color: #8a3f20; font: .7rem system-ui, sans-serif; }
+.rel-list { margin: .25rem 0; padding-left: 1.2rem; font-size: .82rem; }
+.rel-list li { margin: .25rem 0; }
+.rel-next, .rel-sources { display: flex; flex-wrap: wrap; gap: .4rem; }
+.rel-next-btn { border: 1px solid var(--accent); background: var(--paper); color: var(--ink); border-radius: 999px; padding: .3rem .65rem; font-size: .8rem; }
+.rel-next-btn:hover { background: var(--accent); color: var(--paper); }
+.work-lineage-lead { border-left: 4px solid var(--accent); background: #fbf9f4; padding: .65rem .8rem; }
+.work-lineage-lead p { margin: .35rem 0 0; }
+.work-title-route { display: flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; font-family: system-ui, sans-serif; }
+.work-title-route b { font-size: 1.05rem; }
+.work-title-route code { color: var(--accent2); overflow-wrap: anywhere; }
+.work-lineage-grid, .work-curiosity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .55rem; }
+.work-lineage-card, .work-curiosity-card { border: 1px solid var(--line); border-radius: 8px; padding: .6rem .7rem; background: var(--paper); }
+.work-lineage-top { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; font: .75rem system-ui, sans-serif; }
+.work-lineage-top span:not(.rel-evidence) { color: var(--muted); }
+.work-lineage-card h4 { margin: .3rem 0 .1rem; font-size: .94rem; }
+.work-lineage-card p { margin: .25rem 0; font-size: .82rem; line-height: 1.5; }
+.work-lineage-rel { color: var(--accent); font-family: system-ui, sans-serif; font-size: .75rem !important; }
+.work-curiosity-axis { color: var(--accent2); font: .73rem system-ui, sans-serif; }
+.work-curiosity-card p { margin: .25rem 0 .45rem; font-size: .84rem; }
+.work-curiosity-btn { border: 1px solid var(--accent2); background: var(--paper); color: var(--accent2); border-radius: 999px; padding: .25rem .58rem; font-size: .76rem; }
+.work-curiosity-btn:hover { background: var(--accent2); color: var(--paper); }
 
 /* 翻訳・受容史の特別研究面：通常の語源カードより広い情報を、証拠単位ごとに読む。 */
 .th-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; padding: .55rem .65rem;

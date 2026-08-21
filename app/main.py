@@ -868,10 +868,33 @@ def _person_graph(profile: dict, query: str, lang: str = "ja") -> dict:
     add("dom:reception", "受容・影響の検証", "domain", 2, 2.1)
     for did in ("dom:identity", "dom:works", "dom:concepts", "dom:reception"):
         link("root", did, 1.25)
-    for i, n in enumerate(profile.get("name_forms", [])[:12]):
-        add(f"name:{i}:{n.get('form')}", n.get("form"), "language", 3, 1.2,
-            n.get("form"), {"language": n.get("language"), "person_id": profile.get("id")})
-        link("dom:identity", f"name:{i}:{n.get('form')}", 0.8)
+    # 表記・転写はプロフィールには全件を残すが、地図では同一人物の同一性キー
+    # （中黒・空白・ハイフン等を除いた正規化）ごとに一つへ束ねる。検索表記を
+    # 捨てずに保持しながら、「カール・マルクス」と「カールマルクス」が別人の
+    # ように見える視覚的重複を防ぐ。
+    identity_nodes = {}
+    identity_index = 0
+    for n in profile.get("name_forms", [])[:12]:
+        form = n.get("form")
+        if not form:
+            continue
+        key = _person_norm(form) or form
+        if key in identity_nodes:
+            prior = next((x for x in nodes if x.get("id") == identity_nodes[key]), None)
+            if prior is not None:
+                prior.setdefault("variants", []).append({
+                    "form": form, "language": n.get("language"),
+                    "kind": n.get("kind"), "evidence": n.get("evidence"),
+                })
+            continue
+        nid = f"name:{identity_index}:{form}"
+        identity_index += 1
+        add(nid, form, "language", 3, 1.2, form,
+            {"language": n.get("language"), "person_id": profile.get("id"),
+             "variants": [{"form": form, "language": n.get("language"),
+                           "kind": n.get("kind"), "evidence": n.get("evidence")}]} )
+        identity_nodes[key] = nid
+        link("dom:identity", nid, 0.8)
     for i, w in enumerate(profile.get("works", [])[:10]):
         title = w.get("japanese_titles", [None])[0] or w.get("original_title")
         wid = f"work:{i}:{title}"

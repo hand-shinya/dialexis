@@ -25,7 +25,58 @@
         {"original_title": "Die deutsche Ideologie", "original_language": "ドイツ語", "japanese_titles": ["ドイツ・イデオロギー"], "year": "1845–46", "role": "唯物史観・社会的生産", "evidence": "bibliography_confirmed", "source_ids": ["marx-primary", "ndl-marx"]},
         {"original_title": "Grundrisse der Kritik der politischen Ökonomie", "original_language": "ドイツ語", "japanese_titles": ["経済学批判要綱", "資本論草稿"], "year": "1857–58", "role": "所有・土地・生産条件・物質的関係", "evidence": "bibliography_confirmed", "source_ids": ["marx-primary", "ndl-marx"]},
         {"original_title": "Das Kapital", "original_language": "ドイツ語", "japanese_titles": ["資本論"], "year": "1867–", "role": "商品・労働・価値・物質代謝", "evidence": "bibliography_confirmed", "source_ids": ["marx-primary", "ndl-marx"]},
-        {"original_title": "Manifest der Kommunistischen Partei", "original_language": "ドイツ語", "japanese_titles": ["共産党宣言"], "year": "1848", "role": "政治思想・歴史的運動", "evidence": "bibliography_confirmed", "source_ids": ["marx-primary", "ndl-marx"]}
+        {
+          "original_title": "Manifest der Kommunistischen Partei",
+          "original_language": "ドイツ語",
+          "japanese_titles": ["共産党宣言"],
+          "year": "1848",
+          "role": "政治思想・歴史的運動",
+          "evidence": "bibliography_confirmed",
+          "source_ids": ["marx-primary", "ndl-marx"],
+          "lineage": [
+            {
+              "stage": "成立前史",
+              "title": "19世紀前半の社会思想・政治的問題系",
+              "year": "19世紀前半",
+              "relation": "思想的前史（要照合）",
+              "detail": "ドイツ語圏の哲学・社会批判、フランス／イギリスの社会主義・共産主義論との接点を、単純な影響関係と一括せず、本文・書誌・研究史に分けて確認する。",
+              "evidence": "candidate",
+              "source_ids": ["marx-primary"]
+            },
+            {
+              "stage": "成立条件",
+              "title": "共産主義者同盟とマルクス／エンゲルス",
+              "year": "1847–48",
+              "relation": "成立契機",
+              "detail": "マルクスとエンゲルスが、1847年11月の同盟会議で理論的・実践的な党綱領の作成を委任されたという序文の説明と、ドイツ語草稿から公刊へ至る経路を確認する。",
+              "evidence": "confirmed",
+              "source_ids": ["marx-primary"]
+            },
+            {
+              "stage": "公刊",
+              "title": "Manifesto of the Communist Party の初版",
+              "year": "1848年2月",
+              "relation": "原典・初版",
+              "detail": "原題、執筆時期、初出時期、著者表記、標準ロケータを原典・批判版・図書館書誌で突き合わせる。",
+              "evidence": "bibliography_confirmed",
+              "source_ids": ["marx-primary", "ndl-marx"]
+            },
+            {
+              "stage": "翻訳・受容",
+              "title": "各言語版と後世の受容",
+              "year": "1848年以降",
+              "relation": "翻訳・受容（版ごとに要照合）",
+              "detail": "1888年英訳序文が述べるフランス語版・1850年英語版などの経路を起点に、訳者・刊年・版・該当箇所を並置し、翻訳で保存／変形された政治的呼びかけを確認する。",
+              "evidence": "confirmed",
+              "source_ids": ["marx-primary"]
+            }
+          ],
+          "curiosity": [
+            {"question": "なぜこの著作は体系書ではなく「宣言」という形式を取ったのか", "axis": "形式と政治的読者", "evidence": "candidate"},
+            {"question": "結語の国際的な呼びかけは、各日本語訳でどの語感・主語・命令性に変わるのか", "axis": "翻訳・標準ロケータ", "evidence": "candidate"},
+            {"question": "1848年の公刊時の射程と、後世のマルクス主義運動が付与した意味はどこで分岐するのか", "axis": "受容史", "evidence": "unverified"}
+          ]
+        }
       ],
       "concepts": [
         {"source_term": "Entfremdung", "language": "ドイツ語", "japanese_candidates": ["疎外", "alienation"], "note": "著作・時期ごとの用法を本文で比較する概念語。人物名の翻訳ではありません。", "evidence": "strong"},

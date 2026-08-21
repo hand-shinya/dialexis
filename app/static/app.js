@@ -1364,9 +1364,11 @@ async function navGo(d) {
   } finally { NAV.restoring = false; NAV.txn = false; }
 }
 // 処理中インジケータ（選んだ付近に出す・止まって見えないように）
+let _processing = null;
 function gBusy(on, text, x, y) {
   const el = $("graph-busy"); if (!el) return;
-  if (!on) { el.style.display = "none"; return; }
+  if (!on) { el.style.display = "none"; el.setAttribute("aria-hidden", "true"); return; }
+  el.setAttribute("aria-hidden", "false");
   el.querySelector(".bt").textContent = text || "探索中…";
   const stage = el.parentElement, r = stage.getBoundingClientRect();
   let cx = (x != null) ? (x - r.left) : stage.clientWidth / 2;
@@ -1375,6 +1377,43 @@ function gBusy(on, text, x, y) {
   cy = Math.max(26, Math.min(cy, stage.clientHeight - 26));
   el.style.left = cx + "px"; el.style.top = cy + "px";
   el.style.display = "flex";
+}
+
+function actionProcessingLabel(actionId, term) {
+  const jp = LANG === "ja", w = term ? `「${term}」` : "この項目";
+  if (!jp) return ({ combine: "Combining…", translationHistory: "Building translation / reception history…", relationship: "Mapping the relation…", authorNote: "Building the work lineage…", center: "Re-centering…", panorama: "Constructing the overview…" }[actionId] || "Processing…");
+  return ({
+    combine: `${w}の組み合わせを探索中…`,
+    translationHistory: `${w}の翻訳・受容史を構成中…`,
+    relationship: `${w}と中心命題の関係を構成中…`,
+    authorNote: `${w}の著作系譜を構成中…`,
+    center: `${w}を中心に再構成中…`,
+    panorama: `${w}の全体像を構成中…`,
+    lens: `${w}の見方を準備中…`,
+  }[actionId] || `${w}の操作を処理中…`);
+}
+
+// Action面にも同じ状態を明示する。グラフ上の小さなラベルだけでは「停止」と
+// 区別しにくいため、面の上端に常設の進行帯を置き、aria-busy/liveも同期する。
+function gActionBusy(on, text) {
+  const p = surfEl("action");
+  if (!p) return;
+  if (on) {
+    p.setAttribute("aria-busy", "true");
+    let status = p.querySelector(".dx-progress");
+    if (!status) {
+      status = document.createElement("div"); status.className = "dx-progress";
+      status.setAttribute("role", "status"); status.setAttribute("aria-live", "polite");
+      const body = p.querySelector(".gp-body");
+      if (body) body.parentNode.insertBefore(status, body);
+    }
+    status.innerHTML = `<span class="spin" aria-hidden="true"></span><b>${esc(text || "処理中…")}</b>`;
+    status.hidden = false;
+  } else {
+    p.removeAttribute("aria-busy");
+    const status = p.querySelector(".dx-progress");
+    if (status) status.remove();
+  }
 }
 
 /* ═══════════ 正典 term exploration transaction（半田様2026-08-02）═══════════
@@ -1881,6 +1920,7 @@ const EFFECTS = ["context", "center", "map", "action", "store", "newpage"];
 // Action ID → 正規作用。run は状態変更関数（originRecenter/gWordAspect/…）を呼ぶ唯一の場所。
 const ACTIONS = {
   center:       { label: "中心に据える", effect: "center", changesCenter: true, run: (t, ctx) => originRecenter(t.term, { anchor: ctx && ctx.anchor }) },
+  relationship: { label: "中心命題との関係", effect: "action", run: (t, ctx) => gRelationshipPanel(t.term, (ctx && ctx.relation) || {}, (ctx && ctx.node) || t) },
   meaning:      { label: "意味", effect: "action", run: (t) => gWordAspect(t.term, "meaning") },
   multilingual: { label: "多言語", effect: "action", run: (t) => gWordAspect(t.term, "breadth") },   // 中心を変えない（Aの是正・全入口統一）
   collapse:     { label: "埋没原語", effect: "action", run: (t) => gWordAspect(t.term, "collapse") },
@@ -1910,7 +1950,10 @@ const ACTIONS = {
     return !!w;   // popup blocker等で開けない時はdispatcherがMenuを再提示する
   } },
   author:       { label: "著者を調べる", effect: "action", run: (t, ctx) => gAuthorInvestigate((ctx && ctx.search) || t.term, t.label) },
-  authorNote:   { label: "系譜メモ", effect: "action", run: (t, ctx) => gAuthorPanel((ctx && ctx.node) || { label: t.label }) },
+  authorNote:   { label: "著作の系譜", effect: "action", run: (t, ctx) => {
+    const node = (ctx && ctx.node) || t;
+    return node.kind === "work" ? gWorkLineagePanel(node) : gAuthorPanel(node);
+  } },
   dimension:    { label: "探究の次元", effect: "action", run: (t, ctx) => gDimAct(ctx.dm) },   // 探究の次元カード（.dim）
   panorama:     { label: "概念全景", effect: "context", run: (t, ctx) => gPanorama({ term: t.term, node: ctx && ctx.node, secHint: ctx && ctx.secHint }) },
   focus:        { label: "この分岐を中心に", effect: "map", run: (t, ctx) => gFocusSubtree(ctx.nodeIdx) },
@@ -2027,17 +2070,29 @@ async function dispatchAction(actionId, target, currentState, surfaceContext) {
   const t = normTarget(target); t.surface = (surfaceContext && surfaceContext.surface) || t.surface;
   const ctx = surfaceContext || {};
   const eff = (a.effectWithArg && a.arg && ctx[a.arg]) ? a.effectWithArg : a.effect;
-  _lastDispatch = { actionId, target: t, surface: t.surface, effect: eff, seq: ++_dispatchSeq, outcome: "running" };   // seq＝同一操作の反復も区別できる単調増加
+  const seq = ++_dispatchSeq;
+  _lastDispatch = { actionId, target: t, surface: t.surface, effect: eff, seq, outcome: "running" };   // seq＝同一操作の反復も区別できる単調増加
   const prevPanel = PANEL_CTX, prevCombine = COMBINE_CTX, prevContext = CONTEXT_CTX;   // 失敗時に元へ戻す（A2）
   if (eff === "action") { PANEL_CTX = a.transient ? null : { action: actionId, term: t.term, kind: t.kind || null, pair: ctx.pair || null }; }   // run が surfCreate で置換する
   else if (eff === "store" || eff === "newpage") { /* 現在の画面の面も履歴も変えない */ }
   else { PANEL_CTX = null; surfClearAction(false); }   // context / center / map は Action とその親履歴を確実に閉じる
+  const showProcessing = eff !== "store" && eff !== "newpage";
+  const processingLabel = actionProcessingLabel(actionId, t.term);
+  if (showProcessing) {
+    const anchor = ctx.anchor || {};
+    _processing = { seq, label: processingLabel };
+    gBusy(true, processingLabel, anchor.x != null ? anchor.x : (G && G.lastX), anchor.y != null ? anchor.y : (G && G.lastY));
+    gActionBusy(true, processingLabel);
+  }
   NAV.txn = true;
   let ok = true, runResult;
   try { runResult = await a.run(t, ctx); }
   catch (e) { ok = false; console.error("action error", actionId, e); }
   finally {
     NAV.txn = false;
+    if (_processing && _processing.seq === seq) {
+      gActionBusy(false); gBusy(false); _processing = null;
+    }
     _lastDispatch.outcome = !ok ? "error" : (runResult === false ? "fallback" : "success");
   }
   if (!ok) {                                       // 予期せぬ失敗＝存在しない確定状態をcommitしない（A2）
@@ -2425,6 +2480,67 @@ async function originGraph(q, tok) {
   return true;
 }
 
+// 階層と親子関係を使った決定的な初期配置。ランダム配置＋強い反発だけでは、
+// 中心から出る線が別の枝を横切りやすく、同じ入力でも毎回地図が揺れていた。
+// 親の角度範囲を子へ渡すことで、枝を扇形に保ち、交錯を減らす。共有ノードや
+// 複数親の線は意味上必要な場合があるため、完全な交錯ゼロは約束せず、まず
+// 「同じ枝の配置」を安定させる。
+function gInitialLayout(nodes, edges, W, H, cx, cy, parent, children) {
+  const minLayer = Math.min(...nodes.map(n => Number(n.layer) || 1));
+  const layers = {};
+  nodes.forEach((n, i) => { const l = Number(n.layer) || 1; (layers[l] = layers[l] || []).push(i); });
+  const rootIndices = (layers[minLayer] || []).slice().sort((a, b) =>
+    String(nodes[a].label || nodes[a].id).localeCompare(String(nodes[b].label || nodes[b].id), "ja"));
+  const roots = rootIndices.length ? rootIndices : [0];
+  const size = Math.min(W, H), rootRadius = roots.length > 1 ? size * 0.14 : 0;
+  const rootSpan = roots.length > 1 ? (Math.PI * 2 / roots.length) * 0.82 : Math.PI * 2 * 0.92;
+  roots.forEach((i, k) => {
+    const n = nodes[i], angle = -Math.PI / 2 + (Math.PI * 2 * k / roots.length);
+    n.layoutAngle = angle; n.layoutSpan = rootSpan; n.layoutRadius = rootRadius;
+    n.idealX = cx + rootRadius * Math.cos(angle); n.idealY = cy + rootRadius * Math.sin(angle);
+  });
+  const maxLayer = Math.max(...Object.keys(layers).map(Number));
+  for (let layer = minLayer + 1; layer <= maxLayer; layer++) {
+    const peers = (layers[layer] || []).slice().sort((a, b) =>
+      String(nodes[a].label || nodes[a].id).localeCompare(String(nodes[b].label || nodes[b].id), "ja"));
+    const groups = new Map(), unassigned = [];
+    peers.forEach(i => {
+      const p = parent[i];
+      if (p != null && nodes[p].layoutAngle != null) {
+        if (!groups.has(p)) groups.set(p, []);
+        groups.get(p).push(i);
+      } else unassigned.push(i);
+    });
+    groups.forEach((list, p) => {
+      const pn = nodes[p], span = pn.layoutSpan || (Math.PI * 2 / Math.max(1, list.length));
+      list.forEach((i, k) => {
+        const n = nodes[i], angle = pn.layoutAngle - span / 2 + span * (k + .5) / list.length;
+        const radius = size * (0.12 + 0.14 * (layer - minLayer));
+        n.layoutAngle = angle; n.layoutSpan = Math.max(0.22, span / list.length * .84); n.layoutRadius = radius;
+        n.idealX = cx + radius * Math.cos(angle); n.idealY = cy + radius * Math.sin(angle);
+      });
+    });
+    unassigned.forEach((i, k) => {
+      const n = nodes[i], angle = -Math.PI / 2 + Math.PI * 2 * k / Math.max(1, unassigned.length);
+      const radius = size * (0.12 + 0.14 * (layer - minLayer));
+      n.layoutAngle = angle; n.layoutSpan = Math.PI * 2 / Math.max(1, unassigned.length) * .84; n.layoutRadius = radius;
+      n.idealX = cx + radius * Math.cos(angle); n.idealY = cy + radius * Math.sin(angle);
+    });
+  }
+  // 異常なデータでも未配置ノードを残さない。探索は続行し、中央付近で重ならない
+  // 固定位置を与えてから、通常の反発へ渡す。
+  nodes.forEach((n, i) => {
+    if (n.idealX != null && n.idealY != null) return;
+    const angle = -Math.PI / 2 + Math.PI * 2 * i / Math.max(1, nodes.length);
+    const radius = size * .28;
+    n.layoutAngle = angle; n.layoutSpan = .4; n.layoutRadius = radius;
+    n.idealX = cx + radius * Math.cos(angle); n.idealY = cy + radius * Math.sin(angle);
+  });
+  nodes.forEach(n => {
+    n.x = n.idealX; n.y = n.idealY; n.vx = 0; n.vy = 0; n.r = 5 + (Number(n.weight) || 1) * 4.5;
+  });
+}
+
 function gBuild(d) {
   const cv = $("origin-graph");
   const W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
@@ -2432,16 +2548,6 @@ function gBuild(d) {
   const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const cx = W / 2, cy = H / 2, idx = {};
   const nodes = d.nodes.map((n, i) => { idx[n.id] = i; return { ...n }; });
-  const maxLayer = Math.max(...nodes.map(n => n.layer));
-  nodes.forEach(n => {
-    const R = (n.layer - 1) * Math.min(W, H) / (maxLayer + 1);
-    const peers = nodes.filter(m => m.layer === n.layer);
-    const k = peers.indexOf(n);
-    const ang = (k / Math.max(1, peers.length)) * Math.PI * 2 + n.layer * 0.7;
-    n.x = cx + R * Math.cos(ang) + (Math.random() - .5) * 24;
-    n.y = cy + R * Math.sin(ang) + (Math.random() - .5) * 24;
-    n.vx = 0; n.vy = 0; n.r = 5 + n.weight * 4.5;
-  });
   const edges = d.edges.map(e => ({ a: idx[e.from], b: idx[e.to], s: e.strength || 1 }))
     .filter(e => e.a != null && e.b != null);
   // parent/children by layer, so hovering a line lights the whole path root→leaves
@@ -2449,9 +2555,11 @@ function gBuild(d) {
   edges.forEach(e => {
     const lo = nodes[e.a].layer <= nodes[e.b].layer ? e.a : e.b;
     const hi = lo === e.a ? e.b : e.a;
-    (children[lo] = children[lo] || []).push(hi);
-    parent[hi] = lo;
+    if (!children[lo]) children[lo] = [];
+    if (!children[lo].includes(hi)) children[lo].push(hi);
+    if (parent[hi] == null) parent[hi] = lo;
   });
+  gInitialLayout(nodes, edges, W, H, cx, cy, parent, children);
   G = { nodes, edges, children, parent, ctx, cv, W, H, cx, cy, rootQ: d.query, note: d.note, focusLabel: null,
         view: { x: 0, y: 0, k: 1 }, drag: null, hover: null, hl: null, alpha: 1, raf: 0, needFit: true };
   gFitInstant();
@@ -2482,8 +2590,12 @@ function gStep() {
     a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
   });
   N.forEach(n => {
-    n.vx += (G.cx - n.x) * 0.004; n.vy += (G.cy - n.y) * 0.004;   // 中心引力は弱め（広がりを保つ）
     if (n === G.drag) { n.vx = 0; n.vy = 0; return; }
+    // 初期配置の理想点へ弱く戻す。反発・バネはノードを読みやすく離すが、
+    // この拘束が無いと枝が別の枝の領域へ流れ、線の交錯が再発する。
+    const pull = n.layer === 1 ? 0.026 : 0.038;
+    n.vx += (n.idealX - n.x) * pull; n.vy += (n.idealY - n.y) * pull;
+    n.vx += (G.cx - n.x) * 0.002; n.vy += (G.cy - n.y) * 0.002;
     n.vx *= 0.86; n.vy *= 0.86; n.x += n.vx * G.alpha; n.y += n.vy * G.alpha;
   });
 }
@@ -3097,6 +3209,154 @@ function segmentLayersHtml(layers, opts) {
 // これ一つを接続する（普遍性・P11）。t=完全ラベル（ポップアップ用）・s=短縮ラベル（上部の帯用）。
 // 上部の帯（renderTopMenu）とクリックのポップアップ（gMenu）は同じ本関数を使う＝どこでも同一UI。
 // 全ノード共通メニュー。項目は「表示名」でなく Action ID を持ち、実行は dispatchAction 単一経路へ。
+function _relationNorm(value) {
+  try { return String(value || "").normalize("NFKC").toLocaleLowerCase().replace(/[\s\u3000・･.,，．:：;；'’"“”()（）\[\]【】{}｛｝_\-‐‑‒–—]/g, ""); }
+  catch (e) { return String(value || "").toLowerCase().replace(/[\s・.,:;_'"()\[\]{}-]/g, ""); }
+}
+function _graphProfiles() {
+  const out = [];
+  if (G_raw && G_raw.person_profile) out.push(G_raw.person_profile);
+  if (G_raw && G_raw.person_pair) {
+    if (G_raw.person_pair.a) out.push(G_raw.person_pair.a);
+    if (G_raw.person_pair.b) out.push(G_raw.person_pair.b);
+  }
+  return out;
+}
+function _graphWorkFor(node) {
+  const label = String((node && node.label) || ""), original = String((node && node.original_title) || "");
+  for (const profile of _graphProfiles()) {
+    for (const work of (profile.works || [])) {
+      const titles = [work.original_title, ...(work.japanese_titles || [])].filter(Boolean).map(String);
+      if ((node && node.person_id && profile.id === node.person_id) && (titles.includes(label) || titles.includes(original))) return { profile, work };
+      if (titles.some(x => x === label || x === original)) return { profile, work };
+    }
+  }
+  return { profile: null, work: null };
+}
+function _relationEvidenceLabel(level) {
+  return ({ confirmed: "本文・書誌を確認", bibliography_confirmed: "書誌を確認", strong: "有力・要照合", candidate: "調査候補", unverified: "未確認" }[level] || "調査候補");
+}
+function _relationInfo(node) {
+  if (!node || node.layer == null || Number(node.layer) <= 1 || node.kind === "domain") return null;
+  const pair = G_raw && G_raw.person_pair;
+  const profile = G_raw && G_raw.person_profile;
+  const center = (profile && profile.display_name) || (pair && pair.a && pair.b && `${pair.a.display_name} × ${pair.b.display_name}`) || (G_raw && G_raw.query) || (G && G.rootQ) || "中心命題";
+  const centerTerm = (profile && profile.display_name) || (pair && pair.a && pair.a.display_name) || (G_raw && G_raw.query) || (G && G.rootQ) || center;
+  const info = {
+    center, centerTerm, target: node.label, targetKind: node.kind,
+    path: node.kind === "work" ? "著作・翻訳版" : node.kind === "author" ? "人物・受容" : "概念・表記・意味領域",
+    summary: `中心命題「${center}」から派生した「${node.label}」を、同じ意味の語としてではなく、著作・思想・歴史・受容の接続として確認する。`,
+    evidence: "candidate", record: null, work: null,
+    node: { term: node.q || node.label, label: node.label, kind: node.kind, id: node.id, lang: node.lang, layer: node.layer,
+      original_title: node.original_title, year: node.year, person_id: node.person_id },
+    sourceIds: []
+  };
+  if (profile) {
+    const pairNorm = _relationNorm(node.label);
+    const foundWork = _graphWorkFor(node);
+    const reception = (profile.reception || []).find(x => _relationNorm(x.who) === pairNorm);
+    const concept = (profile.concepts || []).find(x => _relationNorm(x.source_term) === pairNorm || (x.japanese_candidates || []).some(y => _relationNorm(y) === pairNorm));
+    const form = (profile.name_forms || []).find(x => _relationNorm(x.form) === pairNorm);
+    if (foundWork.work) {
+      info.path = "著作・翻訳版"; info.work = foundWork.work; info.record = foundWork.work;
+      info.summary = `「${node.label}」は${profile.display_name}の著作・版を追跡する項目。原題・訳題・刊年・訳者・該当箇所を分けて確認する。`;
+      info.evidence = foundWork.work.evidence || "bibliography_confirmed";
+      info.sourceIds = foundWork.work.source_ids || [];
+    } else if (reception) {
+      info.path = "受容・影響の検証"; info.record = reception;
+      info.summary = reception.what || `${profile.display_name}から「${node.label}」へ至る受容上の接続候補。直接引用・参照文献・刊年順を確認する。`;
+      info.evidence = reception.evidence || "candidate";
+      info.sourceIds = reception.source_ids || [];
+    } else if (concept) {
+      info.path = "概念・思想"; info.record = concept;
+      info.summary = concept.note || `「${node.label}」は${profile.display_name}の著作・思想に関係する概念語候補。人物名や単純な訳語と同一視せず、原語・用法・版を照合する。`;
+      info.evidence = concept.evidence || "candidate";
+    } else if (form) {
+      info.path = "人物同定・異表記"; info.record = form;
+      info.summary = "人物名の表記・転写候補。翻訳された意味ではなく、同一人物性と各言語の表記慣行を確認する。";
+      info.evidence = form.evidence || "candidate";
+    }
+  }
+  if (pair) {
+    const relation = pair.relation || {};
+    const shared = (relation.shared_terms || []).find(x => _relationNorm(x.term) === _relationNorm(node.label));
+    const foundWork = _graphWorkFor(node);
+    if (shared) {
+      info.path = "2人の共有語彙・接点候補"; info.record = shared; info.summary = shared.role || info.summary;
+      info.evidence = shared.evidence || "candidate";
+    } else if (foundWork.work) {
+      info.path = "比較対象の著作・翻訳版"; info.work = foundWork.work; info.record = foundWork.work;
+      info.summary = `比較対象の著作「${node.label}」を原題・訳題・版・受容の単位で確認する。`;
+      info.evidence = foundWork.work.evidence || "bibliography_confirmed";
+      info.sourceIds = foundWork.work.source_ids || [];
+    } else if (relation.center_question) {
+      info.summary = `${relation.center_question} この項目は、その問いへ入る比較上の接点候補。`;
+    }
+  }
+  return info;
+}
+
+function gRelationshipPanel(term, relation, node) {
+  const jp = LANG === "ja", info = relation && relation.center ? relation : (_relationInfo(node) || {
+    center: (G_raw && G_raw.query) || (G && G.rootQ) || term, centerTerm: (G_raw && G_raw.query) || (G && G.rootQ) || term, target: term, targetKind: node && node.kind,
+    path: "探索レンズ", summary: `中心命題から「${term}」へ進む接続を、根拠と解釈を分けて確認する。`, evidence: "candidate", node
+  });
+  const record = info.record || {};
+  const sourceById = Object.fromEntries(_graphProfiles().flatMap(p => p.sources || []).filter(Boolean).map(s => [s.id, s]));
+  const sourceIds = [...new Set([...(info.sourceIds || []), ...(record.source_ids || [])])];
+  const sources = sourceIds.map(id => sourceById[id]).filter(Boolean);
+  const relationText = record.relation || info.path;
+  const detail = record.detail || record.note || record.what || info.summary;
+  const next = [];
+  if (info.work) next.push({ id: "authorNote", label: "📖 この著作の系譜を読む", target: info.node, ctx: { node: info.node } });
+  if (info.targetKind === "author") next.push({ id: "translationHistory", label: "🧭 この人物の著作・受容史へ", target: info.node, ctx: { node: info.node } });
+  next.push({ id: "center", label: "🎯 中心命題を地図の中心に戻す", target: { term: info.centerTerm || info.center, label: info.centerTerm || info.center, kind: "word", q: info.centerTerm || info.center } });
+  const p = gPanel(`🧭 中心命題との関係：${info.target}`,
+    `<div class="rel-hero"><p class="rel-route"><span>中心命題</span><b>${esc(info.center)}</b><span>→</span><span>派生項目</span><b>${esc(info.target)}</b></p><p>${esc(info.summary)}</p></div>
+      <section class="rel-section"><h4>この地図での接続</h4><dl class="rel-dl"><dt>位置</dt><dd>${esc(relationText)}</dd><dt>対象の種類</dt><dd>${esc(info.targetKind || "項目")}</dd><dt>証拠階層</dt><dd><span class="rel-evidence">${esc(_relationEvidenceLabel(info.evidence))}</span></dd></dl><p class="rel-detail">${esc(detail)}</p></section>
+      <section class="rel-section"><h4>ここで分けて読むこと</h4><ul class="rel-list"><li>中心命題そのものの主張と、派生項目の著作・思想・受容上の位置を混同しない。</li><li>人物名の表記差、著作題名の翻訳差、引用・影響関係を別々の証拠単位で確認する。</li><li>「調査候補」は入口であり、本文・版・標準ロケータの照合後に確定度を更新する。</li></ul></section>
+      <section class="rel-section"><h4>次に広げる</h4><div class="rel-next">${next.map((x, i) => `<button type="button" class="rel-next-btn" data-i="${i}">${esc(x.label)}</button>`).join("")}</div></section>
+      ${sources.length ? `<section class="rel-section"><h4>確認入口</h4><div class="rel-sources">${sources.map(s => s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id)}</a>` : `<span>${esc(s.label || s.id)}</span>`).join(" ")}</div></section>` : `<p class="srcline">この接続は探索レンズとして提示しています。本文・版・引用箇所を追加すれば証拠単位へ更新できます。</p>`}`,
+    term);
+  if (!p) return false;
+  p._relNext = next;
+  p.querySelectorAll(".rel-next-btn").forEach(btn => btn.addEventListener("click", () => {
+    const item = p._relNext[Number(btn.dataset.i)]; if (!item) return;
+    dispatchAction(item.id, item.target, currentViewState(), { surface: "relationship-panel", ...(item.ctx || {}) });
+  }));
+  return p;
+}
+
+function gWorkLineagePanel(node) {
+  const jp = LANG === "ja", found = _graphWorkFor(node), profile = found.profile, work = found.work;
+  const label = (node && node.label) || (work && (work.japanese_titles || [work.original_title])[0]) || "著作";
+  if (!work) {
+    return gPanel(`📖 著作の系譜：${label}`,
+      `<div class="work-lineage-lead"><b>この著作を研究の単位として開きます。</b><p>原題・訳題・刊年・著者・版・標準ロケータを登録すると、成立前史から翻訳・受容までを同じ画面で並置できます。</p></div><p class="srcline">現在の地図から確認できる対象：${esc(label)}。次の入口から書誌を照合してください。</p>`, label);
+  }
+  const sources = Object.fromEntries((profile && profile.sources || []).filter(Boolean).map(s => [s.id, s]));
+  const lineages = work.lineage || [];
+  const curiosity = work.curiosity || [];
+  const sourceIds = [...new Set([...(work.source_ids || []), ...lineages.flatMap(x => x.source_ids || [])])];
+  const sourceHtml = sourceIds.map(id => sources[id]).filter(Boolean).map(s => s.url
+    ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id)}</a>`
+    : `<span>${esc(s.label || s.id)}</span>`).join(" ");
+  const cards = lineages.map(x => `<article class="work-lineage-card"><div class="work-lineage-top"><b>${esc(x.stage || "段階")}</b><span>${esc(x.year || "")}</span><span class="rel-evidence">${esc(_relationEvidenceLabel(x.evidence))}</span></div><h4>${esc(x.title || "")}</h4><p class="work-lineage-rel">${esc(x.relation || "")}</p><p>${esc(x.detail || "")}</p>${x.source_ids && x.source_ids.length ? `<p class="srcline">出所：${esc(x.source_ids.join(" ／ "))}</p>` : ""}</article>`).join("");
+  const questions = curiosity.map((x, i) => `<article class="work-curiosity-card"><span class="work-curiosity-axis">${esc(x.axis || "問い")}</span><p>${esc(x.question || "")}</p><button type="button" class="work-curiosity-btn" data-i="${i}">この問いを深掘りする</button></article>`).join("");
+  const body = `<div class="work-lineage-lead"><div class="work-title-route"><b>${esc(label)}</b><span>／</span><code>${esc(work.original_title || "")}</code></div><dl class="rel-dl"><dt>刊年</dt><dd>${esc(work.year || "未確認")}</dd><dt>原語</dt><dd>${esc(work.original_language || "未確認")}</dd><dt>著者</dt><dd>${esc(profile && profile.display_name || "未確認")}</dd><dt>役割</dt><dd>${esc(work.role || "")}</dd></dl><p>著作名を単なる検索語として扱わず、成立条件・初版・翻訳・受容の順にたどる研究導線です。各カードの証拠階層を保ったまま、次の問いへ進めます。</p></div>
+    <section class="rel-section"><h4>著作の系譜</h4><div class="work-lineage-grid">${cards || `<p class="srcline">この著作の系譜は、原典・版・書誌の照合を進めるための登録枠です。</p>`}</div></section>
+    <section class="rel-section"><h4>ここから広がる問い</h4><div class="work-curiosity-grid">${questions || `<p class="srcline">問いを追加すると、成立史・翻訳史・受容史を別々に深掘りできます。</p>`}</div></section>
+    ${sourceHtml ? `<section class="rel-section"><h4>確認入口</h4><div class="rel-sources">${sourceHtml}</div></section>` : ""}`;
+  const p = gPanel(`📖 著作の系譜：${label}`, body, label);
+  if (!p) return false;
+  p._workQuestions = curiosity;
+  p.querySelectorAll(".work-curiosity-btn").forEach(btn => btn.addEventListener("click", () => {
+    const q = p._workQuestions[Number(btn.dataset.i)] && p._workQuestions[Number(btn.dataset.i)].question;
+    if (q) dispatchAction("deepsearch", { term: q, label: q, kind: "research-question" }, currentViewState(), { surface: "work-lineage" });
+  }));
+  return p;
+}
+
 // 各表示面（上部帯/popup/フッター/noMiss/本文リンク）はこの item.action と target を渡すだけ（作用を再実装しない）。
 function gActions(n) {
   const idx = (G && G.nodes) ? G.nodes.indexOf(n) : -1;
@@ -3110,7 +3370,9 @@ function gActions(n) {
       { s: "✍ 深掘り", t: "✍ 深掘り探索プロンプトを作る（視点・目的・難易度）", action: "deepsearch" },
     ];
   } else {
+    const relationInfo = _relationInfo(n);
     const CORE_HEAD = [
+      ...(relationInfo ? [{ s: "🧭 中心命題との関係", t: `🧭 「${n.label}」と中心命題の関係を展開する（著作・思想・歴史・受容）`, action: "relationship", ctx: { relation: relationInfo, node: relationInfo.node } }] : []),
       // 第一候補＝この語の全体像（概念全景）。派生ノードからも全景へ進める（半田様2026-08-01）
       { s: "🖼 全体像を見る", t: "🖼 この語の全体像を見る（概念全景）", action: "panorama", ctx: { node: n } },
       { s: "🎯 中心に据える", t: "🎯 これを地図の中心に据え直す（グラフを再構成）", action: "center" },
@@ -3133,7 +3395,7 @@ function gActions(n) {
       const who = n.kind === "author" ? "この人物" : "この著作";
       extra = [
         { s: `🔍 ${who}を調べる`, t: `🔍 ${who}を調べる（経歴・著作・出典を取得）`, action: "author", ctx: { search: n.search || tgt.term } },
-        { s: "📖 系譜メモ", t: `📖 ${who}の系譜メモ（この語での原語）`, action: "authorNote", ctx: { node: n } },
+        { s: n.kind === "work" ? "📖 著作の系譜" : "📖 系譜メモ", t: n.kind === "work" ? `📖 ${who}の成立前史・初版・翻訳・受容を追跡する` : `📖 ${who}の系譜メモ（この語での位置）`, action: "authorNote", ctx: { node: n } },
       ];
     } else {   // word / original / language / related / application
       extra = [
@@ -3288,6 +3550,7 @@ function gPanel(title, bodyHtml, term) {
   surfCreate("action", p, SURF.anchor.menu || ((G && G.lastX != null) ? { x: G.lastX, y: G.lastY } : null));
   SURF.activeActionCtx = PANEL_CTX ? { ...PANEL_CTX } : null;
   surfMakeDraggable("action", p.querySelector(".gp-head"));
+  if (_processing) gActionBusy(true, _processing.label);
   const closePanel = () => surfCloseAction(true);
   p.querySelector(".gp-x").addEventListener("click", closePanel);
   const bb = p.querySelector(".gp-back");
@@ -4191,8 +4454,12 @@ async function originRun(q, tok) {
   if (tok == null) tok = originClaim(q);   // standalone caller (newtab re-render) claims its own token
   const jp = LANG === "ja";
   $("origin-status").innerHTML = `<p class="muted">${jp ? "原点へ辿っています…" : "Tracing to the origin…"}</p>`;
-  $("origin-results").innerHTML = "";
-  $("origin-results").dataset.q = q;
+  // 取得の遅いカードを待つ間も、現在選択された語を即時に主役として表示する。
+  // 旧応答が後から到着しても token 検査でこの面を上書きしないため、画面が空白に
+  // 戻らず、W1→W2の高速操作でもユーザーは常に現在地を確認できる。
+  const resultShell = $("origin-results");
+  resultShell.dataset.q = q;
+  resultShell.innerHTML = `<div class="card word-card origin-loading-card"><p class="srcline">${jp ? "現在の語を中心に構成中…" : "Constructing the current term…"}</p><h2 class="theword">「${esc(q)}」</h2><p class="muted" aria-live="polite">${jp ? "意味・原語・著作・受容のカードを準備しています。" : "Preparing meaning, original-language, works and reception cards."}</p></div>`;
   const linkAttr = originLinkAttr();
   let d;
   try { d = await api(`/api/origin?q=${encodeURIComponent(q)}&lang=${LANG}`); }
