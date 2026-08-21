@@ -1820,7 +1820,11 @@ function surfPlace(kind) {
 function surfSyncLayout() {
   const r = surfRect("context");
   const w = r ? Math.round(r.width) : 0;
-  document.body.style.paddingRight = w ? w + "px" : "";
+  // On a narrow phone the Context surface is intentionally full-screen. A
+  // desktop-style body padding would leave a 100vw blank strip and make the
+  // underlying map appear horizontally broken. The panel itself already
+  // blocks the map, so only reserve a dock column on wider viewports.
+  document.body.style.paddingRight = w && window.innerWidth > 640 ? w + "px" : "";
   if (typeof gResize === "function") gResize();
   surfPlace("menu"); surfPlace("action");
 }

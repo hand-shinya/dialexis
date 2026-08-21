@@ -3,6 +3,10 @@
 ## A. 公開前（技術）
 
 - [ ] VPSで https（§7）まで完了（HTTPのままの告知は不可＝鍵入力があるため）
+- [x] `/validation` に第三者検証の再現手順・合格条件・報告形式を用意
+- [x] スマートフォン幅（390×844）の表示・横溢れ・主要操作を自動検証
+- [x] `/robots.txt`・`/sitemap.xml` で公開入口と可変APIを分離
+- [x] 共有インスタンス／秘密情報を入力しない注意をトップ・About・設定に表示
 - [ ] `/healthz` 外形監視（UptimeRobot無料枠等）設定
 - [ ] GitHub リポジトリ public・README表示確認
 - [ ] GENESIS.md / USER_GUIDE 両言語のリンク切れ確認

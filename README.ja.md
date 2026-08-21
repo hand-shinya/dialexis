@@ -27,7 +27,7 @@ APIキー不要・外部DB不要・ビルド工程なし。LLMキー（Anthropic
 ## 文書一覧
 
 READMEの英語版の表を参照してください。日本語利用者向けには特に：
-[GENESIS.md（憲法）](GENESIS.md) / [使用手順書](docs/USER_GUIDE.ja.md) / [さくらVPS公開手順](docs/DEPLOY_SAKURA_VPS.md) / [運用手順書](docs/OPERATIONS.md) / [改良手順書](docs/IMPROVEMENT_PROTOCOL.md)
+[GENESIS.md（憲法）](GENESIS.md) / [使用手順書](docs/USER_GUIDE.ja.md) / [公開第三者検証ガイド](docs/PUBLIC_VALIDATION_GUIDE.ja.md) / [公開準備計画](docs/PUBLIC_RELEASE_PLAN.md) / [さくらVPS公開手順](docs/DEPLOY_SAKURA_VPS.md) / [運用手順書](docs/OPERATIONS.md) / [改良手順書](docs/IMPROVEMENT_PROTOCOL.md)
 
 ## ライセンス
 

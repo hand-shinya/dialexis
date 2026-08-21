@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ '第三者検証入口' if lang == 'ja' else 'Third-party validation' }}{% endblock %}
+{% block content %}
+<section class="card validation-hero" aria-labelledby="validation-title">
+  <p class="public-kicker">PUBLIC VALIDATION / {{ '第三者検証' if lang == 'ja' else 'THIRD-PARTY CHECK' }}</p>
+  <h1 id="validation-title">{{ '第三者検証入口' if lang == 'ja' else 'Third-party validation entry' }}</h1>
+  {% if lang == 'ja' %}
+  <p>URLを知っている人なら、ログインやAPIキーなしで同じ探索を試せます。このページは、第三者が「何を操作し、何が起きれば合格とし、どの限界を報告するか」を共有するための公開手順です。</p>
+  <div class="validation-status"><span class="badge live">公開検証版</span><span>Level 0・ログイン不要・APIキー不要</span></div>
+  {% else %}
+  <p>Anyone who knows the URL can reproduce the core exploration without an account or API key. This page defines what to operate, what counts as a successful result, and which limits should be reported.</p>
+  <div class="validation-status"><span class="badge live">Public validation</span><span>Level 0 · no login · no API key</span></div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>{{ '最初の5分：再現手順' if lang == 'ja' else 'First five minutes: reproducible path' }}</h2>
+  {% if lang == 'ja' %}
+  <ol class="validation-steps">
+    <li><a href="/origin?q=Karl%20Marx&amp;lang=ja">Karl Marx の意味Mapを開く</a>。人物として認識され、中心・分野・著作・概念・受容の層が表示されることを確認する。</li>
+    <li>地図上の <b>吉本隆明</b> などの関連人物を選ぶ。最初のメニューに <b>中心命題との関係</b> が出て、中心人物との歴史・著作・思想上の経路と証拠階層が説明されることを確認する。</li>
+    <li>地図上の <b>共産党宣言</b> を選ぶ。メニューの <b>著作の系譜</b> を開き、原題 <i>Manifest der Kommunistischen Partei</i>、成立条件、後続の問いが表示されることを確認する。</li>
+    <li>人物または関連語のメニューから <b>別の語と組み合わせる</b> を選び、<code>吉本隆明</code> を入力してAND検索する。結果が空でも停止せず、何が未取得・未確認かと次の探索入口が表示されることを確認する。</li>
+    <li><a href="/origin?q=非有機的肉体&amp;lang=ja">非有機的肉体を開く</a>。語・短句・原語・翻訳・受容史を分け、候補と証拠を混同しない表示になっていることを確認する。</li>
+    <li>スマートフォンの縦画面で同じ操作を行う。メニュー・結果面の主要ボタンが画面外へ逃げず、処理中表示、閉じる、戻る、次の提案が操作できることを確認する。</li>
+  </ol>
+  {% else %}
+  <ol class="validation-steps">
+    <li><a href="/origin?q=Karl%20Marx&amp;lang=en">Open the Karl Marx meaning Map</a>. Confirm that the person is recognized and the map exposes identity, works, concepts and reception layers.</li>
+    <li>Select a related person such as <b>吉本隆明</b>. Confirm that the first menu item is <b>Relation to the central proposition</b> and that it explains routes and evidence levels.</li>
+    <li>Select <b>共産党宣言</b>. Open <b>Work lineage</b> and confirm the original title <i>Manifest der Kommunistischen Partei</i>, conditions of composition and further questions.</li>
+    <li>Choose <b>combine with another term</b> and enter <code>吉本隆明</code> for an AND search. Even when results are empty, confirm that the screen explains what was not retrieved and leaves the next entry point.</li>
+    <li><a href="/origin?q=%E9%9D%9E%E6%9C%89%E6%A9%9F%E7%9A%84%E8%82%89%E4%BD%93&amp;lang=en">Open inorganic body</a>. Confirm that term, short phrase, original form, translation and reception are separated, with candidates distinguished from evidence.</li>
+    <li>Repeat the path on a smartphone in portrait orientation. Confirm that menus and result panels remain usable, show processing state, and retain close/back/next-action paths.</li>
+  </ol>
+  {% endif %}
+</section>
+
+<section class="two-col validation-grid">
+  <div class="card">
+    <h2>{{ '合格と判定する観察点' if lang == 'ja' else 'What to observe for a pass' }}</h2>
+    {% if lang == 'ja' %}
+    <ul class="checklist">
+      <li>操作の途中で画面が空白・停止にならない。</li>
+      <li>処理中は「処理中／探索中／構成中」が見え、待機と停止を区別できる。</li>
+      <li>メニューの文言と実際の結果が一致する。</li>
+      <li>失敗・空結果・外部情報源の遅延が説明され、次の行動が残る。</li>
+      <li>候補・書誌確認・本文確認・解釈・未確認が区別される。</li>
+      <li>戻る・閉じる・別の見方・組み合わせで探索が再開できる。</li>
+    </ul>
+    {% else %}
+    <ul class="checklist">
+      <li>The screen does not become blank or stop mid-operation.</li>
+      <li>Processing is visible as processing, searching or constructing.</li>
+      <li>Menu wording matches the result that opens.</li>
+      <li>Failures, empty results and slow sources are explained with a next action.</li>
+      <li>Candidates, bibliographic checks, text checks, interpretation and unverified claims are distinct.</li>
+      <li>Back, close, alternative views and combine reopen a path of inquiry.</li>
+    </ul>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h2>{{ '報告に残すもの' if lang == 'ja' else 'What to report' }}</h2>
+    {% if lang == 'ja' %}
+    <p>不具合だけでなく、知的に価値があったかも同じ形式で記録してください。</p>
+    <dl class="validation-dl">
+      <dt>環境</dt><dd>端末、OS、ブラウザ、縦／横、時刻</dd>
+      <dt>入口</dt><dd>使用したURLと入力語</dd>
+      <dt>操作列</dt><dd>選択したノード、メニュー、入力した組み合わせ</dd>
+      <dt>結果</dt><dd>表示された文言、処理時間、空結果、次の提案</dd>
+      <dt>証拠</dt><dd>スクリーンショットまたは画面録画（必要ならURLも併記）</dd>
+      <dt>判断</dt><dd>理解が深まった点／誤解を招いた点／次に知りたいこと</dd>
+    </dl>
+    <p><a class="btn" href="https://github.com/hand-shinya/dialexis/issues">GitHub Issuesへ報告する</a></p>
+    {% else %}
+    <p>Record intellectual usefulness as well as defects using the same compact format.</p>
+    <dl class="validation-dl">
+      <dt>Environment</dt><dd>device, OS, browser, portrait/landscape, time</dd>
+      <dt>Entry</dt><dd>URL and entered term</dd>
+      <dt>Actions</dt><dd>selected nodes, menus and combined terms</dd>
+      <dt>Result</dt><dd>visible wording, wait time, empty result and next suggestion</dd>
+      <dt>Evidence</dt><dd>screenshot or recording, with URL when useful</dd>
+      <dt>Judgment</dt><dd>what deepened understanding, what misled, what to ask next</dd>
+    </dl>
+    <p><a class="btn" href="https://github.com/hand-shinya/dialexis/issues">Report on GitHub Issues</a></p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card validation-boundary">
+  <h2>{{ '判定の境界' if lang == 'ja' else 'Boundary of the validation' }}</h2>
+  {% if lang == 'ja' %}
+  <p><b>自動抽出は証拠ではなく候補です。</b>グラフは真理の地図ではなく探索レンズです。第三者検証で「壊れない」「次に進める」ことを確認しても、原典の意味・翻訳の正確さ・影響関係そのものが自動的に確定したことにはなりません。そこは原典・版・訳者・標準ロケータを人間が照合してください。</p>
+  <p class="public-warning"><b>現在の公開状態：</b>IP直打ちのHTTP検証版です。スマートフォンの通常ブラウザでは表示・操作できますが、HTTPS化前にAPIキーや秘密情報を入力してはいけません。ドメイン取得後のHTTPS化が、広い告知と本格的な第三者利用の前提です。</p>
+  {% else %}
+  <p><b>Automatic extraction is a candidate, not evidence.</b> The graph is an exploration lens, not a map of truth. A successful UI validation does not prove the meaning of an original, a translation or an influence relation; humans must still compare original text, edition, translator and standard locator.</p>
+  <p class="public-warning"><b>Current public state:</b> this is an IP-address HTTP validation instance. It is usable in an ordinary smartphone browser, but do not enter API keys or secrets before HTTPS is configured. Domain-based HTTPS is required before broad announcement and full third-party use.</p>
+  {% endif %}
+</section>
+
+<p><a data-route-back data-fallback="/" href="/?lang={{ lang }}">← {{ '探索へ戻る' if lang == 'ja' else 'Back to exploration' }}</a></p>
+{% endblock %}

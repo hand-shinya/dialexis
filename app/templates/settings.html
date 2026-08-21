@@ -3,6 +3,9 @@
 {% block content %}
 <h1>{{ t.settings_title }}</h1>
 <p class="muted">{{ t.settings_desc }}</p>
+<div class="public-warning" id="transport-warning" role="note">
+  {% if lang == 'ja' %}<b>公開URLの通信注意：</b>アドレスが <code>http://</code> の間は、APIキーを入力しないでください。公開運用ではドメイン取得後にHTTPS化してから利用します。{% else %}<b>Transport warning:</b> while this address is <code>http://</code>, do not enter an API key. Public operation should move to HTTPS after a domain is configured.{% endif %}
+</div>
 <script>
 if (location.protocol === "http:" && !["localhost", "127.0.0.1"].includes(location.hostname)) {
   document.write('<div class="notice-ai">' + (document.documentElement.lang === "ja"

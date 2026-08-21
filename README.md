@@ -42,6 +42,8 @@ OpenAI / Gemini / local Ollama) is optional and stays in your browser.
 
 ## Documentation
 
+The public validation path and release prerequisites are documented in the [public validation guide](docs/PUBLIC_VALIDATION_GUIDE.ja.md) and [public release plan](docs/PUBLIC_RELEASE_PLAN.md).
+
 | Doc | Purpose |
 |---|---|
 | [GENESIS.md](GENESIS.md) | The constitution: purpose, seven axioms, rebuild prompt |

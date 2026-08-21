@@ -17,9 +17,21 @@ def test_healthz():
 
 
 def test_pages_render():
-    for path in ("/", "/desk", "/watches", "/levels", "/settings", "/donate", "/about"):
+    for path in ("/", "/desk", "/watches", "/levels", "/settings", "/donate", "/about", "/validation"):
         assert client.get(path).status_code == 200, path
     assert "Dialexis" in client.get("/?lang=ja").text
+
+
+def test_public_discovery_surfaces():
+    page = client.get("/validation?lang=ja")
+    assert 'name="viewport"' in page.text
+    assert "第三者検証入口" in page.text
+    assert "中心命題との関係" in page.text
+    robots = client.get("/robots.txt")
+    assert robots.status_code == 200 and "Disallow: /api/" in robots.text
+    sitemap = client.get("/sitemap.xml")
+    assert sitemap.status_code == 200 and "<urlset" in sitemap.text and "/validation" in sitemap.text
+    assert page.headers["x-content-type-options"] == "nosniff"
 
 
 def test_research_graph_roundtrip():

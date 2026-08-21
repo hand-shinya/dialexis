@@ -19,7 +19,7 @@ import unicodedata
 import urllib.parse
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -37,6 +37,22 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI(title="Dialexis", version="0.1.0")
 app.mount("/static", StaticFiles(directory=os.path.join(APP_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(APP_DIR, "templates"))
+
+
+@app.middleware("http")
+async def public_response_headers(request: Request, call_next):
+    """Small, transport-neutral baseline for the public instance.
+
+    TLS/HSTS belongs at the reverse proxy and is deliberately not asserted
+    here: the current IP-only staging endpoint is still HTTP. These headers
+    are safe on both the staging endpoint and the eventual HTTPS endpoint.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    return response
 
 
 def _asset_version() -> str:
@@ -104,7 +120,7 @@ def render(request: Request, name: str, **ctx):
     resp = templates.TemplateResponse(
         request=request, name=name,
         context={"t": t, "lang": lang, "path": request.url.path,
-                 "asset_v": ASSET_V, **ctx})
+                 "asset_v": ASSET_V, "site_origin": str(request.base_url).rstrip("/"), **ctx})
     if request.query_params.get("lang"):
         resp.set_cookie("lang", lang, max_age=86400 * 365)
     return resp
@@ -214,6 +230,46 @@ def page_donate(request: Request):
 @app.get("/about", response_class=HTMLResponse)
 def page_about(request: Request):
     return render(request, "about.html")
+
+
+@app.get("/validation", response_class=HTMLResponse)
+def page_validation(request: Request):
+    """A public, reproducible entry point for third-party human validation."""
+    return render(request, "validation.html")
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+def robots_txt(request: Request):
+    """Keep API and mutable research surfaces out of ordinary indexing.
+
+    The app is intentionally usable without an account, so this is a
+    discoverability boundary, not an access-control boundary. Private data
+    must never be entered into the shared public instance.
+    """
+    return (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /api/\n"
+        "Disallow: /desk\n"
+        "Disallow: /ledger/\n"
+        "Disallow: /project/\n"
+        "Disallow: /settings\n"
+        "Disallow: /watches\n"
+        f"Sitemap: {str(request.base_url).rstrip('/')}/sitemap.xml\n"
+    )
+
+
+@app.get("/sitemap.xml")
+def sitemap_xml(request: Request):
+    """Expose only stable public entry points, never query-derived results."""
+    base = str(request.base_url).rstrip("/")
+    urls = ("/", "/origin", "/explore", "/validation", "/about", "/donate")
+    body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    body += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+    for path in urls:
+        body += f"<url><loc>{urllib.parse.quote(base + path, safe=':/')}</loc></url>"
+    body += "</urlset>"
+    return Response(content=body, media_type="application/xml")
 
 
 @app.get("/healthz")

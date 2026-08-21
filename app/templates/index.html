@@ -22,6 +22,22 @@
   {% endif %}
 </section>
 
+<section class="card public-release-card" aria-labelledby="public-release-title">
+  {% if lang == 'ja' %}
+  <p class="public-kicker">PUBLIC VALIDATION</p>
+  <h2 id="public-release-title">第三者検証用の公開入口</h2>
+  <p>このサイトはURLを知っている人が、ログインやAPIキーなしで同じ探索を再現できる公開検証版です。まずは用意した手順で、表示・遷移・失敗時の説明・スマートフォン操作を確認してください。</p>
+  <p class="public-warning"><b>共有インスタンス：</b>個人情報、非公開資料、秘密のAPIキーは入力しないでください。研究データを書き残す操作は、第三者にも見える共有環境として扱います。</p>
+  <a class="btn" href="/validation?lang=ja">第三者検証ガイドを開く</a>
+  {% else %}
+  <p class="public-kicker">PUBLIC VALIDATION</p>
+  <h2 id="public-release-title">Public entry for third-party validation</h2>
+  <p>This instance is open to anyone who knows the URL; the core walkthrough needs no login or API key. Use the reproducible guide to check rendering, transitions, failure explanations and smartphone interaction.</p>
+  <p class="public-warning"><b>Shared instance:</b> do not enter personal data, unpublished material or secret API keys. Treat anything saved here as visible to other users.</p>
+  <a class="btn" href="/validation?lang=en">Open the validation guide</a>
+  {% endif %}
+</section>
+
 <section class="axioms">
   <h2>{{ t.axioms_title }}</h2>
   {% if lang == 'ja' %}

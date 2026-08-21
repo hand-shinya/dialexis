@@ -8,6 +8,7 @@
   "nav_watches": "Watches",
   "nav_levels": "Reading Levels",
   "nav_deepsearch": "Deep-search Prompt",
+  "nav_validation": "Validation",
   "nav_langswitch": "Language",
   "origin_title": "Inquiry through the original language",
   "origin_lede": "The everyday word you use may split into several distinct terms in its original language. This reaches the original behind your word and opens its own-language meaning, etymology, and the terms it lives with — then returns it to your question.",
@@ -128,5 +129,7 @@
   "ai_notice": "AI-generated, unverified. Treat as 'unverified' until a human checks the sources.",
   "no_results": "No results",
   "delete": "Delete",
-  "loading": "Loading…"
+  "loading": "Loading…",
+  "footer_issues": "Issues / suggestions",
+  "meta_description": "A public research lens that preserves sources and falsifiability while tracing differences lost by translation and search."
 }
