@@ -3372,7 +3372,7 @@ function gActions(n) {
   } else {
     const relationInfo = _relationInfo(n);
     const CORE_HEAD = [
-      ...(relationInfo ? [{ s: "🧭 中心命題との関係", t: `🧭 「${n.label}」と中心命題の関係を展開する（著作・思想・歴史・受容）`, action: "relationship", ctx: { relation: relationInfo, node: relationInfo.node } }] : []),
+      ...(relationInfo ? [{ s: "🧭 中心命題との関係", t: `🧭 「${n.label}」と中心命題との関係を展開する（著作・思想・歴史・受容）`, action: "relationship", ctx: { relation: relationInfo, node: relationInfo.node } }] : []),
       // 第一候補＝この語の全体像（概念全景）。派生ノードからも全景へ進める（半田様2026-08-01）
       { s: "🖼 全体像を見る", t: "🖼 この語の全体像を見る（概念全景）", action: "panorama", ctx: { node: n } },
       { s: "🎯 中心に据える", t: "🎯 これを地図の中心に据え直す（グラフを再構成）", action: "center" },
@@ -3395,7 +3395,7 @@ function gActions(n) {
       const who = n.kind === "author" ? "この人物" : "この著作";
       extra = [
         { s: `🔍 ${who}を調べる`, t: `🔍 ${who}を調べる（経歴・著作・出典を取得）`, action: "author", ctx: { search: n.search || tgt.term } },
-        { s: n.kind === "work" ? "📖 著作の系譜" : "📖 系譜メモ", t: n.kind === "work" ? `📖 ${who}の成立前史・初版・翻訳・受容を追跡する` : `📖 ${who}の系譜メモ（この語での位置）`, action: "authorNote", ctx: { node: n } },
+        { s: n.kind === "work" ? "📖 著作の系譜" : "📖 系譜メモ", t: n.kind === "work" ? `📖 ${who}の著作の系譜：成立前史・初版・翻訳・受容を追跡する` : `📖 ${who}の系譜メモ（この語での位置）`, action: "authorNote", ctx: { node: n } },
       ];
     } else {   // word / original / language / related / application
       extra = [
