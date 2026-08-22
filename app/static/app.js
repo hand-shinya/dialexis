@@ -1722,6 +1722,17 @@ const SURF = {
 };
 
 function surfEl(kind) { return document.getElementById(SURFACE_ID[kind]); }
+// On a phone the Context is a normal reading section below the map.  Keeping
+// the host decision here (instead of in each panorama action) means that a
+// resize/orientation change follows the same surface rule everywhere.
+function surfContextHost() {
+  if (window.innerWidth <= 640) return $("origin-shell") || document.body;
+  return document.body;
+}
+function surfSyncContextHost() {
+  const el = surfEl("context"), host = surfContextHost();
+  if (el && host && el.parentElement !== host) host.appendChild(el);
+}
 function surfRect(kind) {
   const el = surfEl(kind); if (!el) return null;
   const r = el.getBoundingClientRect();
@@ -1730,8 +1741,12 @@ function surfRect(kind) {
 // Context が占有していない利用可能領域（viewport座標）。Menu/Action はこの中だけに置く。
 function surfAvail() {
   const box = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+  const context = surfEl("context");
   const r = surfRect("context");
-  if (r && r.width > 0 && r.height > 0) {
+  // A normal-flow mobile Context is not a viewport dock.  It must not shrink
+  // the coordinate space for a menu/action that is opened over the map.
+  const isDock = context && getComputedStyle(context).position === "fixed";
+  if (isDock && r && r.width > 0 && r.height > 0) {
     if (r.right >= window.innerWidth - 2) box.right = Math.max(0, r.left);        // 右ドック
     else if (r.left <= 2) box.left = Math.min(box.right, r.right);                // 左ドック（将来）
   }
@@ -1818,12 +1833,12 @@ function surfPlace(kind) {
 }
 // Context の占有幅をページ本体へ反映（地図がドロワーの下に隠れない＝実クリック座標が常に有効になる）
 function surfSyncLayout() {
+  surfSyncContextHost();
   const r = surfRect("context");
   const w = r ? Math.round(r.width) : 0;
-  // On a narrow phone the Context surface is intentionally full-screen. A
-  // desktop-style body padding would leave a 100vw blank strip and make the
-  // underlying map appear horizontally broken. The panel itself already
-  // blocks the map, so only reserve a dock column on wider viewports.
+  // On a narrow phone the Context is in normal page flow. A desktop-style
+  // body padding would leave a blank strip and make the page appear broken;
+  // only the fixed desktop dock reserves a column.
   document.body.style.paddingRight = w && window.innerWidth > 640 ? w + "px" : "";
   if (typeof gResize === "function") gResize();
   surfPlace("menu"); surfPlace("action");
@@ -1905,7 +1920,8 @@ function surfCreate(kind, el, anchor) {
   else if (kind === "context") { surfDestroy("menu"); surfClearAction(false); surfDestroy("context"); }
   el.id = SURFACE_ID[kind];
   el.classList.add("dx-surface");
-  document.body.appendChild(el);          // DOM順で常に最後＝後から開いた面が古い面の背後に出ない
+  const host = kind === "context" ? surfContextHost() : document.body;
+  host.appendChild(el);                   // mobile Contextは地図の後ろではなく、地図の下の本文として読む
   el.style.zIndex = String(++SURF.z);     // z-indexでも最前面
   if (kind === "context") surfSyncLayout();
   else { SURF.anchor[kind] = anchor || SURF.anchor[kind] || surfAnchorDefault(); surfPlace(kind); }
