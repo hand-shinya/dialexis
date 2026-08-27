@@ -55,6 +55,8 @@ cp "$APP_DIR/deploy/systemd/dialexis-harvester.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now dialexis dialexis-harvester.timer
 systemctl restart dialexis
+visudo -cf "$APP_DIR/deploy/dialexis-deploy.sudoers" >/dev/null
+install -o root -g root -m 0440 "$APP_DIR/deploy/dialexis-deploy.sudoers" /etc/sudoers.d/dialexis-deploy
 
 echo "== [7/9] nginx =="
 cp "$APP_DIR/deploy/nginx-dialexis.conf" /etc/nginx/conf.d/dialexis.conf

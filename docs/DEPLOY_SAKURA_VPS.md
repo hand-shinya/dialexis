@@ -39,6 +39,25 @@ bootstrap は次を自動実行する（再実行しても安全）：
 
 最後に `OK: Dialexis is live on port 80 via nginx.` が出れば完了。
 
+### 既存VPSへの追加反映（旧bootstrap済みの場合）
+
+リポジトリ更新だけでは、既存の `/etc/systemd/system/dialexis.service` に公開モード環境が
+入らない場合がある。VPS上で管理者パスワードを使い、次を一度だけ実行する。
+
+```bash
+sudo /opt/dialexis/deploy/activate_public_instance.sh
+```
+
+成功後は `healthz` に `public_instance: true`、`session_secret_configured: true` が現れ、
+`dialexis_workspace` Cookieが発行される。以後は次の通常更新を使う。
+
+```bash
+ssh -i ~/.ssh/dialexis_vps ubuntu@219.94.244.239 /opt/dialexis/deploy/vps_deploy.sh
+```
+
+この一回限りのactivationが未実施の状態で新コードを再起動すると、公開モード境界が有効に
+ならないため、再起動だけを先に行わない。
+
 ## 4. 公開確認
 
 ブラウザで次を開く：

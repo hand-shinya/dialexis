@@ -27,6 +27,21 @@ DIALEXIS_SESSION_SECRET=<十分に長いランダム値>
 
 `DIALEXIS_SESSION_SECRET` がない公開起動は、誤って再起動ごとに所有データを失う状態を避けるため、アプリケーション起動時に拒否する。
 
+### 既存VPSを一度だけ公開モードへ切り替える
+
+旧bootstrapで作成したVPSには、リポジトリだけ更新しても `/etc/systemd/system/dialexis.service`
+と `/etc/dialexis/dialexis.env` は自動更新されない場合がある。その場合はVPS管理者として、次を
+一度だけ実行する。
+
+```bash
+sudo /opt/dialexis/deploy/activate_public_instance.sh
+```
+
+このスクリプトは、既存のsystemd定義をタイムスタンプ付きで退避し、永続secret、公開用unit、
+harvester定義、最小権限sudoersを検証して導入し、daemon-reload・サービス再起動・`healthz`の
+公開モード/Cookie確認まで行う。以後の通常更新は、`deploy/vps_deploy.sh`の狭いsudo許可で
+継続できる。既存secretが空または短い場合は上書きせず停止する。
+
 ## 所有・公開モデル
 
 | 資産 | 既定 | 他ワークスペースからの読取 | 書込み |
