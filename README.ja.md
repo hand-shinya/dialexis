@@ -22,7 +22,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 # http://localhost:8000 を開く
 ```
 
-APIキー不要・外部DB不要・ビルド工程なし。LLMキー（Anthropic / OpenAI / Gemini / ローカルOllama）は任意で、ブラウザ内にのみ保存されます。
+APIキー不要・外部DB不要・ビルド工程なし。LLMキー（Anthropic / OpenAI / Gemini / ローカルOllama）は任意で、現在はブラウザのタブ内（`sessionStorage`）にのみ保存され、再起動後まで残りません。公開運用の匿名ワークスペース境界は [公開配置セキュリティ](docs/PUBLIC_DEPLOYMENT_SECURITY.md) を参照してください。
 
 ## 文書一覧
 

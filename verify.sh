@@ -31,7 +31,9 @@ done
 
 # 統合(network依存)スイート＝外部サービス(SearXNG/DWDS/Wikidata works)や乱数×取得に依存し、ローカルで
 # 決定論的にできないもの。デプロイgateには使わない（情報表示）。それ以外は不変条件スイート＝gate対象。
-INTEGRATION="combine_ui play origin thinkers_graph thinkers_recall"
+# 外部サービス／ネットワーク応答に依存するスイート。ローカル環境で応答が欠けても、
+# 内部の不変条件gateを偽陽性で止めないよう情報表示へ分離する。
+INTEGRATION="applications_wave combine_ui extterm lenses_full origin play thinkers_graph thinkers_recall"
 echo "══ 3a) 不変条件スイート（決定論・デプロイgate対象）══"
 for t in tests/e2e/*.e2e.js; do
   name=$(basename "$t"); stem="${name%.e2e.js}"

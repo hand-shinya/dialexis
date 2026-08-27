@@ -11,10 +11,13 @@ of the seven axioms. In particular:
 """
 import asyncio
 import copy
+import hashlib
+import hmac
 import json
 import math
 import os
 import re
+import secrets
 import unicodedata
 import urllib.parse
 
@@ -39,6 +42,111 @@ app.mount("/static", StaticFiles(directory=os.path.join(APP_DIR, "static")), nam
 templates = Jinja2Templates(directory=os.path.join(APP_DIR, "templates"))
 
 
+# ---------------------------------------------------------------------------
+# Public-instance boundary
+# ---------------------------------------------------------------------------
+# Dialexis intentionally has a keyless Level-0 surface.  That does not mean
+# that one anonymous browser may read or mutate another browser's research
+# assets.  Until a full account provider is introduced, a signed pseudonymous
+# workspace cookie supplies the minimum isolation boundary.  It is not an
+# identity system: deployment operators MUST set DIALEXIS_SESSION_SECRET and
+# MUST use HTTPS at the reverse proxy before treating this as a public service.
+WORKSPACE_COOKIE = "dialexis_workspace"
+WORKSPACE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+_PUBLIC_INSTANCE = str(os.environ.get("DIALEXIS_PUBLIC_INSTANCE", "")).lower() in {
+    "1", "true", "yes", "on"
+}
+_LOCAL_WORKSPACE = os.environ.get("DIALEXIS_LEGACY_WORKSPACE_ID", "single-user-local")
+_SESSION_SECRET_CONFIGURED = bool(os.environ.get("DIALEXIS_SESSION_SECRET"))
+_SESSION_SECRET = os.environ.get("DIALEXIS_SESSION_SECRET", "")
+if _PUBLIC_INSTANCE and not _SESSION_SECRET_CONFIGURED:
+    raise RuntimeError(
+        "DIALEXIS_PUBLIC_INSTANCE=1 requires DIALEXIS_SESSION_SECRET; "
+        "configure a persistent secret before exposing Dialexis publicly")
+if _PUBLIC_INSTANCE and len(_SESSION_SECRET) < 32:
+    raise RuntimeError(
+        "DIALEXIS_SESSION_SECRET must be at least 32 characters in public mode")
+if not _SESSION_SECRET:
+    # Local development/tests remain deterministic within one process.  A
+    # restart intentionally rotates anonymous workspaces when the operator has
+    # not configured a persistent secret, preventing a false sense of durable
+    # identity on an unsafe staging process.
+    _SESSION_SECRET = secrets.token_hex(32)
+_CSP_REPORT_ONLY = (
+    "default-src 'self'; base-uri 'self'; object-src 'none'; "
+    "frame-ancestors 'self'; form-action 'self'; "
+    "script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: https:; font-src 'self' data:; "
+    "connect-src 'self';"
+)
+
+
+def _workspace_signature(payload: str) -> str:
+    return hmac.new(_SESSION_SECRET.encode("utf-8"), payload.encode("utf-8"),
+                    hashlib.sha256).hexdigest()
+
+
+def _new_workspace_token() -> tuple[str, str]:
+    payload = secrets.token_urlsafe(24)
+    return payload, f"{payload}.{_workspace_signature(payload)}"
+
+
+def _workspace_from_cookie(raw: str | None) -> tuple[str, bool]:
+    if not raw or "." not in raw:
+        payload, _ = _new_workspace_token()
+        return payload, False
+    payload, signature = raw.rsplit(".", 1)
+    if not payload or not hmac.compare_digest(signature, _workspace_signature(payload)):
+        payload, _ = _new_workspace_token()
+        return payload, False
+    return payload, True
+
+
+def workspace_id(request: Request) -> str:
+    """Return the request's signed anonymous workspace identifier."""
+    if not _PUBLIC_INSTANCE:
+        request.state.workspace_id = _LOCAL_WORKSPACE
+        return _LOCAL_WORKSPACE
+    value = getattr(request.state, "workspace_id", "")
+    if value:
+        return value
+    value, _ = _workspace_from_cookie(request.cookies.get(WORKSPACE_COOKIE))
+    request.state.workspace_id = value
+    return value
+
+
+def _expose_workspace_record(row, wid: str = "", can_edit: bool = True) -> dict:
+    """Return a browser-safe record without the internal owner token.
+
+    ``workspace_id`` is an authorization key, not research metadata.  The UI
+    receives only the derived capability flag; the server remains the final
+    authority for every write operation.
+    """
+    data = dict(row)
+    owner = data.pop("workspace_id", None)
+    if can_edit and owner is not None:
+        data["can_edit"] = bool(wid and owner == wid)
+    return data
+
+
+def _request_is_https(request: Request) -> bool:
+    """Recognize HTTPS both at Uvicorn and behind the documented proxy."""
+    if request.url.scheme == "https":
+        return True
+    # The reverse proxy overwrites this header with its own scheme.  If an
+    # untrusted direct client supplies it, the worst outcome is a Secure
+    # cookie that is not sent over HTTP (a fresh workspace), not plaintext
+    # credential transport.
+    return request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip().lower() == "https"
+
+
+def _append_vary(response, value: str) -> None:
+    current = [part.strip() for part in response.headers.get("Vary", "").split(",") if part.strip()]
+    if value.lower() not in {part.lower() for part in current}:
+        current.append(value)
+        response.headers["Vary"] = ", ".join(current)
+
+
 @app.middleware("http")
 async def public_response_headers(request: Request, call_next):
     """Small, transport-neutral baseline for the public instance.
@@ -47,11 +155,38 @@ async def public_response_headers(request: Request, call_next):
     here: the current IP-only staging endpoint is still HTTP. These headers
     are safe on both the staging endpoint and the eventual HTTPS endpoint.
     """
+    if _PUBLIC_INSTANCE:
+        wid, valid_cookie = _workspace_from_cookie(request.cookies.get(WORKSPACE_COOKIE))
+        new_token = None
+        if not valid_cookie:
+            wid, new_token = _new_workspace_token()
+    else:
+        wid, valid_cookie, new_token = _LOCAL_WORKSPACE, True, None
+    request.state.workspace_id = wid
     response = await call_next(request)
+    if new_token:
+        response.set_cookie(WORKSPACE_COOKIE, new_token,
+                            max_age=WORKSPACE_COOKIE_MAX_AGE,
+                            httponly=True, samesite="lax",
+                            secure=_request_is_https(request),
+                            path="/")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Content-Security-Policy-Report-Only", _CSP_REPORT_ONLY)
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    response.headers.setdefault(
+        "X-Dialexis-Workspace-Mode",
+        "anonymous-signed-cookie" if _PUBLIC_INSTANCE else "single-user-local")
+    # Public pages can contain workspace-specific visibility and capability
+    # flags.  Prevent a reverse proxy or browser cache from replaying one
+    # anonymous workspace's HTML to another; static assets remain cacheable.
+    if _PUBLIC_INSTANCE and not request.url.path.startswith("/static/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+        _append_vary(response, "Cookie")
+    elif request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")
     return response
 
 
@@ -183,21 +318,27 @@ def page_desk(request: Request):
 @app.get("/project/{pid}", response_class=HTMLResponse)
 def page_project(request: Request, pid: int):
     conn = get_conn()
-    p = conn.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+    wid = workspace_id(request)
+    p = conn.execute(
+        "SELECT * FROM projects WHERE id=? AND (workspace_id=? OR is_public=1)",
+        (pid, wid)).fetchone()
     conn.close()
     if not p:
         raise HTTPException(404)
-    return render(request, "project.html", project=dict(p))
+    return render(request, "project.html", project=_expose_workspace_record(p, wid))
 
 
 @app.get("/ledger/{lid}", response_class=HTMLResponse)
 def page_ledger(request: Request, lid: int):
     conn = get_conn()
-    l = conn.execute("SELECT * FROM ledgers WHERE id=?", (lid,)).fetchone()
+    wid = workspace_id(request)
+    l = conn.execute(
+        "SELECT * FROM ledgers WHERE id=? AND (workspace_id=? OR is_public=1)",
+        (lid, wid)).fetchone()
     conn.close()
     if not l:
         raise HTTPException(404)
-    return render(request, "ledger.html", ledger=dict(l))
+    return render(request, "ledger.html", ledger=_expose_workspace_record(l, wid))
 
 
 @app.get("/watches", response_class=HTMLResponse)
@@ -273,11 +414,19 @@ def sitemap_xml(request: Request):
 
 
 @app.get("/healthz")
-def healthz():
+def healthz(request: Request):
     conn = get_conn()
-    n = conn.execute("SELECT COUNT(*) c FROM projects").fetchone()["c"]
+    if _PUBLIC_INSTANCE:
+        n = conn.execute(
+            "SELECT COUNT(*) c FROM projects WHERE workspace_id=? OR is_public=1",
+            (workspace_id(request),)).fetchone()["c"]
+    else:
+        n = conn.execute("SELECT COUNT(*) c FROM projects").fetchone()["c"]
     conn.close()
-    return {"status": "ok", "projects": n, "time": now()}
+    return {"status": "ok", "projects": n, "time": now(),
+            "public_instance": _PUBLIC_INSTANCE,
+            "session_secret_configured": _SESSION_SECRET_CONFIGURED,
+            "workspace_mode": "anonymous-signed-cookie" if _PUBLIC_INSTANCE else "single-user-local"}
 
 
 # ---------- explore (lens over live sources) ----------
@@ -1259,15 +1408,19 @@ def _history_research_brief(q: str, domain: str):
     }
 
 
-def _saved_ledgers_for_query(q: str, domain: str) -> list:
+def _saved_ledgers_for_query(q: str, domain: str, workspace: str = "") -> list:
     conn = get_conn()
     try:
+        visibility = "l.workspace_id=? OR l.is_public=1"
         return rows(conn.execute(
             "SELECT l.id, l.title, l.subject, l.central_question, l.domain, l.status, l.version,"
             " (SELECT COUNT(*) FROM ledger_entries e WHERE e.ledger_id=l.id) AS entry_count,"
-            " (SELECT COUNT(*) FROM project_ledger_links pll WHERE pll.ledger_id=l.id AND pll.status='active') AS project_count"
+            " (SELECT COUNT(*) FROM project_ledger_links pll JOIN projects p ON p.id=pll.project_id"
+            "  WHERE pll.ledger_id=l.id AND pll.status='active'"
+            "  AND (p.workspace_id=? OR p.is_public=1)) AS project_count"
             " FROM ledgers l WHERE l.subject=? AND l.domain=? AND l.status!='archived'"
-            " ORDER BY l.updated_at DESC", (str(q or "").strip(), str(domain or "philosophy"))))
+            f" AND ({visibility}) ORDER BY l.updated_at DESC",
+            (workspace, str(q or "").strip(), str(domain or "philosophy"), workspace)))
     finally:
         conn.close()
 
@@ -1553,7 +1706,8 @@ async def _history_discovery(q: str, domain: str, lang: str):
 
 
 @app.get("/api/translation-history")
-async def api_translation_history(q: str, domain: str = "philosophy", lang: str = "ja"):
+async def api_translation_history(q: str, domain: str = "philosophy", lang: str = "ja",
+                                  request: Request = None):
     """特別モード: 原語・翻訳・受容史を証拠階層つきで追跡する。
 
     通常の /api/origin と違い、これは一つの語の一般的な語源を返すAPIではない。
@@ -1582,7 +1736,8 @@ async def api_translation_history(q: str, domain: str = "philosophy", lang: str 
         "source_plan": copy.deepcopy(meta.get("source_plan", [])),
         "available_domains": supported_domains,
         "seeded_domains": available,
-        "saved_ledgers": _saved_ledgers_for_query(q, domain_key),
+        "saved_ledgers": _saved_ledgers_for_query(
+            q, domain_key, workspace_id(request) if request else ""),
     }
     if not dossier:
         # Person names use a different contract: identity variants are not
@@ -2573,7 +2728,8 @@ async def api_deepsearch(request: Request):
         try:
             out = await adapter.run(llm["provider"], llm.get("model", ""), llm["key"],
                                     "deepsearch_prompt", sys_p,
-                                    f"Target service: {service}\n\nDraft:\n{level0}")
+                                    f"Target service: {service}\n\nDraft:\n{level0}",
+                                    workspace=workspace_id(request))
             result["level2"] = out
         except Exception as e:
             result["level2"] = {"error": f"{type(e).__name__}: {e}"}
@@ -2593,6 +2749,15 @@ def api_locator(author: str, work: str = "", locator: str = ""):
 def _ledger_enum(value, allowed, default):
     value = str(value or "").strip()
     return value if value in allowed else default
+
+
+def _public_flag(value) -> int:
+    """Normalize JSON/form truth values before changing public visibility."""
+    if isinstance(value, bool):
+        return 1 if value else 0
+    return 1 if str(value or "").strip().lower() in {
+        "1", "true", "yes", "on"
+    } else 0
 
 
 def _ledger_evidence_level(level: str, source_label: str = "") -> str:
@@ -2630,6 +2795,28 @@ def _ledger_source_role(source: dict) -> str:
     return "candidate_index"
 
 
+def _ledger_or_404(conn, lid: int, request: Request, write: bool = False):
+    """Resolve a ledger under the request workspace boundary.
+
+    Public ledgers are readable for discovery, but only their owning workspace
+    may mutate them.  This preserves the intended many-project reuse model
+    without turning an unguessable numeric id into write access.
+    """
+    wid = workspace_id(request)
+    if write:
+        row = conn.execute(
+            "SELECT * FROM ledgers WHERE id=? AND workspace_id=?", (lid, wid)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT * FROM ledgers WHERE id=? AND (workspace_id=? OR is_public=1)",
+            (lid, wid)
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "unknown ledger")
+    return row
+
+
 def _ledger_snapshot(conn, lid: int) -> dict:
     ledger = conn.execute("SELECT * FROM ledgers WHERE id=?", (lid,)).fetchone()
     if not ledger:
@@ -2663,13 +2850,21 @@ def _record_ledger_version(conn, lid: int, note: str = "", bump: bool = False) -
     return version
 
 
-def _ledger_detail(conn, lid: int) -> dict:
+def _ledger_detail(conn, lid: int, visible_workspace: str | None = None) -> dict:
     data = _ledger_snapshot(conn, lid)
+    if visible_workspace is not None:
+        data["ledger"] = _expose_workspace_record(data["ledger"], visible_workspace)
+    project_visibility = ""
+    project_params = [lid]
+    if visible_workspace is not None:
+        project_visibility = " AND (p.workspace_id=? OR p.is_public=1)"
+        project_params.append(visible_workspace)
     data["linked_projects"] = rows(conn.execute(
         "SELECT p.id, p.title, pll.role, pll.pinned_version, pll.status, pll.note,"
         " pll.created_at, pll.updated_at"
         " FROM project_ledger_links pll JOIN projects p ON p.id=pll.project_id"
-        " WHERE pll.ledger_id=? ORDER BY p.updated_at DESC", (lid,)))
+        " WHERE pll.ledger_id=?" + project_visibility +
+        " ORDER BY p.updated_at DESC", tuple(project_params)))
     data["versions"] = rows(conn.execute(
         "SELECT ledger_id, version, note, created_at FROM ledger_versions"
         " WHERE ledger_id=? ORDER BY version DESC", (lid,)))
@@ -2737,7 +2932,8 @@ def _ledger_add_entry(conn, lid: int, body: dict, source_map=None) -> int:
     return entry_id
 
 
-def _ledger_create(conn, body: dict, title: str | None = None, parent_id=None) -> int:
+def _ledger_create(conn, body: dict, title: str | None = None, parent_id=None,
+                   workspace: str = "") -> int:
     title = (title or body.get("title") or "").strip()
     if not title:
         raise HTTPException(400, "ledger title required")
@@ -2745,11 +2941,11 @@ def _ledger_create(conn, body: dict, title: str | None = None, parent_id=None) -
     status = _ledger_enum(body.get("status"), db.LEDGER_STATUSES, "draft")
     cur = conn.execute(
         "INSERT INTO ledgers(title, description, central_question, subject, subject_type,"
-        " domain, status, parent_ledger_id, version, created_at, updated_at)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        " domain, status, is_public, workspace_id, parent_ledger_id, version, created_at, updated_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (title, str(body.get("description") or ""), str(body.get("central_question") or body.get("question") or ""),
          str(body.get("subject") or ""), subject_type, str(body.get("domain") or "philosophy"),
-         status, parent_id, 1, now(), now()))
+         status, _public_flag(body.get("is_public")), workspace, parent_id, 1, now(), now()))
     lid = cur.lastrowid
     _record_ledger_version(conn, lid, "created")
     return lid
@@ -2782,12 +2978,13 @@ def _history_ledger_body(q: str, domain: str, result: dict, request_body: dict) 
             "status": "active" if dossier else "draft"}
 
 
-def _create_ledger_from_history(result: dict, request_body: dict) -> int:
+def _create_ledger_from_history(result: dict, request_body: dict, workspace: str = "") -> int:
     q = str(result.get("query") or request_body.get("query") or "").strip()
     domain = str(result.get("domain") or request_body.get("domain") or "philosophy")
     conn = get_conn()
     try:
-        lid = _ledger_create(conn, _history_ledger_body(q, domain, result, request_body))
+        lid = _ledger_create(conn, _history_ledger_body(q, domain, result, request_body),
+                             workspace=workspace)
         source_map = {}
         for source in _history_source_payloads(result):
             external_id = str(source.get("id") or source.get("external_id") or "")
@@ -2863,27 +3060,34 @@ def _create_ledger_from_history(result: dict, request_body: dict) -> int:
 
 
 @app.get("/api/ledgers")
-def list_ledgers(status: str = ""):
+def list_ledgers(request: Request, status: str = ""):
     conn = get_conn()
-    where = " WHERE l.status=?" if status in db.LEDGER_STATUSES else ""
-    params = (status,) if where else ()
+    wid = workspace_id(request)
+    where = " WHERE (l.workspace_id=? OR l.is_public=1)"
+    params = [wid, wid]
+    if status in db.LEDGER_STATUSES:
+        where += " AND l.status=?"
+        params.append(status)
     data = rows(conn.execute(
         "SELECT l.*,"
         " (SELECT COUNT(*) FROM ledger_entries e WHERE e.ledger_id=l.id) entry_count,"
         " (SELECT COUNT(*) FROM ledger_entries e WHERE e.ledger_id=l.id AND e.status='confirmed') confirmed_count,"
         " (SELECT COUNT(*) FROM ledger_entries e WHERE e.ledger_id=l.id AND e.status='candidate') candidate_count,"
         " (SELECT COUNT(*) FROM ledger_tasks t WHERE t.ledger_id=l.id AND t.status='open') open_task_count,"
-        " (SELECT COUNT(*) FROM project_ledger_links pll WHERE pll.ledger_id=l.id AND pll.status='active') project_count"
-        " FROM ledgers l" + where + " ORDER BY l.updated_at DESC", params))
+        " (SELECT COUNT(*) FROM project_ledger_links pll JOIN projects p ON p.id=pll.project_id"
+        "  WHERE pll.ledger_id=l.id AND pll.status='active'"
+        "  AND (p.workspace_id=? OR p.is_public=1)) project_count"
+        " FROM ledgers l" + where + " ORDER BY l.updated_at DESC", tuple(params)))
     conn.close()
-    return data
+    return [_expose_workspace_record(item, wid) for item in data]
 
 
 @app.get("/api/ledgers/{lid}")
-def get_ledger(lid: int):
+def get_ledger(lid: int, request: Request):
     conn = get_conn()
     try:
-        return _ledger_detail(conn, lid)
+        _ledger_or_404(conn, lid, request)
+        return _ledger_detail(conn, lid, workspace_id(request))
     finally:
         conn.close()
 
@@ -2893,9 +3097,9 @@ async def create_ledger(request: Request):
     body = await request.json()
     conn = get_conn()
     try:
-        lid = _ledger_create(conn, body)
+        lid = _ledger_create(conn, body, workspace=workspace_id(request))
         conn.commit()
-        return _ledger_detail(conn, lid)
+        return _ledger_detail(conn, lid, workspace_id(request))
     finally:
         conn.close()
 
@@ -2912,17 +3116,19 @@ async def update_ledger(lid: int, request: Request):
         status = _ledger_enum(body.get("status"), db.LEDGER_STATUSES, "draft")
         fields.append("status=?")
         values.append(status)
+    if "is_public" in body:
+        fields.append("is_public=?")
+        values.append(_public_flag(body.get("is_public")))
     if not fields:
         raise HTTPException(400, "nothing to update")
     conn = get_conn()
     try:
-        if not conn.execute("SELECT 1 FROM ledgers WHERE id=?", (lid,)).fetchone():
-            raise HTTPException(404, "unknown ledger")
+        _ledger_or_404(conn, lid, request, write=True)
         values += [now(), lid]
         conn.execute("UPDATE ledgers SET " + ", ".join(fields) + ", updated_at=? WHERE id=?", values)
         _record_ledger_version(conn, lid, "metadata updated", bump=True)
         conn.commit()
-        return _ledger_detail(conn, lid)
+        return _ledger_detail(conn, lid, workspace_id(request))
     finally:
         conn.close()
 
@@ -2932,12 +3138,11 @@ async def create_ledger_entry(lid: int, request: Request):
     body = await request.json()
     conn = get_conn()
     try:
-        if not conn.execute("SELECT 1 FROM ledgers WHERE id=?", (lid,)).fetchone():
-            raise HTTPException(404, "unknown ledger")
+        _ledger_or_404(conn, lid, request, write=True)
         entry_id = _ledger_add_entry(conn, lid, body)
         _record_ledger_version(conn, lid, "entry added", bump=True)
         conn.commit()
-        return {"id": entry_id, "ledger": _ledger_detail(conn, lid)}
+        return {"id": entry_id, "ledger": _ledger_detail(conn, lid, workspace_id(request))}
     finally:
         conn.close()
 
@@ -2950,6 +3155,7 @@ async def update_ledger_entry(entry_id: int, request: Request):
         entry = conn.execute("SELECT * FROM ledger_entries WHERE id=?", (entry_id,)).fetchone()
         if not entry:
             raise HTTPException(404, "unknown ledger entry")
+        _ledger_or_404(conn, entry["ledger_id"], request, write=True)
         fields, values = [], []
         for key in ("title", "body", "source_term", "target_term", "source_language",
                     "target_language", "author", "translator", "work", "edition", "year",
@@ -2973,7 +3179,7 @@ async def update_ledger_entry(entry_id: int, request: Request):
         conn.execute("UPDATE ledger_entries SET " + ", ".join(fields) + ", updated_at=? WHERE id=?", values)
         _record_ledger_version(conn, entry["ledger_id"], "entry updated", bump=True)
         conn.commit()
-        return _ledger_detail(conn, entry["ledger_id"])
+        return _ledger_detail(conn, entry["ledger_id"], workspace_id(request))
     finally:
         conn.close()
 
@@ -2983,13 +3189,15 @@ async def fork_ledger(lid: int, request: Request):
     body = await request.json()
     conn = get_conn()
     try:
+        _ledger_or_404(conn, lid, request)
         source = _ledger_snapshot(conn, lid)
         meta = source["ledger"]
         new_lid = _ledger_create(conn, {
             "title": body.get("title") or f"{meta['title']}（分岐）",
             "description": meta["description"], "central_question": meta["central_question"],
             "subject": meta["subject"], "subject_type": meta["subject_type"],
-            "domain": meta["domain"], "status": "draft"}, parent_id=lid)
+            "domain": meta["domain"], "status": "draft"}, parent_id=lid,
+            workspace=workspace_id(request))
         source_map, entry_map = {}, {}
         for s in source["sources"]:
             ns = _ledger_add_source(conn, new_lid, s)
@@ -3012,7 +3220,7 @@ async def fork_ledger(lid: int, request: Request):
                                                       task["status"], task["priority"], now(), now()))
         _record_ledger_version(conn, new_lid, f"forked from ledger {lid}", bump=True)
         conn.commit()
-        return _ledger_detail(conn, new_lid)
+        return _ledger_detail(conn, new_lid, workspace_id(request))
     finally:
         conn.close()
 
@@ -3029,34 +3237,47 @@ async def create_ledger_from_translation_history(request: Request):
             q, other_query, str(body.get("domain") or "philosophy"), str(body.get("lang") or "ja"))
     else:
         result = await api_translation_history(q, str(body.get("domain") or "philosophy"),
-                                               str(body.get("lang") or "ja"))
-    lid = _create_ledger_from_history(result, body)
+                                               str(body.get("lang") or "ja"), request)
+    lid = _create_ledger_from_history(result, body, workspace_id(request))
     conn = get_conn()
     try:
-        return {"id": lid, "status": result.get("status"), "ledger": _ledger_detail(conn, lid)}
+        return {"id": lid, "status": result.get("status"),
+                "ledger": _ledger_detail(conn, lid, workspace_id(request))}
     finally:
         conn.close()
 
 
-def _project_or_404(conn, pid: int):
-    p = conn.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+def _project_or_404(conn, pid: int, request: Request, write: bool = False):
+    wid = workspace_id(request)
+    if write:
+        p = conn.execute(
+            "SELECT * FROM projects WHERE id=? AND workspace_id=?", (pid, wid)
+        ).fetchone()
+    else:
+        p = conn.execute(
+            "SELECT * FROM projects WHERE id=? AND (workspace_id=? OR is_public=1)",
+            (pid, wid)
+        ).fetchone()
     if not p:
         raise HTTPException(404, "unknown project")
     return p
 
 
 @app.get("/api/projects/{pid}/ledgers")
-def project_ledgers(pid: int):
+def project_ledgers(pid: int, request: Request):
     conn = get_conn()
     try:
-        _project_or_404(conn, pid)
-        return rows(conn.execute(
+        _project_or_404(conn, pid, request)
+        wid = workspace_id(request)
+        data = rows(conn.execute(
             "SELECT l.*, pll.role, pll.pinned_version, pll.status AS link_status, pll.note AS link_note,"
             " pll.created_at AS linked_at, pll.updated_at AS link_updated_at,"
             " (SELECT COUNT(*) FROM project_ledger_entries ple WHERE ple.project_id=? AND ple.entry_id IN"
             "   (SELECT id FROM ledger_entries WHERE ledger_id=l.id)) AS used_entry_count"
             " FROM project_ledger_links pll JOIN ledgers l ON l.id=pll.ledger_id"
-            " WHERE pll.project_id=? ORDER BY l.updated_at DESC", (pid, pid)))
+            " WHERE pll.project_id=? AND (l.workspace_id=? OR l.is_public=1)"
+            " ORDER BY l.updated_at DESC", (pid, pid, wid)))
+        return [_expose_workspace_record(item, wid) for item in data]
     finally:
         conn.close()
 
@@ -3068,10 +3289,8 @@ async def link_project_ledger(pid: int, request: Request):
     role = _ledger_enum(body.get("role"), db.LEDGER_LINK_ROLES, "background")
     conn = get_conn()
     try:
-        _project_or_404(conn, pid)
-        ledger = conn.execute("SELECT * FROM ledgers WHERE id=?", (lid,)).fetchone()
-        if not ledger:
-            raise HTTPException(404, "unknown ledger")
+        _project_or_404(conn, pid, request, write=True)
+        ledger = _ledger_or_404(conn, lid, request)
         pinned = int(body.get("pinned_version") or ledger["version"])
         conn.execute(
             "INSERT INTO project_ledger_links(project_id, ledger_id, role, pinned_version, status, note, created_at, updated_at)"
@@ -3086,10 +3305,10 @@ async def link_project_ledger(pid: int, request: Request):
 
 
 @app.delete("/api/projects/{pid}/ledgers/{lid}")
-def unlink_project_ledger(pid: int, lid: int):
+def unlink_project_ledger(pid: int, lid: int, request: Request):
     conn = get_conn()
     try:
-        _project_or_404(conn, pid)
+        _project_or_404(conn, pid, request, write=True)
         conn.execute("DELETE FROM project_ledger_links WHERE project_id=? AND ledger_id=?", (pid, lid))
         conn.execute("DELETE FROM project_ledger_entries WHERE project_id=? AND entry_id IN"
                      " (SELECT id FROM ledger_entries WHERE ledger_id=?)", (pid, lid))
@@ -3107,11 +3326,12 @@ async def link_project_ledger_entry(pid: int, request: Request):
     relation = str(body.get("relation") or "evidence")
     conn = get_conn()
     try:
-        _project_or_404(conn, pid)
+        _project_or_404(conn, pid, request, write=True)
         entry = conn.execute("SELECT e.*, l.version FROM ledger_entries e JOIN ledgers l ON l.id=e.ledger_id WHERE e.id=?",
                              (entry_id,)).fetchone()
         if not entry:
             raise HTTPException(404, "unknown ledger entry")
+        _ledger_or_404(conn, entry["ledger_id"], request)
         link = conn.execute("SELECT 1 FROM project_ledger_links WHERE project_id=? AND ledger_id=? AND status='active'",
                             (pid, entry["ledger_id"])).fetchone()
         if not link:
@@ -3130,15 +3350,17 @@ async def link_project_ledger_entry(pid: int, request: Request):
 
 
 @app.get("/api/projects/{pid}/ledger-entries")
-def project_ledger_entries(pid: int):
+def project_ledger_entries(pid: int, request: Request):
     conn = get_conn()
     try:
-        _project_or_404(conn, pid)
+        _project_or_404(conn, pid, request)
         return rows(conn.execute(
             "SELECT ple.*, e.ledger_id, e.kind, e.title, e.body, e.evidence_level, e.status,"
             " l.title AS ledger_title, l.version AS current_version"
             " FROM project_ledger_entries ple JOIN ledger_entries e ON e.id=ple.entry_id"
-            " JOIN ledgers l ON l.id=e.ledger_id WHERE ple.project_id=? ORDER BY ple.created_at DESC", (pid,)))
+            " JOIN ledgers l ON l.id=e.ledger_id"
+            " WHERE ple.project_id=? AND (l.workspace_id=? OR l.is_public=1)"
+            " ORDER BY ple.created_at DESC", (pid, workspace_id(request))))
     finally:
         conn.close()
 
@@ -3146,13 +3368,15 @@ def project_ledger_entries(pid: int):
 # ---------- research desk (research-process graph) ----------
 
 @app.get("/api/projects")
-def list_projects():
+def list_projects(request: Request):
     conn = get_conn()
+    wid = workspace_id(request)
     data = rows(conn.execute(
         "SELECT p.*, (SELECT COUNT(*) FROM nodes n WHERE n.project_id=p.id) node_count"
-        " FROM projects p ORDER BY updated_at DESC"))
+        " FROM projects p WHERE p.workspace_id=? OR p.is_public=1 ORDER BY updated_at DESC",
+        (wid,)))
     conn.close()
-    return data
+    return [_expose_workspace_record(item, wid) for item in data]
 
 
 @app.post("/api/projects")
@@ -3162,9 +3386,10 @@ async def create_project(request: Request):
         raise HTTPException(400, "title required")
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO projects(title, description, question, created_at, updated_at)"
-        " VALUES(?,?,?,?,?)",
-        (b["title"].strip(), b.get("description", ""), b.get("question", ""), now(), now()))
+        "INSERT INTO projects(title, description, question, is_public, workspace_id, created_at, updated_at)"
+        " VALUES(?,?,?,?,?,?,?)",
+        (b["title"].strip(), b.get("description", ""), b.get("question", ""),
+         _public_flag(b.get("is_public")), workspace_id(request), now(), now()))
     pid = cur.lastrowid
     if b.get("question", "").strip():
         conn.execute(
@@ -3177,9 +3402,10 @@ async def create_project(request: Request):
 
 
 @app.delete("/api/projects/{pid}")
-def delete_project(pid: int):
+def delete_project(pid: int, request: Request):
     conn = get_conn()
-    conn.execute("DELETE FROM projects WHERE id=?", (pid,))
+    _project_or_404(conn, pid, request, write=True)
+    conn.execute("DELETE FROM projects WHERE id=? AND workspace_id=?", (pid, workspace_id(request)))
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -3202,12 +3428,10 @@ def _load_arguments(conn, pid: int) -> list:
 
 
 @app.get("/api/projects/{pid}/graph")
-def project_graph(pid: int):
+def project_graph(pid: int, request: Request):
     conn = get_conn()
-    p = conn.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
-    if not p:
-        conn.close()
-        raise HTTPException(404)
+    p = _project_or_404(conn, pid, request)
+    wid = workspace_id(request)
     nodes = rows(conn.execute("SELECT * FROM nodes WHERE project_id=?", (pid,)))
     edges = rows(conn.execute("SELECT * FROM edges WHERE project_id=?", (pid,)))
     prov = rows(conn.execute(
@@ -3218,20 +3442,28 @@ def project_graph(pid: int):
         "SELECT l.*, pll.role, pll.pinned_version, pll.status AS link_status, pll.note AS link_note,"
         " pll.created_at AS linked_at, pll.updated_at AS link_updated_at"
         " FROM project_ledger_links pll JOIN ledgers l ON l.id=pll.ledger_id"
-        " WHERE pll.project_id=? ORDER BY l.updated_at DESC", (pid,)))
+        " WHERE pll.project_id=? AND (l.workspace_id=? OR l.is_public=1)"
+        " ORDER BY l.updated_at DESC", (pid, workspace_id(request))))
     linked_entries = rows(conn.execute(
         "SELECT ple.*, e.ledger_id, e.kind, e.title, e.body, e.evidence_level, e.status,"
         " l.title AS ledger_title, l.version AS current_version"
         " FROM project_ledger_entries ple JOIN ledger_entries e ON e.id=ple.entry_id"
-        " JOIN ledgers l ON l.id=e.ledger_id WHERE ple.project_id=? ORDER BY ple.created_at DESC", (pid,)))
+        " JOIN ledgers l ON l.id=e.ledger_id"
+        " WHERE ple.project_id=? AND (l.workspace_id=? OR l.is_public=1)"
+        " ORDER BY ple.created_at DESC", (pid, workspace_id(request))))
     linked_ledger_sources = rows(conn.execute(
         "SELECT DISTINCT ls.* FROM project_ledger_links pll"
         " JOIN ledger_sources ls ON ls.ledger_id=pll.ledger_id"
-        " WHERE pll.project_id=? AND pll.status='active' ORDER BY ls.id", (pid,)))
+        " JOIN ledgers l ON l.id=pll.ledger_id"
+        " WHERE pll.project_id=? AND pll.status='active'"
+        " AND (l.workspace_id=? OR l.is_public=1) ORDER BY ls.id",
+        (pid, workspace_id(request))))
     conn.close()
-    return {"project": dict(p), "nodes": nodes, "edges": edges,
+    project = _expose_workspace_record(p, wid)
+    ledgers = [_expose_workspace_record(item, wid) for item in linked_ledgers]
+    return {"project": project, "nodes": nodes, "edges": edges,
             "provenance": prov, "arguments": args,
-            "ledgers": linked_ledgers, "ledger_entries": linked_entries,
+            "ledgers": ledgers, "ledger_entries": linked_entries,
             "ledger_sources": linked_ledger_sources}
 
 
@@ -3247,6 +3479,7 @@ async def create_node(pid: int, request: Request):
     if conf not in db.CONFIDENCE or origin not in db.ORIGINS:
         raise HTTPException(400, "bad confidence/origin")
     conn = get_conn()
+    _project_or_404(conn, pid, request, write=True)
     cur = conn.execute(
         "INSERT INTO nodes(project_id, type, title, body, confidence, origin,"
         " status, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
@@ -3278,6 +3511,12 @@ async def update_node(nid: int, request: Request):
         raise HTTPException(400, "nothing to update")
     vals += [now(), nid]
     conn = get_conn()
+    node = conn.execute(
+        "SELECT project_id FROM nodes WHERE id=?", (nid,)).fetchone()
+    if not node:
+        conn.close()
+        raise HTTPException(404, "unknown node")
+    _project_or_404(conn, node["project_id"], request, write=True)
     conn.execute(f"UPDATE nodes SET {', '.join(fields)}, updated_at=? WHERE id=?", vals)
     conn.commit()
     conn.close()
@@ -3285,8 +3524,13 @@ async def update_node(nid: int, request: Request):
 
 
 @app.delete("/api/nodes/{nid}")
-def delete_node(nid: int):
+def delete_node(nid: int, request: Request):
     conn = get_conn()
+    node = conn.execute("SELECT project_id FROM nodes WHERE id=?", (nid,)).fetchone()
+    if not node:
+        conn.close()
+        raise HTTPException(404, "unknown node")
+    _project_or_404(conn, node["project_id"], request, write=True)
     conn.execute("DELETE FROM nodes WHERE id=?", (nid,))
     conn.commit()
     conn.close()
@@ -3299,6 +3543,12 @@ async def create_edge(pid: int, request: Request):
     if b.get("rel") not in db.RELATIONS:
         raise HTTPException(400, f"rel must be one of {db.RELATIONS}")
     conn = get_conn()
+    _project_or_404(conn, pid, request, write=True)
+    src = conn.execute("SELECT project_id FROM nodes WHERE id=?", (int(b["src"]),)).fetchone()
+    dst = conn.execute("SELECT project_id FROM nodes WHERE id=?", (int(b["dst"]),)).fetchone()
+    if not src or not dst or src["project_id"] != pid or dst["project_id"] != pid:
+        conn.close()
+        raise HTTPException(400, "edge endpoints must belong to the project")
     cur = conn.execute(
         "INSERT INTO edges(project_id, src, dst, rel, created_at) VALUES(?,?,?,?,?)",
         (pid, int(b["src"]), int(b["dst"]), b["rel"], now()))
@@ -3309,8 +3559,13 @@ async def create_edge(pid: int, request: Request):
 
 
 @app.delete("/api/edges/{eid}")
-def delete_edge(eid: int):
+def delete_edge(eid: int, request: Request):
     conn = get_conn()
+    edge = conn.execute("SELECT project_id FROM edges WHERE id=?", (eid,)).fetchone()
+    if not edge:
+        conn.close()
+        raise HTTPException(404, "unknown edge")
+    _project_or_404(conn, edge["project_id"], request, write=True)
     conn.execute("DELETE FROM edges WHERE id=?", (eid,))
     conn.commit()
     conn.close()
@@ -3321,6 +3576,11 @@ def delete_edge(eid: int):
 async def add_provenance(nid: int, request: Request):
     b = await request.json()
     conn = get_conn()
+    node = conn.execute("SELECT project_id FROM nodes WHERE id=?", (nid,)).fetchone()
+    if not node:
+        conn.close()
+        raise HTTPException(404, "unknown node")
+    _project_or_404(conn, node["project_id"], request, write=True)
     cur = conn.execute(
         "INSERT INTO provenance(node_id, source_name, source_url, retrieved_at,"
         " quote, note, locator) VALUES(?,?,?,?,?,?,?)",
@@ -3336,17 +3596,25 @@ async def add_provenance(nid: int, request: Request):
 # ---------- argument reconstruction (E1-E5: P1..C, hidden premises, voice,
 #            per-premise locator, validity ≠ soundness) ----------
 
-def _argument_or_404(conn, aid: int):
-    a = conn.execute("SELECT * FROM arguments WHERE id=?", (aid,)).fetchone()
+def _argument_or_404(conn, aid: int, request: Request | None = None,
+                     write: bool = False):
+    if request is None:
+        a = conn.execute("SELECT * FROM arguments WHERE id=?", (aid,)).fetchone()
+    else:
+        wid = workspace_id(request)
+        visibility = "p.workspace_id=?" if write else "(p.workspace_id=? OR p.is_public=1)"
+        a = conn.execute(
+            "SELECT a.* FROM arguments a JOIN projects p ON p.id=a.project_id "
+            f"WHERE a.id=? AND {visibility}", (aid, wid)).fetchone()
     if not a:
-        conn.close()
         raise HTTPException(404, "unknown argument id")
     return a
 
 
 @app.get("/api/projects/{pid}/arguments")
-def list_arguments(pid: int):
+def list_arguments(pid: int, request: Request):
     conn = get_conn()
+    _project_or_404(conn, pid, request)
     data = _load_arguments(conn, pid)
     conn.close()
     return data
@@ -3358,6 +3626,7 @@ async def create_argument(pid: int, request: Request):
     if not b.get("title", "").strip():
         raise HTTPException(400, "title required")
     conn = get_conn()
+    _project_or_404(conn, pid, request, write=True)
     cur = conn.execute(
         "INSERT INTO arguments(project_id, title, conclusion, conclusion_node_id,"
         " note, created_at, updated_at) VALUES(?,?,?,?,?,?,?)",
@@ -3371,9 +3640,9 @@ async def create_argument(pid: int, request: Request):
 
 
 @app.get("/api/arguments/{aid}")
-def get_argument(aid: int):
+def get_argument(aid: int, request: Request):
     conn = get_conn()
-    a = dict(_argument_or_404(conn, aid))
+    a = dict(_argument_or_404(conn, aid, request))
     a["premises"] = rows(conn.execute(
         "SELECT * FROM argument_premises WHERE argument_id=? ORDER BY seq, id", (aid,)))
     conn.close()
@@ -3397,7 +3666,7 @@ async def update_argument(aid: int, request: Request):
         raise HTTPException(400, "nothing to update")
     vals += [now(), aid]
     conn = get_conn()
-    _argument_or_404(conn, aid)
+    _argument_or_404(conn, aid, request, write=True)
     conn.execute(f"UPDATE arguments SET {', '.join(fields)}, updated_at=? WHERE id=?",
                  vals)
     conn.commit()
@@ -3406,8 +3675,9 @@ async def update_argument(aid: int, request: Request):
 
 
 @app.delete("/api/arguments/{aid}")
-def delete_argument(aid: int):
+def delete_argument(aid: int, request: Request):
     conn = get_conn()
+    _argument_or_404(conn, aid, request, write=True)
     conn.execute("DELETE FROM arguments WHERE id=?", (aid,))
     conn.commit()
     conn.close()
@@ -3421,7 +3691,7 @@ async def add_premise(aid: int, request: Request):
     if voice not in db.VOICES:
         raise HTTPException(400, f"voice must be one of {db.VOICES}")
     conn = get_conn()
-    _argument_or_404(conn, aid)
+    _argument_or_404(conn, aid, request, write=True)
     seq = conn.execute(
         "SELECT COALESCE(MAX(seq),0)+1 FROM argument_premises WHERE argument_id=?",
         (aid,)).fetchone()[0]
@@ -3463,6 +3733,7 @@ async def update_premise(prid: int, request: Request):
     if not pr:
         conn.close()
         raise HTTPException(404, "unknown premise id")
+    _argument_or_404(conn, pr["argument_id"], request, write=True)
     conn.execute(f"UPDATE argument_premises SET {', '.join(fields)} WHERE id=?", vals)
     conn.execute("UPDATE arguments SET updated_at=? WHERE id=?",
                  (now(), pr["argument_id"]))
@@ -3472,8 +3743,14 @@ async def update_premise(prid: int, request: Request):
 
 
 @app.delete("/api/premises/{prid}")
-def delete_premise(prid: int):
+def delete_premise(prid: int, request: Request):
     conn = get_conn()
+    pr = conn.execute("SELECT argument_id FROM argument_premises WHERE id=?",
+                      (prid,)).fetchone()
+    if not pr:
+        conn.close()
+        raise HTTPException(404, "unknown premise id")
+    _argument_or_404(conn, pr["argument_id"], request, write=True)
     conn.execute("DELETE FROM argument_premises WHERE id=?", (prid,))
     conn.commit()
     conn.close()
@@ -3485,7 +3762,7 @@ async def reorder_premises(aid: int, request: Request):
     b = await request.json()
     order = b.get("order") or []
     conn = get_conn()
-    _argument_or_404(conn, aid)
+    _argument_or_404(conn, aid, request, write=True)
     owned = {r["id"] for r in conn.execute(
         "SELECT id FROM argument_premises WHERE argument_id=?", (aid,))}
     seq = 0
@@ -3512,7 +3789,7 @@ async def suggest_hidden(aid: int, request: Request):
     if not (llm.get("provider") and llm.get("key")):
         raise HTTPException(400, "LLM key required for hidden-premise suggestion (Level 2)")
     conn = get_conn()
-    a = dict(_argument_or_404(conn, aid))
+    a = dict(_argument_or_404(conn, aid, request, write=False))
     prems = rows(conn.execute(
         "SELECT * FROM argument_premises WHERE argument_id=? ORDER BY seq, id", (aid,)))
     conn.close()
@@ -3526,7 +3803,8 @@ async def suggest_hidden(aid: int, request: Request):
              f"Answer in {'Japanese' if lang == 'ja' else 'English'}.")
     try:
         out = await adapter.run(llm["provider"], llm.get("model", ""), llm["key"],
-                                "hidden_premise", sys_p, user, a["project_id"])
+                                "hidden_premise", sys_p, user, a["project_id"],
+                                workspace=workspace_id(request))
     except Exception as e:
         return {"level2": {"error": f"{type(e).__name__}: {e}"}}
     return {"level2": out, "notice": "unverified"}
@@ -3539,8 +3817,8 @@ TYPE_ORDER = ("question", "claim", "evidence", "counterclaim", "interpretation",
 
 
 @app.get("/api/projects/{pid}/export.md", response_class=PlainTextResponse)
-def export_md(pid: int):
-    g = project_graph(pid)
+def export_md(pid: int, request: Request):
+    g = project_graph(pid, request)
     p, nodes, edges = g["project"], g["nodes"], g["edges"]
     prov_by_node = {}
     for pv in g["provenance"]:
@@ -3623,8 +3901,8 @@ def export_md(pid: int):
 
 
 @app.get("/api/projects/{pid}/export.jsonld")
-def export_jsonld(pid: int):
-    g = project_graph(pid)
+def export_jsonld(pid: int, request: Request):
+    g = project_graph(pid, request)
     ctx = {
         "@vocab": "https://dialexis.org/vocab#",
         "prov": "http://www.w3.org/ns/prov#",
@@ -3732,14 +4010,14 @@ def _collect_refs(g: dict) -> list:
 
 
 @app.get("/api/projects/{pid}/export.bib", response_class=PlainTextResponse)
-def export_bib(pid: int):
-    g = project_graph(pid)
+def export_bib(pid: int, request: Request):
+    g = project_graph(pid, request)
     return bibliography.to_bibtex(_collect_refs(g), project=g["project"]["title"])
 
 
 @app.get("/api/projects/{pid}/export.csl.json")
-def export_csl(pid: int):
-    g = project_graph(pid)
+def export_csl(pid: int, request: Request):
+    g = project_graph(pid, request)
     return JSONResponse(bibliography.to_csl(_collect_refs(g)),
                         media_type="application/json")
 
@@ -3755,6 +4033,15 @@ async def api_counter(request: Request):
         lang = "en"
     if not claim:
         raise HTTPException(400, "claim required")
+    project_id = b.get("project_id")
+    if project_id:
+        try:
+            project_id = int(project_id)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "project_id must be an integer")
+        conn = get_conn()
+        _project_or_404(conn, project_id, request)
+        conn.close()
 
     level0 = [{"perspective": p["label"].get(lang, p["label"]["en"]),
                "id": p["id"],
@@ -3775,7 +4062,8 @@ async def api_counter(request: Request):
         try:
             result["level2"] = await adapter.run(
                 llm["provider"], llm.get("model", ""), llm["key"],
-                "counterargument", sys_p, claim, b.get("project_id"))
+                "counterargument", sys_p, claim, project_id,
+                workspace=workspace_id(request))
         except Exception as e:
             result["level2"] = {"error": f"{type(e).__name__}: {e}"}
     return result
@@ -3807,19 +4095,22 @@ async def api_levels_llm(request: Request):
              "contested points, and keep register appropriate to the level. "
              f"Answer in {'Japanese' if lang == 'ja' else 'English'}.")
     return await adapter.run(llm["provider"], llm.get("model", ""), llm["key"],
-                             f"reading_level:{level}", sys_p, concept)
+                             f"reading_level:{level}", sys_p, concept,
+                             workspace=workspace_id(request))
 
 
 # ---------- watches (dynamic freshness; harvester runs the same code via cron) ----------
 
 @app.get("/api/watches")
-def list_watches():
+def list_watches(request: Request):
     conn = get_conn()
+    wid = workspace_id(request)
     data = rows(conn.execute(
         "SELECT w.*, (SELECT COUNT(*) FROM watch_hits h WHERE h.watch_id=w.id AND h.seen=0)"
-        " unseen FROM watches w ORDER BY id DESC"))
+        " unseen FROM watches w WHERE w.workspace_id=? ORDER BY id DESC",
+        (wid,)))
     conn.close()
-    return data
+    return [_expose_workspace_record(item, wid) for item in data]
 
 
 @app.post("/api/watches")
@@ -3836,9 +4127,9 @@ async def create_watch(request: Request):
             openalex_id = found["data"][0]["id"]
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO watches(label, kind, openalex_id, query, created_at)"
-        " VALUES(?,?,?,?,?)",
-        (label, kind, openalex_id, b.get("query", label), now()))
+        "INSERT INTO watches(label, kind, openalex_id, query, workspace_id, created_at)"
+        " VALUES(?,?,?,?,?,?)",
+        (label, kind, openalex_id, b.get("query", label), workspace_id(request), now()))
     conn.commit()
     wid = cur.lastrowid
     conn.close()
@@ -3846,9 +4137,14 @@ async def create_watch(request: Request):
 
 
 @app.delete("/api/watches/{wid}")
-def delete_watch(wid: int):
+def delete_watch(wid: int, request: Request):
     conn = get_conn()
-    conn.execute("DELETE FROM watches WHERE id=?", (wid,))
+    if not conn.execute("SELECT 1 FROM watches WHERE id=? AND workspace_id=?",
+                        (wid, workspace_id(request))).fetchone():
+        conn.close()
+        raise HTTPException(404, "unknown watch")
+    conn.execute("DELETE FROM watches WHERE id=? AND workspace_id=?",
+                 (wid, workspace_id(request)))
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -3886,9 +4182,10 @@ async def check_watch(watch: dict) -> dict:
 
 
 @app.post("/api/watches/{wid}/run")
-async def run_watch(wid: int):
+async def run_watch(wid: int, request: Request):
     conn = get_conn()
-    w = conn.execute("SELECT * FROM watches WHERE id=?", (wid,)).fetchone()
+    w = conn.execute("SELECT * FROM watches WHERE id=? AND workspace_id=?",
+                     (wid, workspace_id(request))).fetchone()
     conn.close()
     if not w:
         raise HTTPException(404)
@@ -3896,8 +4193,12 @@ async def run_watch(wid: int):
 
 
 @app.get("/api/watches/{wid}/hits")
-def watch_hits(wid: int):
+def watch_hits(wid: int, request: Request):
     conn = get_conn()
+    if not conn.execute("SELECT 1 FROM watches WHERE id=? AND workspace_id=?",
+                        (wid, workspace_id(request))).fetchone():
+        conn.close()
+        raise HTTPException(404, "unknown watch")
     data = rows(conn.execute(
         "SELECT * FROM watch_hits WHERE watch_id=? ORDER BY found_at DESC LIMIT 100", (wid,)))
     conn.execute("UPDATE watch_hits SET seen=1 WHERE watch_id=?", (wid,))
@@ -3909,8 +4210,11 @@ def watch_hits(wid: int):
 # ---------- AI transparency ledger (axiom 6) ----------
 
 @app.get("/api/ledger")
-def ai_ledger():
+def ai_ledger(request: Request):
     conn = get_conn()
-    data = rows(conn.execute("SELECT * FROM ai_ledger ORDER BY id DESC LIMIT 200"))
+    wid = workspace_id(request)
+    data = rows(conn.execute(
+        "SELECT * FROM ai_ledger WHERE workspace_id=?"
+        " ORDER BY id DESC LIMIT 200", (wid,)))
     conn.close()
-    return data
+    return [_expose_workspace_record(item, wid, can_edit=False) for item in data]

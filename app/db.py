@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS projects(
   description TEXT DEFAULT '',
   question TEXT DEFAULT '',
   is_public INTEGER DEFAULT 0,
+  workspace_id TEXT DEFAULT '',
   created_at TEXT, updated_at TEXT);
 
 CREATE TABLE IF NOT EXISTS nodes(
@@ -97,6 +98,7 @@ CREATE TABLE IF NOT EXISTS watches(
   kind TEXT NOT NULL DEFAULT 'query',
   openalex_id TEXT DEFAULT '',
   query TEXT DEFAULT '',
+  workspace_id TEXT DEFAULT '',
   created_at TEXT,
   last_checked TEXT DEFAULT '');
 
@@ -124,6 +126,7 @@ CREATE TABLE IF NOT EXISTS ai_ledger(
   model TEXT,
   task TEXT,
   project_id INTEGER,
+  workspace_id TEXT DEFAULT '',
   summary TEXT);
 
 CREATE TABLE IF NOT EXISTS ledgers(
@@ -135,6 +138,8 @@ CREATE TABLE IF NOT EXISTS ledgers(
   subject_type TEXT NOT NULL DEFAULT 'term',
   domain TEXT DEFAULT 'philosophy',
   status TEXT NOT NULL DEFAULT 'draft',
+  is_public INTEGER DEFAULT 0,
+  workspace_id TEXT DEFAULT '',
   parent_ledger_id INTEGER REFERENCES ledgers(id) ON DELETE SET NULL,
   version INTEGER NOT NULL DEFAULT 1,
   created_at TEXT, updated_at TEXT);
@@ -253,6 +258,7 @@ CREATE TABLE IF NOT EXISTS argument_premises(
   source_url TEXT DEFAULT '',
   quote TEXT DEFAULT '',
   retrieved_at TEXT DEFAULT '');
+
 """
 
 
@@ -274,13 +280,54 @@ def _column_exists(conn, table: str, col: str) -> bool:
               for r in conn.execute(f"PRAGMA table_info({table})"))
 
 
+def _add_column_if_missing(conn, table: str, column: str, definition: str) -> None:
+    """Apply one additive column migration safely when workers start together."""
+    if _column_exists(conn, table, column):
+        return
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+    except sqlite3.OperationalError as exc:
+        # Two Uvicorn workers can import the app concurrently.  One may add
+        # the column between PRAGMA and ALTER in the other; that is success,
+        # while every different SQLite error must still fail loudly.
+        if "duplicate column name" not in str(exc).lower():
+            raise
+
+
 def _migrate(conn) -> None:
     """Additive, idempotent column adds for tables that already shipped.
     New tables are handled by CREATE TABLE IF NOT EXISTS in SCHEMA; this only
     covers columns added to pre-existing tables (rollback-safe: old code ignores
     the extra column). See docs/IMPROVEMENT_PROTOCOL.md §3."""
-    if not _column_exists(conn, "provenance", "locator"):
-        conn.execute("ALTER TABLE provenance ADD COLUMN locator TEXT DEFAULT ''")
+    _add_column_if_missing(conn, "provenance", "locator", "TEXT DEFAULT ''")
+    # Anonymous/public deployment boundary.  The columns are deliberately
+    # additive: old SQLite files remain readable, while every newly-created
+    # research asset can be scoped to its signed workspace cookie.  Empty
+    # values are retained for legacy rows and are never treated as private
+    # ownership; public legacy rows may still be read through is_public.
+    for table, column, definition in (
+        ("projects", "workspace_id", "TEXT DEFAULT ''"),
+        ("watches", "workspace_id", "TEXT DEFAULT ''"),
+        ("ai_ledger", "workspace_id", "TEXT DEFAULT ''"),
+        ("ledgers", "is_public", "INTEGER DEFAULT 0"),
+        ("ledgers", "workspace_id", "TEXT DEFAULT ''"),
+    ):
+        _add_column_if_missing(conn, table, column, definition)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ledgers_workspace ON ledgers(workspace_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_watches_workspace ON watches(workspace_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_ledger_workspace ON ai_ledger(workspace_id)")
+    # Preserve the pre-boundary local application.  A developer/operator who
+    # has not opted into the public instance still owns the old rows as one
+    # local workspace; the public deployment flag deliberately skips this
+    # claim so legacy private rows are not silently exposed.
+    public = str(os.environ.get("DIALEXIS_PUBLIC_INSTANCE", "")).lower() in {
+        "1", "true", "yes", "on"
+    }
+    if not public:
+        legacy = os.environ.get("DIALEXIS_LEGACY_WORKSPACE_ID", "single-user-local")
+        for table in ("projects", "watches", "ai_ledger", "ledgers"):
+            conn.execute(f"UPDATE {table} SET workspace_id=? WHERE workspace_id=''", (legacy,))
 
 
 def init_db() -> None:

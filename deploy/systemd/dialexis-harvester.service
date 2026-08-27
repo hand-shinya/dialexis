@@ -7,4 +7,6 @@ Type=oneshot
 User=dialexis
 Group=dialexis
 WorkingDirectory=/opt/dialexis
+Environment=DIALEXIS_PUBLIC_INSTANCE=1
+EnvironmentFile=/etc/dialexis/dialexis.env
 ExecStart=/opt/dialexis/.venv/bin/python -m app.harvester

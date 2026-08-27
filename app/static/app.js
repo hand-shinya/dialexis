@@ -1,5 +1,6 @@
 /* Dialexis frontend. No framework, no build step (GENESIS axiom 7: anyone can
-   rebuild this). API keys live ONLY in this browser's localStorage (axiom 5/6). */
+   rebuild this). API keys live ONLY in this tab's sessionStorage (axiom 5/6);
+   they are never persisted across browser restarts. */
 
 const LANG = window.DIALEXIS_LANG || "en";
 const T = {
@@ -186,12 +187,97 @@ async function api(path, opts = {}) {
   }
 }
 
-function llmConfig() {
-  const provider = localStorage.getItem("dialexis_provider") || "";
-  if (!provider) return null;
-  return { provider, model: localStorage.getItem("dialexis_model") || "",
-           key: localStorage.getItem("dialexis_key") || "" };
+// Page-level operations (desk, ledger, watches, settings) are also user
+// actions.  If an inline handler or a late async callback rejects, the browser
+// must not leave the user with a silent spinner or an unhandled Promise.  Keep
+// the technical detail in the console, and give the user a persistent,
+// non-destructive continuation surface instead.
+function uiReportFailure(error, opts = {}) {
+  try { console.error("Dialexis UI operation", error); } catch (e) {}
+  const jp = LANG === "ja";
+  const term = String(opts.term || "").trim();
+  const status = $("dx-global-status");
+  const originHref = term
+    ? `/origin?q=${encodeURIComponent(term)}&lang=${LANG}`
+    : `/origin?lang=${LANG}`;
+  const title = jp ? "操作を完了できない状態を検知しました" : "The operation did not complete";
+  const detail = jp
+    ? "現在の画面と保存済みの研究データは保持しています。下の入口から別の探索・研究デスクへ続けられます。"
+    : "The current screen and saved research data were kept. Continue from the entry points below to exploration or the research desk.";
+  const links = `<a class="dx-status-link" href="${originHref}">${jp ? "探索入口" : "exploration"}</a>
+    <a class="dx-status-link" href="/desk?lang=${LANG}">${jp ? "研究デスク" : "research desk"}</a>
+    <button type="button" class="dx-status-dismiss">${jp ? "通知を閉じる" : "dismiss"}</button>`;
+  if (status) {
+    status.innerHTML = `<div class="dx-status-card"><b>${title}</b><span>${detail}</span><div class="dx-status-actions">${links}</div></div>`;
+    status.hidden = false;
+    const close = status.querySelector(".dx-status-dismiss");
+    if (close) close.addEventListener("click", () => { status.hidden = true; });
+  }
+  if (typeof gToast === "function") gToast(jp ? "操作を継続できる入口を表示しました。" : "Continuation options are shown.");
 }
+
+function uiClearFailure() {
+  const status = $("dx-global-status");
+  if (status) { status.hidden = true; status.innerHTML = ""; }
+}
+
+// Inline onclick handlers do not await returned Promises.  Install one common
+// boundary after all declarations so any page operation has the same recovery
+// behavior.  Functions keep their original behavior; only rejected results
+// are translated into the user-facing continuation notice.
+function installUiErrorBoundary() {
+  const names = [
+    "loadAdoptPicker", "adoptItem", "exploreRun", "deskInit", "ledgerCreate",
+    "ledgerLinkProject", "ledgerFork", "ledgerAdoptEntry", "ledgerInit",
+    "deskCreate", "deskDelete", "counterRun", "projectInit", "projRefresh",
+    "projectLinkSelectedLedger", "projectUnlinkLedger", "projSetStatus",
+    "projDelNode", "projAddNode", "projAddEdge", "forkPick", "argAdd",
+    "argAddPremise", "argDelPremise", "argMove", "argSetValidity",
+    "argSetSoundness", "argDel", "argSuggestHidden", "watchesInit", "watchAdd",
+    "watchRun", "watchHits", "watchDel", "levelsShow", "deepsearchRun",
+    "settingsInit"
+  ];
+  names.forEach(name => {
+    const original = window[name];
+    if (typeof original !== "function" || original.__dxUiBoundary) return;
+    const wrapped = function (...args) {
+      let result;
+      try { result = original.apply(this, args); }
+      catch (error) { uiReportFailure(error); return undefined; }
+      if (!result || typeof result.then !== "function") return result;
+      return result.catch(error => { uiReportFailure(error); return undefined; });
+    };
+    wrapped.__dxUiBoundary = true;
+    wrapped.__dxOriginal = original;
+    window[name] = wrapped;
+  });
+}
+
+window.addEventListener("unhandledrejection", event => {
+  event.preventDefault();
+  uiReportFailure(event.reason);
+});
+window.addEventListener("error", event => {
+  // Resource errors (e.g. a third-party favicon) are not an application
+  // operation and would create noisy false alarms; handle script/runtime
+  // errors only.
+  if (event && event.error) uiReportFailure(event.error);
+});
+
+function llmConfig() {
+  const provider = sessionStorage.getItem("dialexis_provider") || "";
+  if (!provider) return null;
+  return { provider, model: sessionStorage.getItem("dialexis_model") || "",
+           key: sessionStorage.getItem("dialexis_key") || "" };
+}
+
+// Older builds persisted the BYO API key in localStorage.  Remove that
+// obsolete copy on first load; current builds keep credentials only for this
+// browser tab and the explicit settings-clear action removes them immediately.
+try {
+  ["dialexis_provider", "dialexis_model", "dialexis_key"]
+    .forEach(k => localStorage.removeItem(k));
+} catch (e) {}
 
 function freshBadge(res) {
   if (!res) return "";
@@ -461,7 +547,7 @@ async function deskInit() {
             <div class="srcline">${esc(p.question || "")}</div></td>
         <td>${p.node_count} nodes</td>
         <td class="srcline">${esc(p.updated_at)}</td>
-        <td><button class="small secondary" onclick="deskDelete(${p.id})">${T.del}</button></td>
+        <td>${p.can_edit !== false ? `<button class="small secondary" onclick="deskDelete(${p.id})">${T.del}</button>` : `<span class="badge">${LANG === "ja" ? "閲覧" : "read-only"}</span>`}</td>
       </tr>`).join("") + "</table></div>"
     : `<p class="muted">${T.none}</p>`;
   $("ledger-list").innerHTML = ledgers.length
@@ -471,6 +557,7 @@ async function deskInit() {
         <div class="ledger-metrics"><span>${l.entry_count} ${T.ledgerEntries}</span>
           <span>${l.project_count} ${T.ledgerProjects}</span><span>v${l.version}</span></div>
         <div><span class="badge">${esc(l.status)}</span>
+          ${l.is_public ? `<span class="badge live">${LANG === "ja" ? "公開" : "public"}</span>` : ""}
           <a class="small" href="${esc(routeHrefWithReturn(`/ledger/${l.id}?lang=${LANG}`))}">${T.ledgerOpen}</a></div>
       </article>`).join("")}</div>`
     : `<p class="muted">${LANG === "ja" ? "台帳一覧はここに表示されます。" : "Your ledgers will appear here."}</p>`;
@@ -481,7 +568,8 @@ async function ledgerCreate() {
   if (!title) return;
   const r = await api("/api/ledgers", { method: "POST", body: {
     title, subject: $("nl-subject").value.trim(),
-    central_question: $("nl-question").value.trim(), subject_type: "term" } });
+    central_question: $("nl-question").value.trim(), subject_type: "term",
+    is_public: !!($("nl-public") && $("nl-public").checked) } });
   location.href = routeHrefWithReturn(`/ledger/${r.ledger.id}?lang=${LANG}`);
 }
 
@@ -515,7 +603,11 @@ async function ledgerInit(lid) {
   try {
     const [d, projects] = await Promise.all([api(`/api/ledgers/${lid}`), api("/api/projects")]);
     const l = d.ledger, jp = LANG === "ja";
-    const projectOptions = projects.map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join("");
+    // Public projects are readable but not valid write targets for this
+    // browser.  Keep them out of adoption selectors so the user never has to
+    // discover read-only status by triggering a 404.
+    const editableProjects = projects.filter(p => p.can_edit !== false);
+    const projectOptions = editableProjects.map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join("");
     const entrySources = {};
     (d.entry_sources || []).forEach(x => (entrySources[x.entry_id] ||= []).push(x.source_id));
     const entries = (d.entries || []).map(e => {
@@ -556,26 +648,27 @@ async function ledgerInit(lid) {
       ${e.body ? `<p>${esc(e.body)}</p>` : ""}
       ${quotations}
       <details><summary>${jp ? "この記録をプロジェクトで使う" : "Use this entry in a project"}</summary>
-        <div class="formrow"><select id="ledger-entry-project-${e.id}">${projectOptions || `<option value="">${T.ledgerNoProject}</option>`}</select>
-          <button class="small" onclick="ledgerAdoptEntry(${lid}, ${e.id}, Number($('ledger-entry-project-${e.id}').value))">${T.ledgerLink}</button></div>
+        ${projectOptions ? `<div class="formrow"><select id="ledger-entry-project-${e.id}">${projectOptions}</select>
+          <button class="small" onclick="ledgerAdoptEntry(${lid}, ${e.id}, Number($('ledger-entry-project-${e.id}').value))">${T.ledgerLink}</button></div>` : `<p class="srcline">${T.ledgerNoProject}</p>`}
       </details>
       ${e.sources && e.sources.length ? `<p class="srcline">${e.sources.map(s => s.source_url ? `<a href="${esc(s.source_url)}" target="_blank">${esc(s.source_name || s.source_url)}</a>` : esc(s.source_name)).join(" · ")}</p>` : ""}
     </article>`;
     }).join("");
     const linked = (d.linked_projects || []).map(p => `<li><a href="${esc(routeHrefWithReturn(`/project/${p.id}?lang=${LANG}`))}">${esc(p.title)}</a> · ${esc(p.role)} · v${p.pinned_version}</li>`).join("");
     box.innerHTML = `<div class="card ledger-head-card">
-      <div class="th-status-line"><b>${esc(l.title)}</b><span class="badge">${esc(l.status)}</span><span class="badge">v${l.version}</span></div>
+      <div class="th-status-line"><b>${esc(l.title)}</b><span class="badge">${esc(l.status)}</span><span class="badge">v${l.version}</span>${l.is_public ? `<span class="badge live">${jp ? "公開" : "public"}</span>` : ""}</div>
       <p class="muted">${esc(l.central_question || "")}</p>
       <p>${jp ? "この台帳は特定の一つのプロジェクトに属さず、複数の研究で参照できます。" : "This ledger is reusable across multiple research projects."}</p>
       <div class="ledger-counts"><span>${d.counts.entries} ${T.ledgerEntries}</span><span>${d.counts.projects} ${T.ledgerProjects}</span><span>${jp ? "確認済み" : "confirmed"}: ${d.counts.confirmed}</span><span>${jp ? "候補" : "candidates"}: ${d.counts.candidate}</span></div>
-      <div class="formrow"><select id="ledger-project-select">${projectOptions || `<option value="">${T.ledgerNoProject}</option>`}</select>
-        <button class="small" onclick="ledgerLinkProject(${lid}, Number($('ledger-project-select').value), 'background')">${T.ledgerLink}</button>
+      <div class="formrow">${projectOptions ? `<select id="ledger-project-select">${projectOptions}</select>
+        <button class="small" onclick="ledgerLinkProject(${lid}, Number($('ledger-project-select').value), 'background')">${T.ledgerLink}</button>` : `<span class="srcline">${T.ledgerNoProject}</span>`}
         <button class="small secondary" onclick="ledgerFork(${lid})">${T.ledgerFork}</button></div>
       <p id="ledger-action-note" class="srcline"></p>
       <h3>${T.ledgerProjects}</h3><ul>${linked || `<li class="muted">${jp ? "まだプロジェクトから参照されていません。" : "No project uses this ledger yet."}</li>`}</ul>
     </div><div class="card"><h2>${T.ledgerEntries}</h2><div class="ledger-entry-list">${entries || `<p class="muted">${jp ? "まだ記録がありません。" : "No entries yet."}</p>`}</div></div>`;
   } catch (e) {
-    box.innerHTML = `<div class="card"><p class="badge err">${esc(String(e && e.message || e))}</p></div>`;
+    uiReportFailure(e);
+    box.innerHTML = `<div class="card"><p class="badge err">${LANG === "ja" ? "台帳の表示を保留しました。上の継続入口から進めます。" : "Ledger display was deferred. Continue from the entry points above."}</p></div>`;
   }
 }
 
@@ -583,7 +676,8 @@ async function deskCreate() {
   const title = $("np-title").value.trim();
   if (!title) return;
   const r = await api("/api/projects", { method: "POST",
-    body: { title, question: $("np-question").value.trim() } });
+    body: { title, question: $("np-question").value.trim(),
+      is_public: !!($("np-public") && $("np-public").checked) } });
   location.href = routeHrefWithReturn(`/project/${r.id}?lang=${LANG}`);
 }
 
@@ -620,15 +714,16 @@ async function counterRun() {
 
 /* ---------- project graph ---------- */
 
-let PROJ = null, PROJ_G = null, PROJ_PROV = {};
+let PROJ = null, PROJ_G = null, PROJ_PROV = {}, PROJ_CAN_EDIT = true;
 // Type accent color for the structure view's left border: meaning-bearing type
 // coding in a readable list, NOT a decorative dot cloud (the removed cose graph).
 const NODE_COLORS = { question: "#2e5c7a", claim: "#7a5c2e", evidence: "#2f7d4f",
   counterclaim: "#b91c1c", uncertainty: "#b45309", interpretation: "#6d28d9",
   decision: "#1d2430", note: "#6b7280", source: "#0e7490" };
 
-async function projectInit(pid) {
+async function projectInit(pid, canEdit = true) {
   PROJ = pid;
+  PROJ_CAN_EDIT = canEdit !== false;
   await projRefresh();
   forkRender();
 }
@@ -640,6 +735,7 @@ async function projRefresh() {
   const provByNode = {};
   g.provenance.forEach(p => (provByNode[p.node_id] ||= []).push(p));
   PROJ_G = g; PROJ_PROV = provByNode;
+  if (g.project && typeof g.project.can_edit === "boolean") PROJ_CAN_EDIT = g.project.can_edit;
 
   for (const selId of ["e-src", "e-dst"]) {
     $(selId).innerHTML = g.nodes.map(n =>
@@ -653,12 +749,31 @@ async function projRefresh() {
   renderProjectLedgers(g, allLedgers);
 
   renderStructure(g, provByNode);
+  projectApplyEditMode();
+}
+
+function projectApplyEditMode() {
+  const manual = $("manual-entry");
+  if (manual) manual.hidden = !PROJ_CAN_EDIT;
+  const arg = $("arg-list") && $("arg-list").closest(".card");
+  if (arg) {
+    arg.classList.toggle("read-only-surface", !PROJ_CAN_EDIT);
+    if (!PROJ_CAN_EDIT) {
+      ["arg-title", "arg-conclusion", "arg-cnode"].forEach(id => { if ($(id)) $(id).hidden = true; });
+      const add = arg.querySelector('[onclick="argAdd()"]'); if (add) add.hidden = true;
+      const lead = document.createElement("p");
+      lead.className = "srcline read-only-note";
+      lead.textContent = LANG === "ja" ? "このプロジェクトは閲覧専用です。論証の追加・変更は所有者のみ実行できます。" : "This project is read-only. Only its owner can add or change arguments.";
+      if (!arg.querySelector(".read-only-note")) arg.insertBefore(lead, $("arg-list"));
+    }
+  }
 }
 
 function renderProjectLedgers(g, allLedgers) {
   const box = $("project-ledgers");
   if (!box) return;
   const jp = LANG === "ja";
+  const canEdit = g.project && g.project.can_edit !== false;
   const linked = g.ledgers || [];
   const linkedIds = new Set(linked.map(x => Number(x.id)));
   const options = (allLedgers || []).filter(l => !linkedIds.has(Number(l.id)))
@@ -666,21 +781,24 @@ function renderProjectLedgers(g, allLedgers) {
   const rows = linked.length ? linked.map(l => `<tr>
     <td><a href="${esc(routeHrefWithReturn(`/ledger/${l.id}?lang=${LANG}`))}"><b>${esc(l.title)}</b></a></td>
     <td>${esc(l.role)}</td><td>v${l.pinned_version} / ${jp ? "現在" : "current"} v${l.version}</td>
-    <td><button class="small secondary" onclick="projectUnlinkLedger(${PROJ}, ${l.id})">${jp ? "接続解除" : "Unlink"}</button></td>
+    <td>${canEdit ? `<button class="small secondary" onclick="projectUnlinkLedger(${PROJ}, ${l.id})">${jp ? "接続解除" : "Unlink"}</button>` : ""}</td>
   </tr>`).join("") : `<tr><td class="muted" colspan="4">${jp ? "まだ台帳を参照していません。" : "No ledgers linked yet."}</td></tr>`;
+  const editNote = canEdit ? "" : `<p class="public-warning">${jp ? "このプロジェクトは閲覧専用です。台帳接続を変更するには、自分のプロジェクトを開いてください。" : "This project is read-only. Open one of your own projects to change ledger links."}</p>`;
   box.innerHTML = `<h2>${jp ? "参照中の研究台帳" : "Referenced research ledgers"}</h2>
     <p class="muted">${jp ? "台帳は複数プロジェクトで共有できます。ここでの解釈や主張は台帳本体を変更しません。" : "Ledgers are reusable across projects; project interpretations do not change the ledger."}</p>
     <table class="plain"><tr><th>${jp ? "台帳" : "Ledger"}</th><th>${jp ? "役割" : "Role"}</th><th>${jp ? "版" : "Version"}</th><th></th></tr>${rows}</table>
-    ${options ? `<div class="formrow"><select id="project-ledger-select">${options}</select><select id="project-ledger-role"><option value="background">${jp ? "背景" : "background"}</option><option value="evidence">${jp ? "根拠" : "evidence"}</option><option value="translation">${jp ? "翻訳比較" : "translation"}</option><option value="context">${jp ? "文脈" : "context"}</option></select><button class="small" onclick="projectLinkSelectedLedger()">${jp ? "台帳を接続" : "Link ledger"}</button></div>` : `<p class="srcline">${jp ? "接続可能な未接続台帳はありません。" : "All ledgers are already linked."}</p>`}`;
+    ${canEdit && options ? `<div class="formrow"><select id="project-ledger-select">${options}</select><select id="project-ledger-role"><option value="background">${jp ? "背景" : "background"}</option><option value="evidence">${jp ? "根拠" : "evidence"}</option><option value="translation">${jp ? "翻訳比較" : "translation"}</option><option value="context">${jp ? "文脈" : "context"}</option></select><button class="small" onclick="projectLinkSelectedLedger()">${jp ? "台帳を接続" : "Link ledger"}</button></div>` : (canEdit ? `<p class="srcline">${jp ? "接続可能な未接続台帳はありません。" : "All ledgers are already linked."}</p>` : "")}${editNote}`;
 }
 
 async function projectLinkSelectedLedger() {
+  if (!PROJ_CAN_EDIT) return;
   const select = $("project-ledger-select");
   if (!select || !select.value) return;
   await ledgerLinkProject(Number(select.value), PROJ, $("project-ledger-role").value);
 }
 
 async function projectUnlinkLedger(pid, lid) {
+  if (!PROJ_CAN_EDIT) return;
   await api(`/api/projects/${pid}/ledgers/${lid}`, { method: "DELETE" });
   projRefresh();
 }
@@ -753,22 +871,24 @@ function projShowNode(n, provByNode) {
        <span class="badge">${n.status}</span></p>
     ${n.body ? `<p>${esc(n.body)}</p>` : ""}
     <ul>${provs}</ul>
-    <div class="formrow">
+    ${PROJ_CAN_EDIT ? `<div class="formrow">
       <select id="nd-status">
         ${["open", "adopted", "held", "rejected"].map(s =>
           `<option value="${s}" ${s === n.status ? "selected" : ""}>${s}</option>`).join("")}
       </select>
       <button class="small" onclick="projSetStatus(${n.id})">OK</button>
       <button class="small secondary" onclick="projDelNode(${n.id})">${T.del}</button>
-    </div>`;
+    </div>` : `<p class="srcline">${LANG === "ja" ? "閲覧専用：状態変更と削除は所有者のみ実行できます。" : "Read-only: only the owner can change or delete this node."}</p>`}`;
 }
 
 async function projSetStatus(nid) {
+  if (!PROJ_CAN_EDIT) return;
   await api(`/api/nodes/${nid}`, { method: "PATCH", body: { status: $("nd-status").value } });
   projRefresh();
 }
 
 async function projDelNode(nid) {
+  if (!PROJ_CAN_EDIT) return;
   if (!confirm("Delete node?")) return;
   await api(`/api/nodes/${nid}`, { method: "DELETE" });
   $("node-detail").style.display = "none";
@@ -776,6 +896,7 @@ async function projDelNode(nid) {
 }
 
 async function projAddNode() {
+  if (!PROJ_CAN_EDIT) return;
   const title = $("n-title").value.trim();
   if (!title) return;
   const prov = [];
@@ -792,6 +913,7 @@ async function projAddNode() {
 }
 
 async function projAddEdge() {
+  if (!PROJ_CAN_EDIT) return;
   await api(`/api/projects/${PROJ}/edges`, { method: "POST", body: {
     src: $("e-src").value, dst: $("e-dst").value, rel: $("e-rel").value } });
   projRefresh();
@@ -831,7 +953,7 @@ function forkRender() {
       <div class="facet"><span class="fk">${jp ? "偏重" : "bias"}</span>${esc(s.bias)}</div>
       <div class="facet blind"><span class="fk">${jp ? "死角" : "blind"}</span>${esc(s.blind)}</div>
       <div class="facet out"><span class="fk">${jp ? "結末" : "outcome"}</span>${esc(s.out)}</div>
-      <button type="button" class="small" onclick="forkPick('${FORK_BRANCH}',${i})">${jp ? "この構えを選ぶ" : "choose this stance"}</button>
+      ${PROJ_CAN_EDIT ? `<button type="button" class="small" onclick="forkPick('${FORK_BRANCH}',${i})">${jp ? "この構えを選ぶ" : "choose this stance"}</button>` : ""}
     </div>`).join("");
   box.innerHTML = `
     <h2>${jp ? "岐路：読解の構え" : "Fork: reading stance"}</h2>
@@ -853,6 +975,7 @@ function forkRender() {
 function forkGate(b) { FORK_BRANCH = b; forkRender(); }
 
 async function forkPick(branch, i) {
+  if (!PROJ_CAN_EDIT) return;
   const s = STANCES[branch][i];
   const gateLabel = branch === "historical" ? "歴史的な産物として" : "非歴史的な実体として";
   const body = `ゲート：${gateLabel}\n射程：${s.reach}\n偏重：${s.bias}\n死角：${s.blind}\n結末：${s.out}`;
@@ -875,6 +998,7 @@ function optList(kinds, prefix, selected) {
 }
 
 async function argAdd() {
+  if (!PROJ_CAN_EDIT) return;
   const title = $("arg-title").value.trim();
   if (!title) return;
   await api(`/api/projects/${PROJ}/arguments`, { method: "POST", body: {
@@ -887,6 +1011,7 @@ async function argAdd() {
 function argRender(args) {
   ARG_CACHE = {};
   if (!args.length) { $("arg-list").innerHTML = `<p class="muted">${T.argNone}</p>`; return; }
+  const edit = PROJ_CAN_EDIT;
   $("arg-list").innerHTML = args.map(a => {
     ARG_CACHE[a.id] = a.premises.map(p => p.id);
     const prems = a.premises.map((p, i) => `<div class="result-item">
@@ -894,35 +1019,36 @@ function argRender(args) {
       ${p.hidden ? `<span class="badge">${T.hidden}</span>` : ""}
       <span class="srcline">(${T.voice}: ${esc(T["voice_" + p.voice] || p.voice)})${p.locator ? ` — ${esc(p.locator)}` : ""}
         ${p.source_url ? ` <a href="${esc(p.source_url)}" target="_blank">↗</a>` : ""}</span>
-      <button class="small secondary" onclick="argMove(${a.id},${p.id},-1)">↑</button>
+      ${edit ? `<button class="small secondary" onclick="argMove(${a.id},${p.id},-1)">↑</button>
       <button class="small secondary" onclick="argMove(${a.id},${p.id},1)">↓</button>
-      <button class="small secondary" onclick="argDelPremise(${p.id})">×</button>
+      <button class="small secondary" onclick="argDelPremise(${p.id})">×</button>` : ""}
     </div>`).join("");
     return `<div class="card" style="border-left:3px solid #7a5c2e">
       <h3>${esc(a.title)}</h3>
       ${prems}
-      <div class="formrow" style="align-items:center;gap:.5rem;flex-wrap:wrap">
+      ${edit ? `<div class="formrow" style="align-items:center;gap:.5rem;flex-wrap:wrap">
         <input id="ap-text-${a.id}" placeholder="${T.premisePh}" style="flex:1;min-width:180px">
         <label class="srcline"><input type="checkbox" id="ap-hidden-${a.id}"> ${T.hidden}</label>
         <select id="ap-voice-${a.id}">${optList(VOICES, "voice", "author")}</select>
         <input id="ap-loc-${a.id}" placeholder="${T.locatorPh}" style="width:180px">
         <button class="small" onclick="argAddPremise(${a.id})">${T.premiseAdd}</button>
-      </div>
+      </div>` : ""}
       <p style="margin:.4rem 0"><b>${T.therefore} ∴ C.</b> ${esc(a.conclusion)}</p>
-      <div class="formrow" style="gap:1rem;flex-wrap:wrap">
+      ${edit ? `<div class="formrow" style="gap:1rem;flex-wrap:wrap">
         <label class="srcline">${T.validity}:
           <select onchange="argSetValidity(${a.id},this.value)">${optList(VALIDITY, "validity", a.validity)}</select></label>
         <label class="srcline">${T.soundness}:
           <select onchange="argSetSoundness(${a.id},this.value)">${optList(SOUNDNESS, "soundness", a.soundness)}</select></label>
         <button class="small secondary" onclick="argSuggestHidden(${a.id})">${T.suggestHidden}</button>
         <button class="small secondary" onclick="argDel(${a.id})">${T.del}</button>
-      </div>
+      </div>` : `<p class="srcline">${LANG === "ja" ? "閲覧専用：妥当性・健全性・前提は所有者が更新します。" : "Read-only: the owner updates validity, soundness and premises."}</p>`}
       <div id="arg-ai-${a.id}"></div>
     </div>`;
   }).join("");
 }
 
 async function argAddPremise(aid) {
+  if (!PROJ_CAN_EDIT) return;
   const text = $(`ap-text-${aid}`).value.trim();
   if (!text) return;
   await api(`/api/arguments/${aid}/premises`, { method: "POST", body: {
@@ -932,11 +1058,13 @@ async function argAddPremise(aid) {
 }
 
 async function argDelPremise(prid) {
+  if (!PROJ_CAN_EDIT) return;
   await api(`/api/premises/${prid}`, { method: "DELETE" });
   projRefresh();
 }
 
 async function argMove(aid, prid, dir) {
+  if (!PROJ_CAN_EDIT) return;
   const order = (ARG_CACHE[aid] || []).slice();
   const i = order.indexOf(prid);
   const j = i + dir;
@@ -947,20 +1075,24 @@ async function argMove(aid, prid, dir) {
 }
 
 async function argSetValidity(aid, validity) {
+  if (!PROJ_CAN_EDIT) return;
   await api(`/api/arguments/${aid}`, { method: "PATCH", body: { validity } });
 }
 
 async function argSetSoundness(aid, soundness) {
+  if (!PROJ_CAN_EDIT) return;
   await api(`/api/arguments/${aid}`, { method: "PATCH", body: { soundness } });
 }
 
 async function argDel(aid) {
+  if (!PROJ_CAN_EDIT) return;
   if (!confirm("Delete argument?")) return;
   await api(`/api/arguments/${aid}`, { method: "DELETE" });
   projRefresh();
 }
 
 async function argSuggestHidden(aid) {
+  if (!PROJ_CAN_EDIT) return;
   const out = $(`arg-ai-${aid}`);
   const cfg = llmConfig();
   if (!cfg) { out.innerHTML = `<p class="muted">${T.needKey}</p>`; return; }
@@ -1158,9 +1290,9 @@ function dsCopy(id, btn) {
 /* ---------- settings ---------- */
 
 async function settingsInit() {
-  $("s-provider").value = localStorage.getItem("dialexis_provider") || "";
-  $("s-model").value = localStorage.getItem("dialexis_model") || "";
-  $("s-key").value = localStorage.getItem("dialexis_key") || "";
+  $("s-provider").value = sessionStorage.getItem("dialexis_provider") || "";
+  $("s-model").value = sessionStorage.getItem("dialexis_model") || "";
+  $("s-key").value = sessionStorage.getItem("dialexis_key") || "";
   const ledger = await api("/api/ledger");
   $("ledger").innerHTML = ledger.length ? `<table class="plain">
     <tr><th>time</th><th>provider</th><th>task</th></tr>` +
@@ -1170,15 +1302,15 @@ async function settingsInit() {
 }
 
 function settingsSave() {
-  localStorage.setItem("dialexis_provider", $("s-provider").value);
-  localStorage.setItem("dialexis_model", $("s-model").value);
-  localStorage.setItem("dialexis_key", $("s-key").value);
+  sessionStorage.setItem("dialexis_provider", $("s-provider").value);
+  sessionStorage.setItem("dialexis_model", $("s-model").value);
+  sessionStorage.setItem("dialexis_key", $("s-key").value);
   $("settings-msg").textContent = T.saved;
 }
 
 function settingsClear() {
   ["dialexis_provider", "dialexis_model", "dialexis_key"]
-    .forEach(k => localStorage.removeItem(k));
+    .forEach(k => sessionStorage.removeItem(k));
   settingsInit();
   $("settings-msg").textContent = T.cleared;
 }
@@ -4721,3 +4853,7 @@ try {
     },
   };
 } catch (e) {}
+
+// The page-specific inline bootstrap scripts run after app.js, so install the
+// boundary only after every global operation has been declared.
+installUiErrorBoundary();

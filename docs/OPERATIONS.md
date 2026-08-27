@@ -57,9 +57,12 @@ sudo systemctl restart dialexis
 
 ## 6. セキュリティ運用
 
-- サーバーにはいかなるユーザーAPIキーも保存されない（設計上）。漏洩リスクの中心はOS層 → `dnf -y update` を月次、または `dnf-automatic` で自動化
+- サーバーにはいかなるユーザーAPIキーも保存されない（設計上）。ブラウザ側もBYOキーはsessionStorageのみ。漏洩リスクの中心はOS層 → `dnf -y update` を月次、または `dnf-automatic` で自動化
 - アプリは非rootユーザー `dialexis` で稼働、nginx が80/443を終端
 - `ai_ledger` と `watch_hits` は追記型で肥大しうる → 年1回 `DELETE FROM ai_ledger WHERE ts < date('now','-1 year')`
+- 公開モードは `DIALEXIS_PUBLIC_INSTANCE=1` と `/etc/dialexis/dialexis.env` の永続secretを必須とする。`healthz` の `public_instance` と `session_secret_configured` が両方trueであることを確認する。
+- `dialexis_workspace` は匿名の署名Cookieであり、正式な認証・アカウント復旧・共有権限ではない。公開台帳／プロジェクトは読取専用であることを二つのブラウザプロファイルから確認する。
+- secretのローテーションは現時点でセッション移行を行わない。ローテーション前にDBバックアップと利用者への再開案内を準備し、詳細は `PUBLIC_DEPLOYMENT_SECURITY.md` の未検証欄を更新する。
 
 ## 7. 費用の現況確認
 

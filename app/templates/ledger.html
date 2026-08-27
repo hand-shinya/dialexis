@@ -2,6 +2,10 @@
 {% block title %}{{ ledger.title }}{% endblock %}
 {% block content %}
 <p><a data-route-back data-fallback="/desk?lang={{ lang }}" data-return-label="← 元の画面へ戻る" href="/desk?lang={{ lang }}">← {{ t.nav_desk }}</a></p>
+{% if not ledger.can_edit %}
+<div class="public-warning"><b>{{ '閲覧専用の公開台帳です。' if lang=='ja' else 'Read-only public ledger.' }}</b>
+  {{ '内容は確認・引用でき、あなたのプロジェクトへ参照できます。台帳本体を変更する場合は分岐してください。' if lang=='ja' else 'You may inspect, cite and reference it from your projects. Fork it before making changes.' }}</div>
+{% endif %}
 <div id="ledger-detail" data-ledger-id="{{ ledger.id }}">
   <div class="card"><p class="muted">{{ t.loading }}</p></div>
 </div>

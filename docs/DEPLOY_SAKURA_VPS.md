@@ -31,6 +31,12 @@ curl -sL https://raw.githubusercontent.com/hand-shinya/dialexis/main/deploy/boot
 bootstrap は次を自動実行する（再実行しても安全）：
 パッケージ導入 → 専用ユーザー作成 → git clone → venv → **オフラインテスト全通過の確認** → systemd（アプリ＋ハーベスタtimer）→ nginx＋SELinux → firewalld（http/https開放）→ 日次DBバックアップのcron登録 → healthz確認。
 
+公開モードでは `bootstrap_vps.sh` が `/etc/dialexis/dialexis.env` を作成し、ランダムな
+`DIALEXIS_SESSION_SECRET`を保存する。systemdは `DIALEXIS_PUBLIC_INSTANCE=1` で起動し、
+秘密値が無い場合はアプリが起動を拒否する。秘密値はリポジトリへ置かず、バックアップと
+同じ管理境界で保管する。匿名利用者の研究データ分離・公開読取専用・ロールバック条件は
+`docs/PUBLIC_DEPLOYMENT_SECURITY.md`を必ず読むこと。
+
 最後に `OK: Dialexis is live on port 80 via nginx.` が出れば完了。
 
 ## 4. 公開確認
@@ -42,6 +48,7 @@ http://219.94.244.239/
 ```
 
 トップページ（七つの公理）が表示され、`Karl Marx` の探索で取得時刻バッジつきの結果が返れば公開成功。
+加えて `/healthz` の `public_instance: true` と `session_secret_configured: true` を確認する。
 
 ## 5. 動作しないとき
 

@@ -10,6 +10,7 @@
   <div class="formrow"><input id="nl-title" placeholder="{{ t.ledger_name }}"></div>
   <div class="formrow"><input id="nl-subject" placeholder="{{ t.ledger_subject }}"></div>
   <div class="formrow"><input id="nl-question" placeholder="{{ t.ledger_question }}"></div>
+  <label class="checkrow"><input id="nl-public" type="checkbox"> 公開台帳 / Public ledger（他の利用者は閲覧のみ）</label>
   <button onclick="ledgerCreate()">{{ t.ledger_create }}</button>
   <div id="ledger-list"></div>
 </div>
@@ -17,6 +18,7 @@
   <h2>{{ t.desk_new_project }}</h2>
   <div class="formrow"><input id="np-title" placeholder="{{ t.desk_project_title }}"></div>
   <div class="formrow"><input id="np-question" placeholder="{{ t.desk_question }}"></div>
+  <label class="checkrow"><input id="np-public" type="checkbox"> 公開プロジェクト / Public project（他の利用者は閲覧のみ）</label>
   <button onclick="deskCreate()">{{ t.desk_create }}</button>
 </div>
 <div id="project-list"></div>

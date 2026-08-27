@@ -72,14 +72,15 @@ GUARD = ("You are an assistant inside Dialexis, a reflexive philosophy research 
 
 
 async def run(provider: str, model: str, key: str, task: str,
-              system: str, user: str, project_id: int | None = None) -> dict:
+              system: str, user: str, project_id: int | None = None,
+              workspace: str = "") -> dict:
     if provider not in PROVIDERS:
         raise ValueError(f"unknown provider: {provider}")
     text = await PROVIDERS[provider](key, model, GUARD + "\n\n" + system, user)
     conn = get_conn()
-    conn.execute("INSERT INTO ai_ledger(ts, provider, model, task, project_id, summary)"
-                 " VALUES(?,?,?,?,?,?)",
-                 (now(), provider, model, task, project_id, user[:200]))
+    conn.execute("INSERT INTO ai_ledger(ts, provider, model, task, project_id, workspace_id, summary)"
+                 " VALUES(?,?,?,?,?,?,?)",
+                 (now(), provider, model, task, project_id, workspace, user[:200]))
     conn.commit()
     conn.close()
     return {"text": text, "origin": "ai", "provider": provider,

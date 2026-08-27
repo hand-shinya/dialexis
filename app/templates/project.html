@@ -2,7 +2,11 @@
 {% block title %}{{ project.title }}{% endblock %}
 {% block content %}
 <p><a data-route-back data-fallback="/desk?lang={{ lang }}" data-return-label="← 元の画面へ戻る" href="/desk?lang={{ lang }}">← {{ '研究デスクへ' if lang=='ja' else 'Back to research desk' }}</a></p>
-<h1>{{ project.title }}</h1>
+{% if not project.can_edit %}
+<div class="public-warning"><b>{{ '閲覧専用の公開プロジェクトです。' if lang=='ja' else 'Read-only public project.' }}</b>
+  {{ '内容の確認・引用・エクスポートはできますが、ノード・論証・台帳接続は所有者だけが変更できます。自分の研究へ使う場合は、公開台帳を自分のプロジェクトへ接続するか、台帳を分岐してください。' if lang=='ja' else 'You may inspect, cite and export it, but only its owner can change nodes, arguments or ledger links. Use a public ledger in your own project or fork it for your research.' }}</div>
+{% endif %}
+<div id="project-root" data-can-edit="{{ '1' if project.can_edit else '0' }}"><h1>{{ project.title }}</h1>
 {% if project.question %}<p class="muted">Q: {{ project.question }}</p>{% endif %}
 <p>
   <a class="btn" href="/api/projects/{{ project.id }}/export.md" target="_blank">{{ t.export_md }}</a>
@@ -10,6 +14,7 @@
   <a class="btn" href="/api/projects/{{ project.id }}/export.bib" target="_blank">Zotero (.bib)</a>
   <a class="btn" href="/api/projects/{{ project.id }}/export.csl.json" target="_blank">CSL-JSON</a>
 </p>
+</div>
 <div id="project-ledgers" class="card"></div>
 <!-- primary: structure-bearing view of the research process (replaces the
      decorative force-graph). Manual node/edge entry is demoted to <details>
@@ -78,5 +83,5 @@
 </details>
 {% endblock %}
 {% block scripts %}
-<script>projectInit({{ project.id }});</script>
+<script>projectInit({{ project.id }}, {{ 'true' if project.can_edit else 'false' }});</script>
 {% endblock %}

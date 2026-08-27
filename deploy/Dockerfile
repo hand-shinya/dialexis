@@ -10,4 +10,7 @@ COPY app ./app
 COPY GENESIS.md README.md LICENSE ./
 VOLUME /app/data
 EXPOSE 8000
+# Public container mode is explicit; provide the secret at runtime, never in
+# the image: docker run -e DIALEXIS_SESSION_SECRET="$(openssl rand -hex 32)" ...
+ENV DIALEXIS_PUBLIC_INSTANCE=1
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

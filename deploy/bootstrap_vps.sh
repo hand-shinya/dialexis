@@ -11,7 +11,7 @@ APP_DIR="/opt/dialexis"
 CONTACT="${DIALEXIS_CONTACT:-}"   # export DIALEXIS_CONTACT=you@example.com before running (recommended)
 
 if command -v apt-get >/dev/null; then FAMILY=debian; else FAMILY=rhel; fi
-echo "== [1/8] packages ($FAMILY) =="
+echo "== [1/9] packages ($FAMILY) =="
 if [ "$FAMILY" = debian ]; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -q
@@ -20,7 +20,7 @@ else
   dnf -y install git python3 python3-pip nginx sqlite firewalld policycoreutils-python-utils
 fi
 
-echo "== [2/8] user + code =="
+echo "== [2/9] user + code =="
 id dialexis &>/dev/null || useradd -r -m -d /var/lib/dialexis -s /usr/sbin/nologin dialexis
 if [ -d "$APP_DIR/.git" ]; then
   git -C "$APP_DIR" pull
@@ -30,15 +30,25 @@ fi
 chown -R dialexis:dialexis "$APP_DIR"
 install -d -o dialexis -g dialexis "$APP_DIR/data"
 
-echo "== [3/8] venv =="
+echo "== [3/9] venv =="
 sudo -u dialexis python3 -m venv "$APP_DIR/.venv"
 sudo -u dialexis "$APP_DIR/.venv/bin/pip" install -q -r "$APP_DIR/requirements.txt"
 
-echo "== [4/8] offline tests (must pass before serving) =="
+echo "== [4/9] offline tests (must pass before serving) =="
 sudo -u dialexis "$APP_DIR/.venv/bin/pip" install -q pytest
 sudo -u dialexis bash -c "cd $APP_DIR && .venv/bin/python -m pytest tests/ -q"
 
-echo "== [5/8] systemd =="
+echo "== [5/9] public-instance secret =="
+install -d -m 0750 -o root -g dialexis /etc/dialexis
+if [ ! -s /etc/dialexis/dialexis.env ]; then
+  umask 077
+  SESSION_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+  printf 'DIALEXIS_SESSION_SECRET=%s\n' "$SESSION_SECRET" > /etc/dialexis/dialexis.env
+fi
+chown root:dialexis /etc/dialexis/dialexis.env
+chmod 0640 /etc/dialexis/dialexis.env
+
+echo "== [6/9] systemd =="
 sed "s|__CONTACT__|$CONTACT|" "$APP_DIR/deploy/systemd/dialexis.service" > /etc/systemd/system/dialexis.service
 cp "$APP_DIR/deploy/systemd/dialexis-harvester.service" /etc/systemd/system/
 cp "$APP_DIR/deploy/systemd/dialexis-harvester.timer" /etc/systemd/system/
@@ -46,13 +56,13 @@ systemctl daemon-reload
 systemctl enable --now dialexis dialexis-harvester.timer
 systemctl restart dialexis
 
-echo "== [6/8] nginx =="
+echo "== [7/9] nginx =="
 cp "$APP_DIR/deploy/nginx-dialexis.conf" /etc/nginx/conf.d/dialexis.conf
 rm -f /etc/nginx/sites-enabled/default   # Ubuntu: remove competing default_server
 if [ "$FAMILY" = rhel ]; then setsebool -P httpd_can_network_connect 1; fi
 nginx -t && systemctl enable --now nginx && systemctl reload nginx
 
-echo "== [7/8] firewall =="
+echo "== [8/9] firewall =="
 if [ "$FAMILY" = debian ]; then
   if command -v ufw >/dev/null; then
     ufw allow OpenSSH >/dev/null || true
@@ -66,7 +76,7 @@ else
   firewall-cmd --reload
 fi
 
-echo "== [8/8] daily DB backup =="
+echo "== [9/9] daily DB backup =="
 mkdir -p /var/backups/dialexis
 cat > /etc/cron.d/dialexis-backup <<'EOF'
 15 3 * * * root sqlite3 /opt/dialexis/data/dialexis.db ".backup /var/backups/dialexis/dialexis-$(date +\%a).db" 2>> /var/log/dialexis-backup.log

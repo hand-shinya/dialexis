@@ -7,6 +7,9 @@
 - [x] スマートフォン幅（390×844）の表示・横溢れ・主要操作を自動検証
 - [x] `/robots.txt`・`/sitemap.xml` で公開入口と可変APIを分離
 - [x] 共有インスタンス／秘密情報を入力しない注意をトップ・About・設定に表示
+- [x] 匿名ワークスペース境界、公開資産の読取専用、公開起動時secret必須を実装
+- [ ] 公開モード（`DIALEXIS_PUBLIC_INSTANCE=1`）でhealthzのsecret設定を確認
+- [ ] 二つのブラウザプロファイルで非公開資産の相互不可視・公開資産の読取専用を人間検証
 - [ ] `/healthz` 外形監視（UptimeRobot無料枠等）設定
 - [ ] GitHub リポジトリ public・README表示確認
 - [ ] GENESIS.md / USER_GUIDE 両言語のリンク切れ確認

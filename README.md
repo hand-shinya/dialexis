@@ -38,7 +38,10 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
 No API keys, no external database, no build step. An LLM key (Anthropic /
-OpenAI / Gemini / local Ollama) is optional and stays in your browser.
+OpenAI / Gemini / local Ollama) is optional and stays only in this browser tab
+(`sessionStorage`), not across browser restarts. See
+[public deployment security](docs/PUBLIC_DEPLOYMENT_SECURITY.md) for the
+anonymous workspace boundary.
 
 ## Documentation
 
