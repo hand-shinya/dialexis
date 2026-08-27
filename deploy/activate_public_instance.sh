@@ -92,7 +92,26 @@ systemctl restart dialexis-harvester.timer
 
 health_tmp="$TMP_DIR/healthz.json"
 headers_tmp="$TMP_DIR/healthz.headers"
-curl -fsS -D "$headers_tmp" -o "$health_tmp" http://127.0.0.1:8000/healthz
+health_error="$TMP_DIR/healthz.error"
+health_attempts=30
+health_ok=0
+for ((attempt = 1; attempt <= health_attempts; attempt++)); do
+  : > "$headers_tmp"
+  : > "$health_error"
+  if curl -fsS -D "$headers_tmp" -o "$health_tmp" http://127.0.0.1:8000/healthz 2>"$health_error"; then
+    health_ok=1
+    break
+  fi
+  if (( attempt < health_attempts )); then
+    sleep 1
+  fi
+done
+if (( health_ok == 0 )); then
+  echo "public activation: healthzが${health_attempts}回の試行後も応答しません" >&2
+  cat "$health_error" >&2
+  systemctl --no-pager --full --lines=40 status dialexis.service >&2 || true
+  exit 5
+fi
 grep -q '"public_instance":true' "$health_tmp" || { echo "public activation: public_instance確認に失敗" >&2; cat "$health_tmp" >&2; exit 5; }
 grep -q '"session_secret_configured":true' "$health_tmp" || { echo "public activation: session secret確認に失敗" >&2; cat "$health_tmp" >&2; exit 5; }
 grep -qi '^set-cookie:.*dialexis_workspace=' "$headers_tmp" || { echo "public activation: workspace cookie確認に失敗" >&2; cat "$headers_tmp" >&2; exit 5; }
@@ -100,5 +119,6 @@ grep -qi '^set-cookie:.*dialexis_workspace=' "$headers_tmp" || { echo "public ac
 echo "public activation: ok"
 echo "public mode: enabled"
 echo "workspace cookie: issued"
+echo "healthz attempts: $attempt"
 echo "healthz: $(tr -d '\n' < "$health_tmp")"
 echo "next: curl -fsS http://127.0.0.1:8000/healthz"
