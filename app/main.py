@@ -886,6 +886,12 @@ async def api_origin(q: str, lang: str = "ja"):
     }
 
 
+_PERSON_IDENTITY_TRANSLITERATIONS = str.maketrans({
+    "ø": "o", "đ": "d", "ð": "d", "ł": "l", "ħ": "h", "ı": "i",
+    "ŧ": "t", "ĸ": "k", "æ": "ae", "œ": "oe", "þ": "th",
+})
+
+
 def _person_norm(value: str) -> str:
     """Normalize a person-name query for identity matching only.
 
@@ -898,6 +904,7 @@ def _person_norm(value: str) -> str:
     # untouched in the evidence record.
     s = unicodedata.normalize("NFKD", str(value or "")).casefold()
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = s.translate(_PERSON_IDENTITY_TRANSLITERATIONS)
     return re.sub(r"[\s\u3000・･.,，．:：;；'’\"“”()（）\[\]【】{}｛｝_\-‐‑‒–—]+", "", s)
 
 
@@ -973,7 +980,11 @@ def _person_profile_from_entity(q: str, entity, lang: str = "ja",
     forms, form_by_key = [], {}
     def add_form(form, language, kind, evidence="candidate"):
         form = str(form or "").strip()
-        if not form:
+        # A few Wikidata language slots contain UTF-8 mojibake (for example
+        # ``SÃ¸ren``).  It is not a distinct historical spelling and only
+        # pollutes the research surface, so retain it in raw source data but
+        # keep it out of the display-level identity ledger.
+        if not form or "�" in form or "Ã" in form or "Â" in form:
             return
         code = str(language or "").strip()
         key = _person_norm(form) or form.casefold()
@@ -1036,10 +1047,13 @@ def _person_profile_from_entity(q: str, entity, lang: str = "ja",
 
     add_form(q, lang, "入力された人物名", "candidate")
     for lg, form in labels.items():
-        add_form(form, lg, "Wikidataラベル", "confirmed")
+        if lg in _PERSON_LANG_NAMES:
+            add_form(form, lg, "Wikidataラベル", "confirmed")
     if latin:
         add_form(latin, "en", "ラテン文字表記", "confirmed" if labels.get("en") else "candidate")
     for lg, values in aliases.items():
+        if lg not in _PERSON_LANG_NAMES:
+            continue
         for form in values if isinstance(values, list) else []:
             if _person_norm(form) not in pseudonym_keys:
                 add_form(form, lg, "別表記・検索別名", "candidate")

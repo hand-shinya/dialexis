@@ -18,6 +18,8 @@ def _person_entity():
                 "en": "Søren Kierkegaard",
                 "de": "Søren Kierkegaard",
                 "fr": "Søren Kierkegaard",
+                "da": "Soren Kierkegaard",
+                "mos": "SÃ¸ren Kierkegaard",
             },
             "aliases": {
                 "ja": ["キェルケゴール", "セーレン・キルケゴール"],
@@ -41,6 +43,7 @@ def test_same_latin_form_is_one_record_with_language_coverage():
     latin = [x for x in profile["name_forms"] if x["form"] == "Søren Kierkegaard"]
     assert len(latin) == 1
     assert {"英語", "ドイツ語", "フランス語"} <= set(latin[0]["languages"])
+    assert not any("Ã" in x["form"] for x in profile["name_forms"])
     assert len(profile["name_forms"]) == len({main._person_norm(x["form"]) for x in profile["name_forms"]})
 
 
