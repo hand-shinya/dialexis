@@ -3064,23 +3064,68 @@ function _thBindLedgerActions(container, d) {
 }
 function _thPersonResponseHtml(d) {
   const jp = LANG === "ja", ds = d.dossier || {}, p = ds.person || {}, levels = d.evidence_levels || [];
-  const forms = (ds.name_forms || p.name_forms || []).map(n => `<article class="th-term-card person-name-card"><div class="th-card-top"><code>${esc(n.form || "")}</code><span>${esc(n.language || "")}</span>${_thLevel(n.evidence, levels)}</div><p class="th-kind">${esc(n.kind || "人物名の表記・転写候補")}</p><p>${jp ? "人物名の翻訳ではなく、同一人物を指す表記・転写候補です。" : "A display/transliteration candidate for the same person, not a concept translation."}</p></article>`).join("");
-  const works = (ds.works || p.works || []).map(w => `<article class="th-term-card person-work-card"><div class="th-card-top"><code>${esc(w.original_title || "")}</code><span>${esc(w.original_language || "")}</span>${_thLevel(w.evidence, levels)}</div><p><b>${jp ? "日本語題：" : "Japanese titles: "}</b>${esc((w.japanese_titles || []).join(" ／ ") || "未確認")}</p><p><b>${jp ? "刊年：" : "Year: "}</b>${esc(w.year || "未取得")}</p><p class="th-distinction">${esc(w.role || "")}</p>${_thSourceLine(w.source_ids, ds.sources || [])}</article>`).join("");
-  const concepts = (ds.concepts || p.concepts || []).map(c => `<article class="th-term-card"><div class="th-card-top"><code>${esc(c.source_term || "")}</code><span>${esc(c.language || "")}</span>${_thLevel(c.evidence, levels)}</div><p><b>${jp ? "日本語候補：" : "Japanese candidates: "}</b>${esc((c.japanese_candidates || []).join(" ／ "))}</p><p class="th-distinction">${esc(c.note || "")}</p></article>`).join("");
-  const timeline = (ds.timeline || []).map(t => `<article class="th-timeline-card"><div class="th-card-top"><b>${esc(t.when || "")}</b><span>${esc(t.who || "")}</span>${_thLevel(t.evidence, levels)}</div><dl class="th-dl th-fivew">${_thField("Where", t.where)}${_thField("What", t.what)}${_thField("関係", t.relation)}</dl></article>`).join("");
-  const reception = (ds.reception_ledger || []).map(t => `<article class="th-ledger-card"><div class="th-card-top"><b>${esc(t.who || "")}</b><span>${esc(t.when || "")}</span>${_thLevel(t.evidence, levels)}</div><dl class="th-dl th-fivew">${_thField("Where", t.where)}${_thField("What", t.what)}${_thField("関係", t.relation)}</dl></article>`).join("");
+  const formsData = ds.name_forms || p.name_forms || [];
+  const worksData = ds.works || p.works || [];
+  const conceptsData = ds.concepts || p.concepts || [];
+  const receptionData = ds.reception_ledger || p.reception || [];
+  const sources = ds.sources || p.sources || [];
+  const displayLanguages = n => n.language || (n.languages || (n.language ? [n.language] : [])).filter(Boolean).join("・");
+  const formCard = n => `<article class="th-term-card person-name-card"><div class="th-card-top"><code>${esc(n.form || "")}</code><span>${esc(displayLanguages(n))}</span>${_thLevel(n.evidence, levels)}</div><p class="th-kind">${esc(n.kind || "人物名の表記・転写候補")}</p><p>${jp ? "人物名の翻訳ではなく、同一人物を指す表記・転写候補です。括弧内は同じ形が確認された言語群です。" : "A display/transliteration candidate for the same person, not a concept translation. Languages show where this same form was recorded."}</p>${n.languages && n.languages.length > 8 ? `<details class="th-mini-details"><summary>確認された言語を全て表示（${esc(n.language_count || n.languages.length)}言語）</summary><p>${esc(n.languages.join("・"))}</p></details>` : ""}</article>`;
+  const visibleForms = formsData.slice(0, 18).map(formCard).join("");
+  const hiddenForms = formsData.length > 18 ? `<details class="th-form-more"><summary>その他の表記候補を表示（${formsData.length - 18}件）</summary><div class="th-term-grid">${formsData.slice(18).map(formCard).join("")}</div></details>` : "";
+  const forms = visibleForms + hiddenForms;
+  const works = worksData.map((w, i) => {
+    const titles = (w.language_titles || []).slice(0, 8).map(x => `${esc(x.language || x.code || "")}: ${esc(x.title || "")}`).join(" ／ ");
+    const editions = (w.japanese_editions || []).slice(0, 4).map(x => `<li>${esc(x.title || "")}${x.creators && x.creators.length ? ` — ${esc(x.creators.join("・"))}` : ""}${x.year ? `（${esc(x.year)}）` : ""}</li>`).join("");
+    return `<article class="th-term-card person-work-card"><div class="th-card-top"><code>${esc(w.original_title || "")}</code><span>${esc(w.original_language || "")}</span>${_thLevel(w.evidence, levels)}</div><p><b>${jp ? "日本語題：" : "Japanese titles: "}</b>${esc((w.japanese_titles || []).join(" ／ ") || "未確認")}</p><p><b>${jp ? "刊年：" : "Year: "}</b>${esc(w.year || "未取得")}</p>${titles ? `<details class="th-mini-details"><summary>他言語の題名（表記候補）</summary><p>${titles}</p></details>` : ""}${w.edition_count ? `<p class="th-edition-count">日本語版候補：${esc(w.edition_count)}件</p>` : ""}${editions ? `<details class="th-mini-details"><summary>NDL書誌の版候補を表示</summary><ul class="th-inline-list">${editions}</ul></details>` : ""}<p class="th-distinction">${esc(w.role || "")}</p><div class="th-card-actions"><button type="button" class="th-open-work" data-work-index="${i}">📖 ${jp ? "この著作の系譜を開く" : "Open work lineage"}</button>${w.url ? `<a class="small" href="${esc(w.url)}" target="_blank" rel="noopener">Wikidata</a>` : ""}</div>${_thSourceLine(w.source_ids, sources)}</article>`;
+  }).join("");
+  const concepts = conceptsData.map((c, i) => {
+    const target = (c.japanese_candidates || []).find(Boolean) || c.source_term || "";
+    return `<article class="th-term-card person-concept-card"><div class="th-card-top"><code>${esc(c.source_term || "")}</code><span>${esc(c.kind || c.language || "")}</span>${_thLevel(c.evidence, levels)}</div><p><b>${jp ? "日本語候補：" : "Japanese candidates: "}</b>${esc((c.japanese_candidates || []).join(" ／ ") || "未確認")}</p><p class="th-distinction">${esc(c.note || "")}</p>${target ? `<button type="button" class="th-open-concept" data-concept-term="${esc(encodeURIComponent(target))}">🎯 ${jp ? "この概念を地図で開く" : "Open this concept on the map"}</button>` : ""}</article>`;
+  }).join("");
+  const timeline = (ds.timeline || []).map(t => `<article class="th-timeline-card"><div class="th-card-top"><b>${esc(t.when || "")}</b><span>${esc(t.who || "")}</span>${_thLevel(t.evidence, levels)}</div><dl class="th-dl th-fivew">${_thField("Where", t.where)}${_thField("What", t.what)}${_thField("Why", t.why)}${_thField("How", t.how)}${_thField("関係", t.relation)}</dl>${_thSourceLine(t.source_ids, sources)}</article>`).join("");
+  const reception = receptionData.map(t => `<article class="th-ledger-card"><div class="th-card-top"><b>${esc(t.who || "")}</b><span>${esc(t.when || "")}</span>${_thLevel(t.evidence, levels)}</div><dl class="th-dl th-fivew">${_thField("Where", t.where)}${_thField("What", t.what)}${_thField("Why", t.why)}${_thField("How", t.how)}${_thField("関係", t.relation)}</dl>${_thSourceLine(t.source_ids, sources)}</article>`).join("");
+  const bibliography = (ds.bibliography || p.bibliography || []).slice(0, 24).map(b => `<article class="th-source-card person-bibliography-card"><div class="th-card-top"><b>${b.url ? `<a class="ext-link" href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.title || "無題")}</a>` : esc(b.title || "無題")}</b>${_thLevel(b.evidence || "bibliography_confirmed", levels)}</div><p>${esc((b.creators || []).join("・"))}</p><p>${esc([b.publisher, b.year, b.edition_of ? `対象著作：${b.edition_of}` : ""].filter(Boolean).join(" ／ "))}</p><p class="muted">${esc(b.source || "NDL書誌候補")}：書誌の存在を確認する入口。本文・訳語・該当頁は未照合。</p></article>`).join("");
+  const primaryTexts = (p.primary_texts || []).slice(0, 8).map(x => `<article class="th-source-card"><div class="th-card-top"><b>${x.read_url ? `<a class="ext-link" href="${esc(x.read_url)}" target="_blank" rel="noopener">${esc(x.title || "公開テキスト")}</a>` : esc(x.title || "公開テキスト")}</b>${_thLevel(x.evidence || "candidate", levels)}</div><p>${esc((x.authors || []).join("・"))}</p><p class="muted">公開テキスト候補。版・本文の同一性は別途確認します。</p></article>`).join("");
+  const scholarship = (p.scholarship || []).slice(0, 10).map(x => `<article class="th-source-card"><div class="th-card-top"><b>${x.url ? `<a class="ext-link" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title || "研究書誌候補")}</a>` : esc(x.title || "研究書誌候補")}</b>${_thLevel(x.evidence || "candidate", levels)}</div><p>${esc((x.authors || []).join("・"))}${x.year ? ` ／ ${esc(x.year)}` : ""}</p><p class="muted">OpenAlexの関連研究書誌候補。引用・影響関係の証明ではありません。</p></article>`).join("");
+  const curiosity = (p.curiosity || []).map((x, i) => `<article class="work-curiosity-card"><span class="work-curiosity-axis">${esc(x.axis || "問い")}</span><p>${esc(x.question || "")}</p><button type="button" class="th-curiosity-btn" data-curiosity-index="${i}">🔎 ${jp ? "この問いを深掘りする" : "Explore this question"}</button></article>`).join("");
   const domains = (ds.domains || p.domains || []).map(x => `<span class="badge">${esc(x)}</span>`).join(" ");
-  let h = `<div class="th-result th-ready th-person-result"><div class="th-status-line"><b>人物研究モード：${esc(ds.title || p.display_name || d.query)}</b>${_thLevel("strong", levels)}</div>${_thLedgerActions(d)}<p class="th-honesty">${esc(d.note || "")}</p><div class="th-question"><b>${jp ? "この人物についての中心問い" : "Central question about this person"}</b><p>${esc(ds.center_question || "")}</p></div><p class="th-scope">${esc(ds.scope_note || ds.identity_note || "")}</p><p class="person-domain-row"><b>${jp ? "分野：" : "Domains: "}</b>${domains || (jp ? "未確認" : "not yet classified")}</p>`;
-  h += `<section class="th-section"><h3>人物名の異表記・転写（翻訳ではない）</h3><p class="muted">中黒・空白・文字体系の違いを、人物名の意味が翻訳された証拠とは扱いません。人物ID・書誌・各言語版を照合する入口です。</p><div class="th-term-grid">${forms || `<p class="muted">表記候補はまだありません。</p>`}</div></section>`;
-  h += `<section class="th-section"><h3>著作の原題・翻訳題・版</h3><p class="muted">人物の翻訳受容で中心になるのは、名前の語源ではなく、著作がどの題名・訳者・版で読まれたかです。</p><div class="th-term-grid">${works || `<p class="muted">主要著作候補は未取得です。</p>`}</div></section>`;
-  h += `<section class="th-section"><h3>著作に関係する概念語</h3><p class="muted">人物名と概念語を分離し、原語・日本語候補・用法の差を別の照合対象にします。</p><div class="th-term-grid">${concepts || `<p class="muted">概念語は本文照合待ちです。</p>`}</div></section>`;
-  h += `<section class="th-section"><h3>人物史・著作史の時系列</h3><div class="th-timeline">${timeline || `<p class="muted">時系列は書誌照合待ちです。</p>`}</div></section>`;
-  h += `<section class="th-section"><h3>受容史・影響関係（証拠付き候補）</h3><div class="th-ledger">${reception || `<p class="muted">人物の引用・影響関係は未確認です。検索共起を影響の証拠としません。</p>`}</div></section>`;
+  const summary = ds.summary || p.summary || p.description || "";
+  let h = `<div class="th-result th-ready th-person-result"><div class="th-status-line"><b>人物研究モード：${esc(ds.title || p.display_name || d.query)}</b>${_thLevel("strong", levels)}</div>${_thLedgerActions(d)}<p class="th-honesty">${esc(d.note || "")}</p><div class="th-question"><b>${jp ? "この人物についての中心問い" : "Central question about this person"}</b><p>${esc(ds.center_question || "")}</p></div><div class="th-person-summary"><div class="th-card-top"><b>${jp ? "この人物の位置づけ（探索用要約）" : "Orientation summary"}</b><span>Wikipedia／Wikidata</span></div><p>${esc(summary || (jp ? "人物の説明は未取得です。著作・概念・書誌のカードから検証を始めてください。" : "No orientation summary was retrieved; start with the works, concepts and bibliography."))}</p><p class="muted">要約は研究の結論ではありません。原典・版・引用を確認するための地図です。</p></div><p class="th-scope">${esc(ds.scope_note || ds.identity_note || "")}</p><p class="person-domain-row"><b>${jp ? "分野：" : "Domains: "}</b>${domains || (jp ? "未確認" : "not yet classified")}</p>`;
+  h += `<section class="th-section"><h3>人物名の異表記・転写（翻訳ではない）</h3><p class="muted">中黒・空白・文字体系の違いを、人物名の意味が翻訳された証拠とは扱いません。同じ正規化形が複数言語に現れる場合は一枚に統合し、言語群として表示します（表示重複を作りません）。</p><div class="th-term-grid">${forms || `<p class="muted">表記候補はまだありません。</p>`}</div></section>`;
+  h += `<section class="th-section"><h3>筆名・著者名義（人物名の異表記とは別）</h3><p class="muted">筆名は転写の差ではなく、著作が別の名義で流通した可能性として分離します。</p><div class="th-term-grid">${(ds.pen_names || p.pen_names || []).filter(x => x && x.form && !String(x.form).startsWith("Q")).map(x => `<article class="th-term-card"><div class="th-card-top"><code>${esc(x.form)}</code>${_thLevel(x.evidence || "candidate", levels)}</div><p>${esc(x.kind || "筆名・著者名義")}</p></article>`).join("") || `<p class="muted">筆名・別名義は未確認です。</p>`}</div></section>`;
+  h += `<section class="th-section"><h3>著作の原題・翻訳題・版</h3><p class="muted">人物の翻訳受容の中心は、名前の語源ではなく、著作がどの原題・訳題・訳者・版で読まれたかです。カードから著作単位の系譜へ進めます。</p><div class="th-term-grid">${works || `<p class="muted">主要著作候補は未取得です。</p>`}</div></section>`;
+  h += bibliography ? `<section class="th-section"><h3>日本語圏の書誌・版候補</h3><p class="muted">NDLの書誌記録を入口として、訳者・出版社・刊年・版を確認します。書誌の存在だけでは本文の訳語や影響関係は確定しません。</p><div class="th-source-list">${bibliography}</div></section>` : "";
+  h += `<section class="th-section"><h3>著作に関係する概念語</h3><p class="muted">人物名と概念語を分離し、分野・思想運動・ジャンルとして登録された候補を、本人の実際の用語か後世の分類かに分けて本文照合します。</p><div class="th-term-grid">${concepts || `<p class="muted">概念語は本文照合待ちです。</p>`}</div></section>`;
+  h += `<section class="th-section"><h3>人物史・著作史の時系列</h3><div class="th-timeline">${timeline || `<p class="muted">時系列は生没年・著作書誌の照合待ちです。</p>`}</div></section>`;
+  h += `<section class="th-section"><h3>受容史・影響関係（証拠付き候補）</h3><p class="muted">影響プロパティや書誌共起は入口です。直接引用・参照文献・刊年順が確認されるまで、影響関係を確定しません。</p><div class="th-ledger">${reception || `<p class="muted">人物の引用・影響関係は未確認です。検索共起を影響の証拠としません。</p>`}</div></section>`;
+  h += primaryTexts ? `<section class="th-section"><h3>公開一次テキストの入口</h3><p class="muted">公開テキストが見つかった場合の探索入口です。ここに表示されることは、採用版・翻訳版・引用箇所の確定を意味しません。</p><div class="th-source-list">${primaryTexts}</div></section>` : "";
+  h += scholarship ? `<section class="th-section"><h3>研究書誌・後続研究の入口</h3><p class="muted">関連研究を、本人の主張・受容者の再構成・反論の候補へ分けて読むための入口です。</p><div class="th-source-list">${scholarship}</div></section>` : "";
+  h += curiosity ? `<section class="th-section"><h3>ここから広がる問い</h3><p class="muted">自動抽出の答えを結論にせず、著作・翻訳・概念・受容を別々の問いとして次の探索へ接続します。</p><div class="work-curiosity-grid">${curiosity}</div></section>` : "";
   h += `<section class="th-section"><h3>人物名・著作題名・受容で何が変わるか</h3><div class="th-transform-grid">${(ds.transformations || []).map(t => `<article class="th-transform-card"><div class="th-card-top"><b>${esc(t.stage || "")}</b>${_thLevel(t.evidence, levels)}</div><dl class="th-dl">${_thField("保存", t.preserved)}${_thField("失われた／移動した焦点", t.lost)}${_thField("加わった焦点", t.added)}${_thField("検証方法", t.test)}</dl></article>`).join("")}</div></section>`;
   h += `<section class="th-section"><h3>最強の反証・注意点</h3><div class="th-counter-grid">${(ds.counterchecks || []).map(t => `<article class="th-counter-card"><p><b>主張：</b>${esc(t.claim || "")}</p><p><b>反証候補：</b>${esc(t.counterargument || "")}</p><p><b>検査：</b>${esc(t.test || "")}</p></article>`).join("")}</div></section>`;
-  h += `<section class="th-section"><h3>参照先</h3><div class="th-source-list">${(ds.sources || []).map(s => `<article class="th-source-card"><div class="th-card-top"><b>${s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id || "source")}</a>` : esc(s.label || s.id || "source")}</b>${_thLevel(s.evidence, levels)}</div><p>${esc(s.status || "")}</p></article>`).join("")}</div></section>`;
-  h += `<section class="th-section th-next"><h3>次の調査</h3>${_thNextActions(d.next_actions || ds.next_actions || [], ds.sources || [])}</section>`;
+  h += `<section class="th-section"><h3>参照先</h3><div class="th-source-list">${sources.map(s => `<article class="th-source-card"><div class="th-card-top"><b>${s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id || "source")}</a>` : esc(s.label || s.id || "source")}</b>${_thLevel(s.evidence, levels)}</div><p>${esc(s.status || "")}</p></article>`).join("")}</div></section>`;
+  h += `<section class="th-section th-next"><h3>次の調査</h3>${_thNextActions(d.next_actions || ds.next_actions || [], sources)}</section>`;
   return h + `</div>`;
+}
+
+function _thBindPersonExplorers(container, d) {
+  if (!container) return;
+  const ds = d && d.dossier || {}, p = ds.person || {}, works = ds.works || p.works || [], concepts = ds.concepts || p.concepts || [], curiosity = p.curiosity || [];
+  container.querySelectorAll(".th-open-work").forEach(button => button.addEventListener("click", () => {
+    const work = works[Number(button.dataset.workIndex)];
+    if (!work) return;
+    gWorkLineagePanel({ kind: "work", label: (work.japanese_titles || [])[0] || work.original_title, q: work.original_title, original_title: work.original_title, year: work.year, person_id: p.id, work, profile: p });
+  }));
+  container.querySelectorAll(".th-open-concept").forEach(button => button.addEventListener("click", () => {
+    let term = "";
+    try { term = decodeURIComponent(button.dataset.conceptTerm || ""); } catch (e) { term = button.dataset.conceptTerm || ""; }
+    if (term) dispatchAction("center", { term, label: term, kind: "related" }, currentViewState(), { surface: "person-concept" });
+  }));
+  container.querySelectorAll(".th-curiosity-btn").forEach(button => button.addEventListener("click", () => {
+    const item = curiosity[Number(button.dataset.curiosityIndex)];
+    if (item && item.question) dispatchAction("deepsearch", { term: item.question, label: item.question, kind: "research-question" }, currentViewState(), { surface: "person-curiosity" });
+  }));
 }
 function _thPairResponseHtml(d) {
   const jp = LANG === "ja", ds = d.dossier || {}, pair = ds.pair || {}, rel = ds.relation || {}, levels = d.evidence_levels || [];
@@ -3192,6 +3237,7 @@ async function gTranslationHistoryPanel(word, targetContext = {}) {
       if (results.isConnected) {
         results.innerHTML = _thResponseHtml(d);
         _thBindLedgerActions(results, d);
+        if (d && d.dossier && d.dossier.mode === "person") _thBindPersonExplorers(results, d);
       }
     } catch (e) {
       console.error("translation history", e);
@@ -3480,7 +3526,7 @@ function gRelationshipPanel(term, relation, node) {
 }
 
 function gWorkLineagePanel(node) {
-  const jp = LANG === "ja", found = _graphWorkFor(node), profile = found.profile, work = found.work;
+  const jp = LANG === "ja", found = _graphWorkFor(node), profile = found.profile || (node && node.profile) || null, work = found.work || (node && node.work) || null;
   const label = (node && node.label) || (work && (work.japanese_titles || [work.original_title])[0]) || "著作";
   if (!work) {
     return gPanel(`📖 著作の系譜：${label}`,

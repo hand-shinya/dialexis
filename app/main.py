@@ -775,7 +775,7 @@ async def api_origin(q: str, lang: str = "ja"):
     # A person name is not a concept word.  Resolve curated identity aliases
     # before the word-origin engine so カールマルクス and Karl Marx enter the
     # same person-first surface rather than an empty/irrelevant etymology card.
-    person = _person_profile_for_query(q)
+    person = await _person_profile_for_query_async(q, lang)
     if person:
         return _person_origin(person, q, lang)
     await wiktionary.ensure_langnames(lang)   # 全言語コード→日本語名を用意（生コード表示の解消）
@@ -893,7 +893,11 @@ def _person_norm(value: str) -> str:
     name displays, but never changes the text shown as evidence.  A name match
     is therefore an identity/display decision, not a translation claim.
     """
-    s = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    # NFKD + combining-mark removal makes Sören/Soren and accented Latin
+    # spellings one identity key while the original display form remains
+    # untouched in the evidence record.
+    s = unicodedata.normalize("NFKD", str(value or "")).casefold()
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
     return re.sub(r"[\s\u3000・･.,，．:：;；'’\"“”()（）\[\]【】{}｛｝_\-‐‑‒–—]+", "", s)
 
 
@@ -914,7 +918,44 @@ def _person_profile_for_query(q: str) -> dict | None:
     return None
 
 
-def _person_profile_from_entity(q: str, entity, lang: str = "ja") -> dict | None:
+_PERSON_EVIDENCE_RANK = {
+    "unverified": 0, "candidate": 1, "strong": 2,
+    "bibliography_confirmed": 3, "confirmed": 4,
+}
+_PERSON_LANG_NAMES = {
+    "ja": "日本語", "en": "英語", "de": "ドイツ語", "da": "デンマーク語",
+    "fr": "フランス語", "es": "スペイン語", "it": "イタリア語",
+    "pt": "ポルトガル語", "nl": "オランダ語", "sv": "スウェーデン語",
+    "no": "ノルウェー語", "ru": "ロシア語", "zh": "中国語", "ko": "韓国語",
+    "el": "ギリシャ語", "grc": "古典ギリシャ語", "la": "ラテン語",
+}
+
+
+def _person_lang_name(code: str) -> str:
+    return _PERSON_LANG_NAMES.get(str(code or ""), str(code or "言語未確認"))
+
+
+def _person_language_summary(codes: list, names: list) -> str:
+    """Keep the full language list in JSON but make the default label readable."""
+    pairs = list(zip(codes or [], names or []))
+    known = [name for code, name in pairs if code in _PERSON_LANG_NAMES]
+    unknown = [name for code, name in pairs if code not in _PERSON_LANG_NAMES]
+    visible = list(dict.fromkeys(known + unknown))[:8]
+    extra = max(0, len(list(dict.fromkeys(known + unknown))) - len(visible))
+    if extra:
+        visible.append(f"ほか{extra}言語")
+    return "・".join(visible) or "言語未確認"
+
+
+def _person_profile_from_entity(q: str, entity, lang: str = "ja",
+                                work_records: list | None = None,
+                                relation_records: list | None = None,
+                                bibliography: list | None = None,
+                                summary: str = "",
+                                wikipedia_url: str = "",
+                                extra_sources: list | None = None,
+                                primary_texts: list | None = None,
+                                scholarship: list | None = None) -> dict | None:
     """Build a cautious generic person dossier from a Wikidata entity.
 
     It supplies identity/name/work discovery but does not invent a reception
@@ -925,58 +966,519 @@ def _person_profile_from_entity(q: str, entity, lang: str = "ja") -> dict | None
         return None
     label = str(ed.get("label") or ed.get("label_en") or q).strip()
     latin = str(ed.get("label_en") or ed.get("wikipedia", {}).get("en") or label).strip()
-    forms, seen = [], set()
 
+    # One visual record per identity spelling.  Wikidata often repeats the
+    # same Latin label for en/de/fr/it; language coverage is retained on that
+    # one record instead of producing a misleading stack of duplicates.
+    forms, form_by_key = [], {}
     def add_form(form, language, kind, evidence="candidate"):
         form = str(form or "").strip()
-        key = (form, language)
-        if form and key not in seen:
-            seen.add(key)
-            forms.append({"form": form, "language": language, "kind": kind, "evidence": evidence})
+        if not form:
+            return
+        code = str(language or "").strip()
+        key = _person_norm(form) or form.casefold()
+        rec = form_by_key.get(key)
+        if rec is None:
+            rec = {"form": form, "language": _person_lang_name(code),
+                   "languages": [_person_lang_name(code)],
+                   "language_codes": [code] if code else [],
+                   "language_count": 1, "kind": kind, "kinds": [kind], "evidence": evidence}
+            form_by_key[key] = rec
+            forms.append(rec)
+            return
+        if code and code not in rec.setdefault("language_codes", []):
+            rec["language_codes"].append(code)
+        language_name = _person_lang_name(code)
+        if language_name not in rec.setdefault("languages", []):
+            rec["languages"].append(language_name)
+        rec["language_count"] = len(rec["languages"])
+        rec["language"] = _person_language_summary(rec.get("language_codes", []), rec["languages"])
+        if kind not in rec.setdefault("kinds", []):
+            rec["kinds"].append(kind)
+        if len(rec["kinds"]) > 1:
+            rec["kind"] = "／".join(rec["kinds"][:3])
+        if _PERSON_EVIDENCE_RANK.get(evidence, 0) > _PERSON_EVIDENCE_RANK.get(rec.get("evidence"), 0):
+            rec["evidence"] = evidence
+
+    aliases = ed.get("aliases") or {}
+    labels = ed.get("labels") or {}
+    if not labels:
+        labels = {**(ed.get("orig_labels") or {})}
+        if label:
+            labels.setdefault(lang, label)
+        if latin:
+            labels.setdefault("en", latin)
+    relation_records = relation_records or []
+    relation_by_qid = {str(x.get("qid")): x for x in relation_records
+                       if isinstance(x, dict) and x.get("qid")}
+
+    def record_labels(rec: dict | None) -> dict:
+        if not isinstance(rec, dict):
+            return {}
+        out = dict(rec.get("labels") or {})
+        if rec.get("label") and lang not in out:
+            out[lang] = rec["label"]
+        if rec.get("label_en") and "en" not in out:
+            out["en"] = rec["label_en"]
+        return out
+
+    def qid_label(qid: str, prefer_lang: str = "ja") -> str:
+        rec = relation_by_qid.get(str(qid))
+        ls = record_labels(rec)
+        return str(ls.get(prefer_lang) or ls.get("en") or ls.get("da")
+                   or ls.get("de") or ls.get("fr") or (rec or {}).get("label") or qid)
+
+    # Pseudonyms are a distinct authorship layer, not transliterations.  Do
+    # not put them into the identity/transliteration cards.
+    pseudonym_qids = [str(x) for x in (ed.get("claims", {}).get("pseudonym") or []) if str(x).startswith("Q")]
+    pseudonym_names = [qid_label(x) for x in pseudonym_qids]
+    pseudonym_keys = {_person_norm(x) for x in pseudonym_names if x}
 
     add_form(q, lang, "入力された人物名", "candidate")
-    add_form(label, lang, "Wikidataラベル", "confirmed")
-    add_form(latin, "英語・ラテン文字", "ラテン文字表記", "candidate")
-    for lg, form in (ed.get("orig_labels") or {}).items():
-        add_form(form, lg, "多言語ラベル", "candidate")
+    for lg, form in labels.items():
+        add_form(form, lg, "Wikidataラベル", "confirmed")
+    if latin:
+        add_form(latin, "en", "ラテン文字表記", "confirmed" if labels.get("en") else "candidate")
+    for lg, values in aliases.items():
+        for form in values if isinstance(values, list) else []:
+            if _person_norm(form) not in pseudonym_keys:
+                add_form(form, lg, "別表記・検索別名", "candidate")
     for lg, title in (ed.get("wikipedia") or {}).items():
-        add_form(title, lg, "Wikipedia記事名", "candidate")
+        if lg not in _PERSON_LANG_NAMES:
+            continue
+        if _person_norm(title) not in pseudonym_keys:
+            add_form(title, lg, "Wikipedia記事名", "candidate")
 
+    work_records = work_records or []
     works = []
-    for title in (ed.get("claims", {}).get("notable_work") or [])[:12]:
-        title = str(title or "").strip()
-        if title and not title.startswith("Q"):
-            works.append({"original_title": title, "original_language": "要確認",
-                          "japanese_titles": [title] if lang == "ja" else [],
-                          "year": "刊年未取得", "role": "Wikidataの主要著作候補",
-                          "evidence": "candidate", "source_ids": ["dynamic-wikidata"]})
-    wiki_url = ""
-    if ed.get("wikipedia", {}).get(lang):
-        wiki_url = f"https://{lang}.wikipedia.org/wiki/{urllib.parse.quote(ed['wikipedia'][lang])}"
-    elif ed.get("wikipedia", {}).get("en"):
-        wiki_url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(ed['wikipedia']['en'])}"
+    for rec in work_records[:12]:
+        if not isinstance(rec, dict):
+            continue
+        ls = record_labels(rec)
+        wikis = rec.get("wikipedia") or {}
+        # Prefer the work's source-language title.  For a Danish author this
+        # keeps the Danish title visible instead of silently using English.
+        source_code = rec.get("original_language_code")
+        source_priority = [source_code] if source_code else []
+        source_priority += [x for x in ("da", "de", "fr", "en", "la", "grc") if x not in source_priority]
+        original_title = next((ls.get(x) or wikis.get(x) for x in source_priority
+                               if ls.get(x) or wikis.get(x)), None)
+        if not original_title:
+            original_title = rec.get("label") or rec.get("label_en") or rec.get("qid")
+        jp_title = ls.get("ja") or wikis.get("ja")
+        language_titles = []
+        seen_titles = set()
+        for code, title in list(ls.items()) + list(wikis.items()):
+            title = str(title or "").strip()
+            if not title or title in seen_titles:
+                continue
+            seen_titles.add(title)
+            language_titles.append({"language": _person_lang_name(code), "code": code, "title": title})
+        works.append({
+            "qid": rec.get("qid"), "original_title": str(original_title or ""),
+            "original_language": rec.get("original_language_label") or (_person_lang_name(source_code) if source_code else "要確認"),
+            "original_language_code": source_code or "",
+            "japanese_titles": [jp_title] if jp_title else [],
+            "language_titles": language_titles,
+            "year": (rec.get("claims") or {}).get("publication_date", [""])[0] or "刊年未取得",
+            "role": rec.get("role") or "Wikidataの主要著作候補。原題・訳題・刊年は書誌照合が必要。",
+            "evidence": rec.get("evidence", "candidate"),
+            "source_ids": ["dynamic-wikidata"],
+            "url": rec.get("url") or (f"https://www.wikidata.org/wiki/{rec.get('qid')}" if rec.get("qid") else ""),
+            "japanese_editions": copy.deepcopy(rec.get("japanese_editions", [])),
+            "edition_count": rec.get("edition_count", 0),
+            "wikipedia_urls": {code: f"https://{code}.wikipedia.org/wiki/{urllib.parse.quote(title)}"
+                               for code, title in wikis.items() if code in {"ja", "en", "da", "de", "fr"}},
+        })
+
+    bibliography = bibliography or []
+    bib_seen, bibliography_clean = set(), []
+    for item in bibliography[:24]:
+        if not isinstance(item, dict) or not item.get("title"):
+            continue
+        creators = item.get("creators") or item.get("authors") or []
+        if isinstance(creators, str):
+            creators = [creators]
+        key = (_person_norm(item.get("title")), str(item.get("year") or ""),
+               "|".join(str(x) for x in creators[:5]))
+        if key in bib_seen:
+            continue
+        bib_seen.add(key)
+        bibliography_clean.append({
+            "title": str(item.get("title")), "creators": [str(x) for x in creators[:5]],
+            "publisher": str(item.get("publisher") or ""), "year": str(item.get("year") or ""),
+            "url": str(item.get("url") or ""), "edition_of": str(item.get("edition_of") or ""),
+            "source": str(item.get("source") or "NDL書誌候補"),
+            "type": str(item.get("type") or ""), "evidence": "bibliography_confirmed",
+            "source_ids": ["dynamic-ndl"],
+        })
+
+    claims = ed.get("claims", {}) or {}
+    concepts = []
+    concept_seen = set()
+    for claim_name, kind in (("field_of_work", "学問分野"), ("movement", "思想運動"), ("genre", "著作・表現ジャンル")):
+        for qid in claims.get(claim_name, [])[:8]:
+            qid = str(qid)
+            rec = relation_by_qid.get(qid)
+            ls = record_labels(rec)
+            term = ls.get("en") or ls.get("da") or ls.get("de") or ls.get(lang) or qid_label(qid)
+            ja = ls.get("ja") or qid_label(qid, "ja")
+            key = _person_norm(term)
+            if not key or key in concept_seen:
+                continue
+            concept_seen.add(key)
+            jp_candidates = [ja] if ja == term else [x for x in [ja, term] if x]
+            concepts.append({
+                "qid": qid, "source_term": term, "language": "Wikidataラベル",
+                "japanese_candidates": jp_candidates,
+                "note": f"{kind}として登録された関連項目。人物名の翻訳でも、本人がその語を定義した証拠でもありません。",
+                "kind": kind, "evidence": "candidate", "source_ids": ["dynamic-wikidata"],
+            })
+
+    influences = []
+    reception = []
+    for qid in claims.get("influenced_by", [])[:12]:
+        qid = str(qid)
+        who = qid_label(qid)
+        if not who or who.startswith("Q") or _person_norm(who) == _person_norm(label):
+            continue
+        influences.append({"qid": qid, "label": who, "evidence": "candidate", "source_ids": ["dynamic-wikidata"]})
+        reception.append({
+            "who": who, "when": "Wikidata P737記録時点", "where": "知的系譜・影響関係の候補",
+            "what": f"{label}が影響を受けた人物として登録された候補。直接引用・影響の方向・受容史は未確認。",
+            "why": "人物の思想的な前史・対話相手を探索するため",
+            "how": "Wikidataの影響関係プロパティを入口に本文と年代順を照合する",
+            "relation": "影響源候補（本文照合前）", "evidence": "candidate",
+            "source_ids": ["dynamic-wikidata"],
+        })
+
+    description = str(ed.get("description") or "").strip()
+    domain_ids = list(dict.fromkeys((claims.get("field_of_work") or []) + (claims.get("movement") or [])))
+    domains = [qid_label(x) for x in domain_ids[:8] if qid_label(x) and not qid_label(x).startswith("Q")]
+    if not domains and description:
+        domains = [description]
+    born = (claims.get("born") or [""])[0]
+    died = (claims.get("died") or [""])[0]
+    timeline = []
+    if born or died:
+        timeline.append({
+            "when": f"{born or '生年未取得'}–{died or '没年未取得'}", "who": label,
+            "where": "人物同定・生涯", "what": description or "人物として登録された対象の生没年。",
+            "relation": "人物史の基礎記録", "evidence": "confirmed", "source_ids": ["dynamic-wikidata"],
+        })
+    for work in works[:10]:
+        timeline.append({
+            "when": work.get("year") or "刊年未取得", "who": label,
+            "where": work.get("japanese_titles", [""])[0] or work.get("original_title"),
+            "what": work.get("role") or "主要著作候補", "relation": "著作史の入口",
+            "evidence": work.get("evidence", "candidate"), "source_ids": work.get("source_ids", []),
+        })
+
+    wiki_title = ed.get("wikipedia", {}).get(lang) or ed.get("wikipedia", {}).get("en")
+    if not wikipedia_url and wiki_title:
+        wiki_lang = lang if ed.get("wikipedia", {}).get(lang) else "en"
+        wikipedia_url = f"https://{wiki_lang}.wikipedia.org/wiki/{urllib.parse.quote(wiki_title)}"
     sources = [
         {"id": "dynamic-wikidata", "label": f"Wikidata：{label}", "url": ed.get("url") or "https://www.wikidata.org/",
-         "status": "人物同定・多言語ラベル・著作候補の入口。引用・影響関係の証明ではない。", "evidence": "confirmed"},
-        {"id": "dynamic-wikipedia", "label": f"Wikipedia：{label}", "url": wiki_url,
-         "status": "人物紹介・著作候補の探索入口。一次資料や訳語の証明には使わない。", "evidence": "candidate"},
+         "status": "人物ID・多言語ラベル・主要著作・関係プロパティの入口。引用・影響関係の証明ではない。", "evidence": "confirmed"},
+        {"id": "dynamic-wikipedia", "label": f"Wikipedia：{label}", "url": wikipedia_url,
+         "status": "人物紹介・著作・章立ての探索入口。一次資料や訳語の証明には使わない。", "evidence": "candidate"},
         {"id": "dynamic-ndl", "label": f"NDLサーチ：{label}",
          "url": f"https://ndlsearch.ndl.go.jp/search?keyword={urllib.parse.quote(label)}",
-         "status": "日本語版・翻訳版・受容研究の書誌を確認する入口。", "evidence": "candidate"},
+         "status": "日本語版・翻訳版・受容研究の書誌を確認する入口。本文の訳語は版面照合が必要。", "evidence": "bibliography_confirmed" if bibliography_clean else "candidate"},
     ]
+    for source in extra_sources or []:
+        if isinstance(source, dict) and source.get("id") and not any(x.get("id") == source["id"] for x in sources):
+            sources.append(copy.deepcopy(source))
+    if primary_texts:
+        sources.append({"id": "dynamic-gutenberg", "label": "Project Gutenberg：公開テキスト候補", "url": "https://www.gutenberg.org/", "status": "公開テキストの入口。版・本文の同一性は別途確認。", "evidence": "candidate"})
+    if scholarship:
+        sources.append({"id": "dynamic-openalex", "label": "OpenAlex：研究書誌候補", "url": "https://openalex.org/", "status": "研究文献の探索入口。引用・影響関係の証明ではない。", "evidence": "candidate"})
+
+    curiosity = [
+        {"question": f"{label}は、どの問題をどの著作で別の言葉に言い換えたのか", "axis": "問題系と著作", "evidence": "candidate"},
+        {"question": "同じ著作の原題・日本語題・英訳題は、何を保存し、何を前景化しているのか", "axis": "題名・翻訳", "evidence": "candidate"},
+        {"question": "影響関係として登録された人物は、直接引用・反論・後世の再構成のどれなのか", "axis": "知的系譜と反証", "evidence": "candidate"},
+    ]
+    if concepts:
+        curiosity.append({"question": f"関連概念「{concepts[0].get('japanese_candidates', [concepts[0].get('source_term')])[0]}」は、本人の用語か後世の分類か", "axis": "概念の帰属", "evidence": "candidate"})
+
     return {
         "id": "wikidata-person:" + str(ed.get("qid") or _person_norm(label)),
-        "match": [q, label, latin], "display_name": label, "latin_name": latin,
-        "identity_note": "人物名の異表記・転写は、意味の翻訳ではなく同一人物の識別候補として表示します。",
-        "description": ed.get("description") or "Wikidataが人物として解決した対象。",
-        "domains": [ed.get("description") or "分野未確定"], "name_forms": forms,
-        "works": works, "concepts": [], "timeline": [], "reception": [], "sources": sources,
+        "qid": ed.get("qid"), "match": [q, label, latin], "display_name": label, "latin_name": latin,
+        "identity_note": "人物名の異表記・転写は、意味の翻訳ではなく同一人物の識別候補として表示します。同じ表記が複数言語で使われる場合は一つに束ね、言語群だけを併記します。",
+        "description": description or "Wikidataが人物として解決した対象。",
+        "summary": summary, "domains": domains, "name_forms": forms,
+        "pen_names": [{"qid": qid, "form": name, "kind": "筆名・著者名義（異表記ではない）", "evidence": "candidate", "source_ids": ["dynamic-wikidata"]}
+                     for qid, name in zip(pseudonym_qids, pseudonym_names)],
+        "works": works, "bibliography": bibliography_clean, "concepts": concepts,
+        "influences": influences, "timeline": timeline, "reception": reception,
+        "curiosity": curiosity, "primary_texts": primary_texts or [], "scholarship": scholarship or [],
+        "sources": sources,
         "next_actions": [
-            {"label": "人物名の表記・転写と同一人物性を確認する", "kind": "identity", "source_ids": ["dynamic-wikidata"]},
-            {"label": "主要著作を原語・翻訳題・訳者・版・標準ロケータで確認する", "kind": "translation", "source_ids": ["dynamic-wikidata", "dynamic-ndl"]},
-            {"label": "受容者の引用・影響関係を本文と書誌順で確認する", "kind": "reception", "source_ids": ["dynamic-ndl"]},
+            {"label": "人物名の表記・転写と同一人物性を確認する（同一表記は重複表示しない）", "kind": "identity", "source_ids": ["dynamic-wikidata"]},
+            {"label": "主要著作を原題・日本語題・訳者・版・標準ロケータで並置する", "kind": "translation", "source_ids": ["dynamic-wikidata", "dynamic-ndl"]},
+            {"label": "関連概念を本人の用語・後世の分類・翻訳語に分けて本文照合する", "kind": "concept", "source_ids": ["dynamic-wikidata", "dynamic-wikipedia"]},
+            {"label": "影響候補を直接引用・反論・受容のどれかに分類する", "kind": "reception", "source_ids": ["dynamic-wikidata", "dynamic-ndl"]},
         ],
     }
+
+
+_PERSON_DISCOVERY_CACHE = {}
+
+
+def _person_entity_matches_query(q: str, entity) -> bool:
+    """Require an explicit identity-form match before entering person mode.
+
+    Wikidata search is a candidate generator, not an identity proof.  A bare
+    concept such as 「自由」 may return a person, song, or place with a related
+    label.  Person mode is allowed only when the input itself matches a
+    label, alias, sitelink title, or preserved source-language form.
+    """
+    ed = entity.get("data", entity) if isinstance(entity, dict) else {}
+    if not isinstance(ed, dict) or not ed.get("is_person"):
+        return False
+    needle = _person_norm(q)
+    if not needle:
+        return False
+    forms = [ed.get("label"), ed.get("label_en")]
+    forms.extend((ed.get("labels") or {}).values())
+    forms.extend((ed.get("orig_labels") or {}).values())
+    forms.extend((ed.get("wikipedia") or {}).values())
+    for values in (ed.get("aliases") or {}).values():
+        forms.extend(values if isinstance(values, list) else [])
+    return needle in {_person_norm(x) for x in forms if x}
+
+
+def _person_work_language_code(record: dict, language_records: dict) -> str:
+    """Map a Wikidata P407 item to a display language code, cautiously."""
+    claims = record.get("claims", {}) or {}
+    qid = str((claims.get("original_language") or [""])[0])
+    language_record = language_records.get(qid, {}) or {}
+    labels = language_record.get("labels") or {}
+    english = str(labels.get("en") or language_record.get("label_en") or "").casefold()
+    by_name = {
+        "danish": "da", "german": "de", "french": "fr", "english": "en",
+        "latin": "la", "ancient greek": "grc", "greek": "el",
+        "italian": "it", "spanish": "es", "portuguese": "pt",
+        "dutch": "nl", "swedish": "sv", "norwegian": "no",
+    }
+    if english in by_name:
+        return by_name[english]
+    wikis = record.get("wikipedia") or {}
+    for code in ("da", "de", "fr", "en", "la", "grc", "el", "it", "es"):
+        if wikis.get(code) or (record.get("labels") or {}).get(code):
+            return code
+    return ""
+
+
+def _person_text_matches(name: str, value: str) -> bool:
+    """Match a person in author metadata without treating mere co-occurrence as proof."""
+    left = _person_norm(name)
+    right = _person_norm(value)
+    if not left or not right:
+        return False
+    if left in right or right in left:
+        return True
+    tokens = [x.casefold() for x in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]{3,}", str(name or ""))]
+    return bool(tokens) and all(_person_norm(token) in right for token in tokens)
+
+
+async def _discover_person_profile(q: str, lang: str = "ja") -> dict | None:
+    """Expand a Wikidata person into an identity/works/concepts dossier.
+
+    This is deliberately a bounded, best-effort enrichment wave.  Wikidata
+    supplies the stable identity and relationship graph; NDL supplies Japanese
+    edition candidates; Wikipedia supplies orientation only; Gutenberg and
+    OpenAlex are separate discovery layers.  A missing source never becomes a
+    fabricated fact.
+    """
+    cache_key = f"{lang}:{_person_norm(q)}"
+    if cache_key in _PERSON_DISCOVERY_CACHE:
+        cached = _PERSON_DISCOVERY_CACHE[cache_key]
+        return copy.deepcopy(cached) if cached else None
+    if not _history_person_candidate(q):
+        _PERSON_DISCOVERY_CACHE[cache_key] = None
+        return None
+    try:
+        wd = await _history_bounded(wikidata.search(q, lang, limit=16), timeout=6.0)
+        candidates = wd.get("data") if isinstance(wd, dict) and not wd.get("error") else []
+        if not candidates:
+            _PERSON_DISCOVERY_CACHE[cache_key] = None
+            return None
+        entity = await _history_bounded(
+            _resolve_entity(candidates, lang, n=12, probes=4), timeout=9.0)
+        if not _person_entity_matches_query(q, entity):
+            _PERSON_DISCOVERY_CACHE[cache_key] = None
+            return None
+        ed = entity.get("data", {})
+        claims = ed.get("claims", {}) or {}
+        work_qids = [str(x) for x in claims.get("notable_work", [])
+                     if str(x).startswith("Q")][:12]
+        relation_names = ("field_of_work", "movement", "genre", "influenced_by", "pseudonym")
+        relation_qids = [str(x) for name in relation_names
+                        for x in claims.get(name, []) if str(x).startswith("Q")]
+        work_batch, relation_batch = await asyncio.gather(
+            _history_bounded(wikidata.batch_entities(work_qids, lang), timeout=10.0),
+            _history_bounded(wikidata.batch_entities(list(dict.fromkeys(relation_qids))[:35], lang), timeout=10.0),
+        )
+        records = {str(x.get("qid")): x
+                   for result in (work_batch, relation_batch)
+                   for x in (result.get("data") or []) if isinstance(result, dict)
+                   if isinstance(x, dict) and x.get("qid")}
+
+        language_qids = [str((records[qid].get("claims", {}).get("original_language") or [""])[0])
+                         for qid in work_qids if qid in records]
+        language_qids = [x for x in dict.fromkeys(language_qids) if x.startswith("Q")]
+        language_records = {}
+        if language_qids:
+            language_batch = await _history_bounded(
+                wikidata.batch_entities(language_qids, lang), timeout=7.0)
+            language_records = {str(x.get("qid")): x for x in (language_batch.get("data") or [])
+                                if isinstance(x, dict) and x.get("qid")}
+
+        work_records = []
+        for qid in work_qids:
+            rec = records.get(qid)
+            if not rec:
+                continue
+            rec = copy.deepcopy(rec)
+            source_code = _person_work_language_code(rec, language_records)
+            rec["original_language_code"] = source_code
+            if source_code:
+                language_record = language_records.get(
+                    str((rec.get("claims", {}).get("original_language") or [""])[0]), {})
+                language_labels = language_record.get("labels") or {}
+                rec["original_language_label"] = (
+                    language_labels.get(lang) or language_labels.get("en")
+                    or language_labels.get(source_code) or _person_lang_name(source_code))
+            rec["role"] = "Wikidataが主要著作として登録した候補。原題・訳題・版面は別途照合。"
+            work_records.append(rec)
+
+        label = str(ed.get("label") or ed.get("label_en") or q)
+        latin = str(ed.get("label_en") or label)
+        name_records = ed.get("labels") or {}
+        japanese_names = [label]
+        for code, value in name_records.items():
+            if code == "ja" or _has_cjk(str(value)):
+                japanese_names.append(str(value))
+        for values in (ed.get("aliases") or {}).values():
+            for value in values if isinstance(values, list) else []:
+                if _has_cjk(str(value)):
+                    japanese_names.append(str(value))
+        japanese_names = list(dict.fromkeys(x for x in japanese_names if x.strip()))[:5]
+
+        async def _ndl_author_records():
+            responses = await asyncio.gather(
+                *[ndl.by_author(name, limit=14) for name in japanese_names],
+                return_exceptions=True)
+            out = []
+            for response in responses:
+                if isinstance(response, dict) and not response.get("error"):
+                    out.extend(response.get("data") or [])
+            return out
+
+        work_japanese_titles = []
+        for rec in work_records:
+            ls = rec.get("labels") or {}
+            wikis = rec.get("wikipedia") or {}
+            title = ls.get("ja") or wikis.get("ja")
+            if title:
+                work_japanese_titles.append((rec.get("qid"), title))
+
+        async def _ndl_work_records():
+            responses = await asyncio.gather(
+                *[ndl.by_work(label, title, limit=8)
+                  for _, title in work_japanese_titles[:6]],
+                return_exceptions=True)
+            return [response for response in responses
+                    if isinstance(response, dict) and not response.get("error")]
+
+        wiki_titles = ed.get("wikipedia") or {}
+        wiki_lang = lang if wiki_titles.get(lang) else "en"
+        wiki_title = wiki_titles.get(wiki_lang)
+        source_results = await asyncio.gather(
+            _history_bounded(_ndl_author_records(), timeout=9.0),
+            _history_bounded(_ndl_work_records(), timeout=10.0),
+            _history_bounded(wikipedia.summary(wiki_title, wiki_lang), timeout=7.0)
+            if wiki_title else asyncio.sleep(0, result={}),
+            _history_bounded(gutendex.search(latin, limit=10), timeout=8.0),
+            _history_bounded(openalex.search_works(latin, limit=12), timeout=8.0),
+        )
+        ndl_author_items, ndl_work_groups, wiki_result, gut_result, oa_result = source_results
+
+        bibliography_items = []
+        for item in ndl_author_items if isinstance(ndl_author_items, list) else []:
+            if isinstance(item, dict):
+                row = copy.deepcopy(item)
+                row["source"] = "NDL書誌（著者名検索）"
+                bibliography_items.append(row)
+        for group in ndl_work_groups if isinstance(ndl_work_groups, list) else []:
+            data = group.get("data") or {}
+            work_title = data.get("work") or ""
+            for item in data.get("editions") or []:
+                if isinstance(item, dict):
+                    row = copy.deepcopy(item)
+                    row["edition_of"] = work_title
+                    row["source"] = "NDL書誌（著作題名検索）"
+                    bibliography_items.append(row)
+        # Keep the NDL edition result attached to its actual work.  A work
+        # without a Japanese label must not shift every subsequent pair.
+        work_by_qid = {str(rec.get("qid")): rec for rec in work_records}
+        for work_qid, title in work_japanese_titles:
+            rec = work_by_qid.get(str(work_qid))
+            if not rec:
+                continue
+            matching = [x for x in bibliography_items
+                        if _person_norm(x.get("edition_of")) == _person_norm(title)]
+            if matching:
+                rec["japanese_editions"] = matching[:8]
+                rec["edition_count"] = len(matching)
+
+        wiki_data = wiki_result.get("data") if isinstance(wiki_result, dict) and not wiki_result.get("error") else {}
+        summary = str((wiki_data or {}).get("extract") or "")
+        wikipedia_url = str((wiki_data or {}).get("url") or "")
+
+        primary_texts = []
+        gut_items = gut_result.get("data") if isinstance(gut_result, dict) and not gut_result.get("error") else []
+        for item in gut_items if isinstance(gut_items, list) else []:
+            authors = item.get("authors") or []
+            if not authors or any(_person_text_matches(label, author) or _person_text_matches(latin, author)
+                                  for author in authors):
+                row = copy.deepcopy(item)
+                row["evidence"] = "candidate"
+                row["source_ids"] = ["dynamic-gutenberg"]
+                primary_texts.append(row)
+
+        scholarship = []
+        oa_items = oa_result.get("data") if isinstance(oa_result, dict) and not oa_result.get("error") else []
+        for item in _relevant(oa_items if isinstance(oa_items, list) else [], latin)[:12]:
+            row = copy.deepcopy(item)
+            row["evidence"] = "candidate"
+            row["source_ids"] = ["dynamic-openalex"]
+            scholarship.append(row)
+
+        relation_records = [records[qid] for qid in relation_qids if qid in records]
+        profile = _person_profile_from_entity(
+            q, entity, lang, work_records=work_records,
+            relation_records=relation_records, bibliography=bibliography_items,
+            summary=summary, wikipedia_url=wikipedia_url,
+            primary_texts=primary_texts, scholarship=scholarship)
+        _PERSON_DISCOVERY_CACHE[cache_key] = copy.deepcopy(profile) if profile else None
+        return copy.deepcopy(profile) if profile else None
+    except Exception:
+        # A source connector may change shape or fail independently.  The
+        # caller must fall back to the ordinary research surface, never show a
+        # half-person graph with an unverified identity.
+        _PERSON_DISCOVERY_CACHE[cache_key] = None
+        return None
+
+
+async def _person_profile_for_query_async(q: str, lang: str = "ja") -> dict | None:
+    curated = _person_profile_for_query(q)
+    if curated:
+        return curated
+    return await _discover_person_profile(q, lang)
 
 
 def _person_dossier(profile: dict, domain: str, query: str) -> dict:
@@ -990,6 +1492,7 @@ def _person_dossier(profile: dict, domain: str, query: str) -> dict:
     p = copy.deepcopy(profile)
     display = p.get("display_name") or query
     term_map = []
+    name_source_ids = ["dynamic-wikidata"] if str(p.get("id", "")).startswith("wikidata-person:") else []
     for n in p.get("name_forms", []):
         term_map.append({
             "source_term": n.get("form"), "language": n.get("language"),
@@ -999,7 +1502,8 @@ def _person_dossier(profile: dict, domain: str, query: str) -> dict:
             "preserved": "人物同一性の候補",
             "lost_or_shifted": "表記体系を変えると発音・中黒・語順などの情報が見えにくくなる",
             "added": "各言語・文字体系の転写慣行",
-            "evidence": n.get("evidence", "candidate"), "source_ids": ["marx-name-variants"] if p.get("id") == "karl-marx" else [],
+            "evidence": n.get("evidence", "candidate"),
+            "source_ids": ["marx-name-variants"] if p.get("id") == "karl-marx" else name_source_ids,
         })
     for w in p.get("works", []):
         term_map.append({
@@ -1041,10 +1545,14 @@ def _person_dossier(profile: dict, domain: str, query: str) -> dict:
         "title": f"「{display}」――人物・著作の翻訳／受容史台帳",
         "center_question": f"「{display}」は、{domain}の人物史・著作翻訳・受容史の中で、どの表記・どの著作・どの版を通って受け取られてきたのか。",
         "scope_note": "人物名そのものの表記・転写と、人物の著作・概念の翻訳・受容を分離して表示します。自動抽出は候補であり、引用・影響関係は本文照合まで確定しません。",
-        "identity_note": p.get("identity_note", ""), "domains": p.get("domains", []),
+        "identity_note": p.get("identity_note", ""), "summary": p.get("summary", ""),
+        "domains": p.get("domains", []),
         "name_forms": p.get("name_forms", []), "works": p.get("works", []),
-        "concepts": p.get("concepts", []), "term_map": term_map,
-        "timeline": p.get("timeline", []), "reception_ledger": p.get("reception", []),
+        "pen_names": p.get("pen_names", []), "bibliography": p.get("bibliography", []),
+        "concepts": p.get("concepts", []), "influences": p.get("influences", []),
+        "term_map": term_map, "timeline": p.get("timeline", []),
+        "reception_ledger": p.get("reception", []), "curiosity": p.get("curiosity", []),
+        "primary_texts": p.get("primary_texts", []), "scholarship": p.get("scholarship", []),
         "transformations": transformations, "counterchecks": p.get("counterchecks") or default_counter,
         "sources": sources, "next_actions": p.get("next_actions", []),
     }
@@ -1066,7 +1574,8 @@ def _person_graph(profile: dict, query: str, lang: str = "ja") -> dict:
         edges.append({"from": a, "to": b, "strength": strength})
 
     add("root", display, "author", 1, 5.5, query,
-        {"person_id": profile.get("id"), "person_mode": True, "search": display})
+        {"person_id": profile.get("id"), "qid": profile.get("qid"),
+         "person_mode": True, "search": display})
     add("dom:identity", "人物同定・異表記", "domain", 2, 2.3)
     add("dom:works", "著作・翻訳版", "domain", 2, 2.8)
     add("dom:concepts", "概念・思想", "domain", 2, 2.5)
@@ -1089,28 +1598,44 @@ def _person_graph(profile: dict, query: str, lang: str = "ja") -> dict:
             if prior is not None:
                 prior.setdefault("variants", []).append({
                     "form": form, "language": n.get("language"),
-                    "kind": n.get("kind"), "evidence": n.get("evidence"),
+                    "languages": n.get("languages", []), "kind": n.get("kind"),
+                    "evidence": n.get("evidence"),
                 })
             continue
         nid = f"name:{identity_index}:{form}"
         identity_index += 1
         add(nid, form, "language", 3, 1.2, form,
-            {"language": n.get("language"), "person_id": profile.get("id"),
+            {"language": n.get("language"), "languages": n.get("languages", []),
+             "language_codes": n.get("language_codes", []), "person_id": profile.get("id"),
              "variants": [{"form": form, "language": n.get("language"),
-                           "kind": n.get("kind"), "evidence": n.get("evidence")}]} )
+                           "languages": n.get("languages", []), "kind": n.get("kind"),
+                           "evidence": n.get("evidence")}]} )
         identity_nodes[key] = nid
         link("dom:identity", nid, 0.8)
+    for i, pen in enumerate(profile.get("pen_names", [])[:8]):
+        form = pen.get("form") if isinstance(pen, dict) else str(pen)
+        if not form or str(form).startswith("Q"):
+            continue
+        nid = f"pseudonym:{i}:{form}"
+        add(nid, form, "pseudonym", 3, 1.15, form,
+            {"person_id": profile.get("id"), "kind_label": "筆名・著者名義",
+             "evidence": pen.get("evidence", "candidate") if isinstance(pen, dict) else "candidate"})
+        link("dom:identity", nid, 0.75)
     for i, w in enumerate(profile.get("works", [])[:10]):
         title = w.get("japanese_titles", [None])[0] or w.get("original_title")
         wid = f"work:{i}:{title}"
         add(wid, title, "work", 3, 1.7, w.get("original_title") or title,
-            {"original_title": w.get("original_title"), "year": w.get("year"), "person_id": profile.get("id")})
+            {"original_title": w.get("original_title"), "year": w.get("year"),
+             "qid": w.get("qid"), "japanese_titles": w.get("japanese_titles", []),
+             "language_titles": w.get("language_titles", []),
+             "person_id": profile.get("id")})
         link("dom:works", wid, 0.9)
     for i, c in enumerate(profile.get("concepts", [])[:12]):
         term = c.get("source_term") or (c.get("japanese_candidates") or [""])[0]
         cid = f"concept:{i}:{term}"
         add(cid, term, "related", 3, 1.4, term,
-            {"language": c.get("language"), "japanese_candidates": c.get("japanese_candidates", []), "person_id": profile.get("id")})
+            {"language": c.get("language"), "japanese_candidates": c.get("japanese_candidates", []),
+             "qid": c.get("qid"), "person_id": profile.get("id")})
         link("dom:concepts", cid, 0.8)
     for i, r in enumerate(profile.get("reception", [])[:8]):
         who = r.get("who")
@@ -1122,6 +1647,12 @@ def _person_graph(profile: dict, query: str, lang: str = "ja") -> dict:
     return {
         "query": query, "queried_at": now(), "qid": profile.get("qid"),
         "research_mode": "person", "entity_kind": "person", "person_profile": profile,
+        "input_resolution": {
+            "query": query, "canonical": display, "kind": "person",
+            "qid": profile.get("qid"), "matched_forms": len(profile.get("name_forms", [])),
+            "work_count": len(profile.get("works", [])),
+            "note": "入力は人物IDへ解決されました。名前の異表記と著作・概念は別レイヤーで展開しています。",
+        },
         "nodes": nodes, "edges": edges,
         "note": "人物研究モード：名前の表記・著作の翻訳・概念の受容・影響関係を別レイヤーで表示しています。人物名を一般語の語源としては扱いません。",
         "sources": [{"source": "person-profile", "retrieved_at": now(), "error": None}],
@@ -1141,6 +1672,14 @@ def _person_origin(profile: dict, query: str, lang: str = "ja") -> dict:
         "word_origin": None, "chain": [], "senses": [],
         "breadth": [{"name": x.get("language", "表記"), "term": x.get("form"), "via": "person-name-form"} for x in forms],
         "breadth_count": len(forms), "qid": profile.get("qid"),
+        "summary": profile.get("summary", ""), "works": profile.get("works", []),
+        "bibliography": profile.get("bibliography", []), "concepts": profile.get("concepts", []),
+        "timeline": profile.get("timeline", []), "reception": profile.get("reception", []),
+        "curiosity": profile.get("curiosity", []),
+        "input_resolution": {
+            "query": query, "canonical": display, "kind": "person", "qid": profile.get("qid"),
+            "matched_forms": len(forms), "note": "人物IDで同定し、名前の表記と著作・概念・受容を分離しています。",
+        },
         "article_url": next((s.get("url") for s in profile.get("sources", []) if "Wikipedia" in str(s.get("label"))), None),
         "wikidata_url": next((s.get("url") for s in profile.get("sources", []) if "Wikidata" in str(s.get("label"))), None),
         "wiktionary_url": None,
@@ -1288,35 +1827,46 @@ def _person_pair_graph(pair: dict, a: str, b: str, lang: str = "ja") -> dict:
 
 
 def _history_person_candidate(q: str) -> bool:
-    """Avoid sending every ordinary concept word to the remote person probe.
+    """Allow person-shaped input while keeping long prose on the word path.
 
-    Curated aliases are resolved before this gate.  The fallback probe is only
-    useful for name-shaped input; a kanji concept such as 「自由」 must go
-    straight to the ordinary evidence/discovery path without waiting on
-    Wikidata.
+    The final identity gate is still Wikidata label/alias equality.  This
+    heuristic only decides whether a bounded probe is worth attempting; it is
+    intentionally broad enough to cover CJK names without spaces such as
+    「孔子」 and 「西田幾多郎」.
     """
     s = str(q or "").strip()
     if not s:
+        return False
+    if len(s) > 80 or re.search(r"[。！？!?]", s):
         return False
     if re.search(r"[A-Za-z]", s) and (re.search(r"\s", s) or re.search(r"[A-Z]", s)):
         return True
     if re.fullmatch(r"[ァ-ヶー・\s]+", s) and len(re.sub(r"[・\s]", "", s)) >= 3:
         return True
-    return bool(re.search(r"\s", s))
+    if re.fullmatch(r"[一-龯々〆ヵヶぁ-んァ-ヶー・·･\s]+", s):
+        compact = re.sub(r"[・·･\s]", "", s)
+        # Katakana transliterations are a high-value name-shaped input.  For
+        # kanji-only input, avoid sending ordinary two-to-six-character
+        # concepts (自由・共同幻想・量子力学) through a slow identity probe.
+        # Full Japanese names with common given-name endings remain eligible;
+        # the final Wikidata form gate still decides whether they are people.
+        if re.fullmatch(r"[ァ-ヶー]+", compact):
+            return len(compact) >= 3
+        if "·" in s or "･" in s:
+            return len(compact) >= 3
+        if len(compact) < 3:
+            return compact in {"孔子", "老子", "孟子", "荘子", "墨子", "荀子", "朱子"}
+        if compact[-1] in "郎子夫男美明一二三介助之彦平雄江代信樹":
+            return True
+        if compact[-1] in "学論性体化理語法義想念主義":
+            return False
+        return False
+    return bool(re.search(r"\s", s) and len(s) >= 3)
 
 
 async def _history_person_discovery(q: str, lang: str) -> dict | None:
-    """Best-effort generic person detection for names outside the curated seed."""
-    try:
-        wd = await _history_bounded(wikidata.search(q, lang, limit=8), timeout=6.0)
-        cands = wd.get("data") if isinstance(wd, dict) else None
-        if not cands:
-            return None
-        entity = await _history_bounded(_resolve_entity(cands, lang, n=8, probes=4), timeout=8.0)
-        profile = _person_profile_from_entity(q, entity, lang)
-        return profile
-    except Exception:
-        return None
+    """Compatibility wrapper for the shared person expansion path."""
+    return await _discover_person_profile(q, lang)
 
 
 def _history_norm(value: str) -> str:
@@ -1744,9 +2294,7 @@ async def api_translation_history(q: str, domain: str = "philosophy", lang: str 
         # word translations, and the useful translation/reception object is the
         # person's works and concepts.  Prefer the curated registry, then use a
         # cautious Wikidata person probe for names outside the seed.
-        person = _person_profile_for_query(q)
-        if person is None and _history_person_candidate(q):
-            person = await _history_person_discovery(q, lang)
+        person = await _person_profile_for_query_async(q, lang)
         if person:
             pd = _person_dossier(person, domain_key, q)
             base.update({
@@ -1831,7 +2379,7 @@ async def api_origin_graph(q: str, lang: str = "ja"):
     クリックで新たな第1階層として展開できる。"""
     if not q.strip():
         raise HTTPException(400, "empty query")
-    person = _person_profile_for_query(q)
+    person = await _person_profile_for_query_async(q, lang)
     if person:
         return _person_graph(person, q, lang)
     await wiktionary.ensure_langnames(lang)   # 全言語コード→日本語名を用意（生コード表示の解消）
