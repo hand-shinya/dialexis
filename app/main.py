@@ -2010,11 +2010,18 @@ def _history_items(value) -> list:
 # (1) 年代順に並べ (2) 集合内の influenced_by を実際の系譜の辺として残す。
 # 人物は落とさない（P1無中心・P3「未マップはrawで残す」）。職業は表示して利用者が判断する。
 # ---------------------------------------------------------------------------
-_LINEAGE_SCHOLAR_HINTS = ("哲学", "思想", "社会学", "経済学", "神学", "文献学",
-                          "歴史", "批評", "作家", "詩人", "著述", "心理学", "人類学",
-                          "言語学", "科学者", "数学", "物理", "教育", "法学", "政治学",
-                          "philosoph", "sociolog", "econom", "theolog", "histor",
-                          "writer", "author", "critic", "scholar", "scientist")
+# 主たる職業が研究・著述系かを判定する。「道」がWikidata上で道路の項目へ解決され、
+# 歌手・俳優・画家が系譜の源流として並んだため、判定を二段にした。
+# STRONG はどの位置にあっても採る。WEAK は主職業（先頭）のときだけ採る
+# （俳優や作曲家が副次的に「著作家」を持つことが多く、それを拾うと系譜が壊れる）。
+_LINEAGE_STRONG = ("哲学", "思想", "社会学", "経済学", "神学", "文献学", "歴史",
+                   "批評", "心理学", "人類学", "言語学", "科学者", "数学", "物理",
+                   "教育学", "法学", "政治学", "宗教", "比丘", "僧", "禅", "司祭",
+                   "修道", "大学教員", "教授", "学者", "神職", "論理学", "倫理学",
+                   "philosoph", "sociolog", "econom", "theolog", "histor",
+                   "scholar", "scientist", "linguist", "logician")
+_LINEAGE_WEAK = ("作家", "著作家", "詩人", "著述", "随筆", "歌人", "評論",
+                 "writer", "author", "poet", "essayist")
 
 
 def _lineage_year(values) -> int | None:
@@ -2097,7 +2104,7 @@ async def _person_lineage(people: list, lang: str = "ja") -> list:
 
     seedを一切参照しない。取得できなかった項目は空のまま残し、推測で埋めない（P6）。
     """
-    qids, order = [], {}
+    qids, order, from_article = [], {}, set()
     for person in (people or []):
         if not isinstance(person, dict):
             continue
@@ -2105,6 +2112,8 @@ async def _person_lineage(people: list, lang: str = "ja") -> list:
         if qid.startswith("Q") and qid not in order:
             order[qid] = person.get("label") or qid
             qids.append(qid)
+            if person.get("from_article"):
+                from_article.add(qid)
     if not qids:
         return []
     res = await wikidata.batch_entities(qids[:30], lang)
@@ -2136,10 +2145,15 @@ async def _person_lineage(people: list, lang: str = "ja") -> list:
         died = _lineage_year(cl.get("died"))
         occ = [str(occ_labels.get(o) or o) for o in (cl.get("occupation") or [])[:4]]
         infl = [q for q in (cl.get("influenced_by") or []) if q in in_set and q != e.get("qid")]
+        occ_str = [str(x) for x in occ]
         scholar = any((h in o) or (h in o.lower())
-                      for o in (str(x) for x in occ) for h in _LINEAGE_SCHOLAR_HINTS)
+                      for o in occ_str for h in _LINEAGE_STRONG)
+        if not scholar and occ_str:
+            primary = occ_str[0]
+            scholar = any((h in primary) or (h in primary.lower()) for h in _LINEAGE_WEAK)
         rows.append({
             "qid": e.get("qid"), "label": e.get("label") or order.get(e.get("qid"), ""),
+            "from_article": e.get("qid") in from_article,
             "born": born, "died": died,
             "life": _lineage_life(born, died),
             "occupations": occ,
@@ -2326,8 +2340,17 @@ def _history_discovery_from_sources(q: str, domain: str, lang: str,
     reception_ledger = []
     if lineage:
         # 実データ（生没年・職業・P737影響関係）だけで組んだ年代順の系譜。
-        # 最も古い層が源流候補、以降が支流。人物は落とさない（P1・P3）。
-        for idx, row in enumerate(lineage):
+        # 記事リンク由来の人物には、その語を扱った研究者でない者が混ざる
+        # （「道」→歌手・野球選手・画家）。系譜に並べると誤った源流を示すため、
+        # 職業が研究・著述系でないものは系譜から外す。ただし黙って落とさず、
+        # 何人を外したかと氏名を台帳の末尾に残す（P3）。
+        shown = [r for r in lineage if r.get("scholar_like")]
+        excluded = [r for r in lineage if not r.get("scholar_like")]
+        if not shown:
+            # 全員が研究・著述系でない＝語の解決自体が外れている可能性が高い。
+            # 誤った源流を見せるより、空にして除外記録だけを残す。
+            shown = []
+        for idx, row in enumerate(shown):
             src_id = add_source(
                 f"auto-person-{row['qid']}", f"{row['label']}（Wikidata）",
                 row.get("url", ""), "candidate",
@@ -2353,6 +2376,18 @@ def _history_discovery_from_sources(q: str, domain: str, lang: str,
                 "evidence_note": ("Wikidataの記録であり、本文での引用・訳語・影響の実証ではない。"
                                   "職業欄はそのまま表示する。関連の薄い人物の判断は利用者が行う。"),
                 "source_ids": [src_id, wd_source],
+            })
+        if excluded:
+            reception_ledger.append({
+                "who": f"（系譜から外した人物 {len(excluded)}名）",
+                "when": "—",
+                "where": "／".join(sorted({o for r in excluded for o in (r.get("occupations") or [])})[:6]),
+                "what": "、".join(r.get("label", "") for r in excluded[:12]),
+                "why": "この語に関連づけられていたが、主たる職業が研究・著述系でないため系譜の年代列から外した。語の解決が別義（例:「道」が道路の項目）へ外れている可能性もここに現れる",
+                "how": "Wikidata P106職業で判定。削除ではなく、ここに氏名と職業を残している",
+                "relation": "除外の記録。判断は利用者が行う（原理原則 P1・P3）",
+                "evidence": "candidate",
+                "source_ids": [wd_source],
             })
     else:
         people = (origin.get("originators") or []) + (origin.get("associated") or [])
@@ -2451,9 +2486,14 @@ async def _history_discovery(q: str, domain: str, lang: str):
         lineage = []
         try:
             people = ((origin or {}).get("originators") or []) + ((origin or {}).get("associated") or [])
-            if len(people) < 6:
+            article = str((origin or {}).get("resolved_to") or q)
+            # 「間主観性」がロバート・ストロロウへ解決されるなど、概念が人物項目に
+            # 吸い寄せられることがある。人物の記事を概念の記事として扱わない（P8）。
+            resolved_is_person = any(
+                isinstance(x, dict) and x.get("is_person")
+                and str(x.get("label") or "") == article for x in people)
+            if len(people) < 6 and not resolved_is_person:
                 # Wikidataの概念項目に人物が無い語（実存・純粋経験・共同幻想など）のための補完。
-                article = str((origin or {}).get("resolved_to") or q)
                 extra = await _history_bounded(
                     _lineage_people_from_article(article, lang), timeout=25.0) or []
                 known = {str(x.get("qid")) for x in people if isinstance(x, dict)}
