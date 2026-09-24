@@ -2002,8 +2002,159 @@ def _history_items(value) -> list:
     return data if isinstance(data, list) else []
 
 
+# ---------------------------------------------------------------------------
+# 系譜の自動生成（seed非依存・2026-09-25）
+# 従来、非seed語の reception_ledger は Wikidata の関連人物を順不同で並べ、
+# when を「書誌・Wikidata記録時点」という定数で埋めていた。これでは源流へ遡れない。
+# ここでは実データ（P569生年・P570没年・P106職業・P737影響を受けた人物）だけを使い、
+# (1) 年代順に並べ (2) 集合内の influenced_by を実際の系譜の辺として残す。
+# 人物は落とさない（P1無中心・P3「未マップはrawで残す」）。職業は表示して利用者が判断する。
+# ---------------------------------------------------------------------------
+_LINEAGE_SCHOLAR_HINTS = ("哲学", "思想", "社会学", "経済学", "神学", "文献学",
+                          "歴史", "批評", "作家", "詩人", "著述", "心理学", "人類学",
+                          "言語学", "科学者", "数学", "物理", "教育", "法学", "政治学",
+                          "philosoph", "sociolog", "econom", "theolog", "histor",
+                          "writer", "author", "critic", "scholar", "scientist")
+
+
+def _lineage_year(values) -> int | None:
+    """Wikidata時刻値から年を取り出す。紀元前は負の整数にする。"""
+    for v in (values or []):
+        t = str(v or "").strip()
+        if not t:
+            continue
+        neg = t.startswith("-")
+        m = re.search(r"(\d{1,5})", t)
+        if not m:
+            continue
+        try:
+            y = int(m.group(1))
+        except ValueError:
+            continue
+        return -y if neg else y
+    return None
+
+
+async def _lineage_people_from_article(title: str, lang: str = "ja", limit: int = 150) -> list:
+    """概念のWikipedia記事が張るリンクから人物を集める。
+
+    Wikidataの概念項目に著者・考案者が登録されていない語は多く（実存・純粋経験・共同幻想
+    などは0件だった）、その場合これまで系譜が空のまま返っていた。記事リンクは
+    「その概念を説明するために実際に言及された人物」であり、seedを増やさずに被覆を広げる。
+    リンクの存在は影響関係の証明ではないため、証拠レベルは candidate のまま扱う。
+    """
+    title = str(title or "").strip()
+    if not title:
+        return []
+    host = f"https://{lang}.wikipedia.org/w/api.php"
+    try:
+        body, _, _ = await cached_get_json(host, {
+            "action": "query", "generator": "links", "titles": title,
+            "gpllimit": str(limit), "gplnamespace": "0", "redirects": "1",
+            "prop": "pageprops", "ppprop": "wikibase_item", "format": "json"}, ttl=86400)
+    except Exception:
+        return []
+    pages = ((body.get("query") or {}).get("pages") or {})
+    qids = []
+    for page in pages.values():
+        qid = ((page.get("pageprops") or {}).get("wikibase_item") or "")
+        if qid.startswith("Q") and qid not in qids:
+            qids.append(qid)
+    if not qids:
+        return []
+    people = []
+    for i in range(0, min(len(qids), 150), 50):
+        res = await wikidata.batch_entities(qids[i:i + 50], lang)
+        if res.get("error"):
+            continue
+        for ent in (res.get("data") or []):
+            if ent.get("is_person") and ent.get("label"):
+                people.append({"qid": ent.get("qid"), "label": ent.get("label"),
+                               "from_article": True})
+    return people
+
+
+def _lineage_yr(y: int | None) -> str:
+    """紀元前を「前427」と表示する。-427 のままでは読み手が年代を追えない。"""
+    if y is None:
+        return ""
+    return f"前{abs(y)}" if y < 0 else str(y)
+
+
+def _lineage_life(born: int | None, died: int | None) -> str:
+    if born is None and died is None:
+        return "生没年は未取得"
+    if born is not None and died is not None:
+        return f"{_lineage_yr(born)}–{_lineage_yr(died)}"
+    if born is not None:
+        return f"{_lineage_yr(born)}–"
+    return f"–{_lineage_yr(died)}"
+
+
+async def _person_lineage(people: list, lang: str = "ja") -> list:
+    """関連人物を、実データだけで年代順の系譜へ変換する。
+
+    seedを一切参照しない。取得できなかった項目は空のまま残し、推測で埋めない（P6）。
+    """
+    qids, order = [], {}
+    for person in (people or []):
+        if not isinstance(person, dict):
+            continue
+        qid = str(person.get("qid") or "")
+        if qid.startswith("Q") and qid not in order:
+            order[qid] = person.get("label") or qid
+            qids.append(qid)
+    if not qids:
+        return []
+    res = await wikidata.batch_entities(qids[:30], lang)
+    # connectors.base.ok() は "ok" キーを持たない。error=None かどうかで判定する。
+    if res.get("error"):
+        return []
+    ents = res.get("data") or []
+    in_set = {e.get("qid") for e in ents}
+
+    occ_ids = []
+    for e in ents:
+        occ_ids.extend((e.get("claims") or {}).get("occupation") or [])
+    occ_labels = {}
+    uniq_occ = list(dict.fromkeys(occ_ids))
+    # resolve_labels は1回50件が上限。超えた分が生QIDのまま表示されるのを防ぐ。
+    for i in range(0, min(len(uniq_occ), 200), 50):
+        # resolve_labels は封筒でなく {qid: label} をそのまま返す。
+        lr = await wikidata.resolve_labels(uniq_occ[i:i + 50], lang)
+        if isinstance(lr, dict):
+            occ_labels.update({k: v for k, v in lr.items() if str(k).startswith("Q")})
+
+    rows = []
+    for e in ents:
+        cl = e.get("claims") or {}
+        born = _lineage_year(cl.get("born"))
+        died = _lineage_year(cl.get("died"))
+        occ = [str(occ_labels.get(o) or o) for o in (cl.get("occupation") or [])[:4]]
+        infl = [q for q in (cl.get("influenced_by") or []) if q in in_set and q != e.get("qid")]
+        scholar = any((h in o) or (h in o.lower())
+                      for o in (str(x) for x in occ) for h in _LINEAGE_SCHOLAR_HINTS)
+        rows.append({
+            "qid": e.get("qid"), "label": e.get("label") or order.get(e.get("qid"), ""),
+            "born": born, "died": died,
+            "life": _lineage_life(born, died),
+            "occupations": occ,
+            "influenced_by_in_set": infl,
+            "influenced_by_labels": [next((x.get("label") for x in ents if x.get("qid") == q), q)
+                                     for q in infl],
+            "field": (cl.get("field_of_work") or [])[:3],
+            "notable_work_qids": (cl.get("notable_work") or [])[:5],
+            "scholar_like": bool(scholar),
+            "url": e.get("url") or f"https://www.wikidata.org/wiki/{e.get('qid')}",
+        })
+    # 源流→支流。生年不明は末尾（落とさない・P3）。
+    rows.sort(key=lambda r: (r["born"] is None, r["born"] if r["born"] is not None else 0))
+    return rows
+
+
 def _history_discovery_from_sources(q: str, domain: str, lang: str,
-                                    origin=None, anatomy=None, explore=None):
+                                    origin=None, anatomy=None, explore=None,
+                                    lineage=None):
     """Normalize existing source responses into a preliminary evidence ledger.
 
     This is deliberately an extraction layer, not an AI-authored history. It
@@ -2169,21 +2320,52 @@ def _history_discovery_from_sources(q: str, domain: str, lang: str,
         })
 
     reception_ledger = []
-    people = (origin.get("originators") or []) + (origin.get("associated") or [])
-    seen_people = set()
-    for person in people[:12]:
-        if not isinstance(person, dict) or not person.get("label") or person["label"] in seen_people:
-            continue
-        seen_people.add(person["label"])
-        reception_ledger.append({
-            "who": person["label"], "when": "書誌・Wikidata記録時点",
-            "where": origin.get("resolved_to") or q,
-            "what": f"「{q}」との著者・考案者・関連人物候補として抽出",
-            "why": "受容史の人物候補を先に可視化するため",
-            "how": "Wikidataの著者・考案者・関連項目から抽出",
-            "relation": "候補。実際の引用・影響関係は本文照合が必要",
-            "evidence": "candidate", "source_ids": [wd_source],
-        })
+    if lineage:
+        # 実データ（生没年・職業・P737影響関係）だけで組んだ年代順の系譜。
+        # 最も古い層が源流候補、以降が支流。人物は落とさない（P1・P3）。
+        for idx, row in enumerate(lineage):
+            src_id = add_source(
+                f"auto-person-{row['qid']}", f"{row['label']}（Wikidata）",
+                row.get("url", ""), "candidate",
+                "人物の生没年・職業・影響関係の候補。著作本文での用法は別途照合する。")
+            infl = row.get("influenced_by_labels") or []
+            if idx == 0:
+                relation = "この集合の中で最も古い層＝源流候補"
+            elif infl:
+                relation = "支流。この集合内で「" + "・".join(infl[:3]) + "」から影響を受けたとWikidataが記録"
+            else:
+                relation = "支流候補。この集合内に記録された影響元は無い（独立／未記録）"
+            reception_ledger.append({
+                "who": row["label"],
+                "when": row.get("life") or "生没年は未取得",
+                "where": "／".join(row.get("occupations") or []) or "職業は未取得",
+                "what": f"「{q}」に関係する人物として抽出",
+                "why": "源流から支流への流れを年代順に可視化するため",
+                "how": "Wikidata P569生年・P570没年・P106職業・P737影響を受けた人物を実取得し、生年昇順に整列",
+                "relation": relation,
+                "influenced_by": infl,
+                "scholar_like": row.get("scholar_like", False),
+                "evidence": "candidate",
+                "evidence_note": ("Wikidataの記録であり、本文での引用・訳語・影響の実証ではない。"
+                                  "職業欄はそのまま表示する。関連の薄い人物の判断は利用者が行う。"),
+                "source_ids": [src_id, wd_source],
+            })
+    else:
+        people = (origin.get("originators") or []) + (origin.get("associated") or [])
+        seen_people = set()
+        for person in people[:12]:
+            if not isinstance(person, dict) or not person.get("label") or person["label"] in seen_people:
+                continue
+            seen_people.add(person["label"])
+            reception_ledger.append({
+                "who": person["label"], "when": "書誌・Wikidata記録時点",
+                "where": origin.get("resolved_to") or q,
+                "what": f"「{q}」との著者・考案者・関連人物候補として抽出",
+                "why": "受容史の人物候補を先に可視化するため",
+                "how": "Wikidataの著者・考案者・関連項目から抽出",
+                "relation": "候補。実際の引用・影響関係は本文照合が必要",
+                "evidence": "candidate", "source_ids": [wd_source],
+            })
 
     transformations = [{
         "stage": "辞書・書誌の自動予備抽出",
@@ -2262,7 +2444,23 @@ async def _history_discovery(q: str, domain: str, lang: str):
             _history_bounded(api_anatomy(q, lang)),
             _history_bounded(api_explore(q, lang)),
         )
-        return _history_discovery_from_sources(q, domain, lang, origin, anatomy, explore)
+        lineage = []
+        try:
+            people = ((origin or {}).get("originators") or []) + ((origin or {}).get("associated") or [])
+            if len(people) < 6:
+                # Wikidataの概念項目に人物が無い語（実存・純粋経験・共同幻想など）のための補完。
+                article = str((origin or {}).get("resolved_to") or q)
+                extra = await _history_bounded(
+                    _lineage_people_from_article(article, lang), timeout=20.0) or []
+                known = {str(x.get("qid")) for x in people if isinstance(x, dict)}
+                people = people + [x for x in extra if x.get("qid") not in known]
+            # 未知語の初回はcacheが冷えており、8秒では系譜が空のまま返っていた。
+            lineage = await _history_bounded(_person_lineage(people, lang), timeout=25.0) or []
+        except Exception:
+            # 系譜の取得失敗は空の系譜として見えるようにし、予備台帳自体は返す（公理1）。
+            lineage = []
+        return _history_discovery_from_sources(q, domain, lang, origin, anatomy, explore,
+                                               lineage=lineage)
     except Exception:
         # A malformed partial response must fall through to the visible,
         # query-specific research workspace; it must never become a blank panel.
