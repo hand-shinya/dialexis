@@ -2063,9 +2063,10 @@ async def _lineage_people_from_article(title: str, lang: str = "ja", limit: int 
     if not qids:
         return []
     people = []
-    for i in range(0, min(len(qids), 150), 50):
-        res = await wikidata.batch_entities(qids[i:i + 50], lang)
-        if res.get("error"):
+    groups = [qids[i:i + 50] for i in range(0, min(len(qids), 150), 50)]
+    for res in await asyncio.gather(*(wikidata.batch_entities(g, lang) for g in groups),
+                                    return_exceptions=True):
+        if not isinstance(res, dict) or res.get("error"):
             continue
         for ent in (res.get("data") or []):
             if ent.get("is_person") and ent.get("label"):
@@ -2118,12 +2119,15 @@ async def _person_lineage(people: list, lang: str = "ja") -> list:
         occ_ids.extend((e.get("claims") or {}).get("occupation") or [])
     occ_labels = {}
     uniq_occ = list(dict.fromkeys(occ_ids))
-    # resolve_labels は1回50件が上限。超えた分が生QIDのまま表示されるのを防ぐ。
-    for i in range(0, min(len(uniq_occ), 200), 50):
-        # resolve_labels は封筒でなく {qid: label} をそのまま返す。
-        lr = await wikidata.resolve_labels(uniq_occ[i:i + 50], lang)
-        if isinstance(lr, dict):
-            occ_labels.update({k: v for k, v in lr.items() if str(k).startswith("Q")})
+    # resolve_labels は1回50件が上限。逐次に呼ぶと合計で予算を超え、系譜が空のまま
+    # 返っていた。分割したchunkは互いに独立なので並列に投げる。
+    chunks = [uniq_occ[i:i + 50] for i in range(0, min(len(uniq_occ), 200), 50)]
+    if chunks:
+        for lr in await asyncio.gather(*(wikidata.resolve_labels(c, lang) for c in chunks),
+                                       return_exceptions=True):
+            # resolve_labels は封筒でなく {qid: label} をそのまま返す。
+            if isinstance(lr, dict):
+                occ_labels.update({k: v for k, v in lr.items() if str(k).startswith("Q")})
 
     rows = []
     for e in ents:
@@ -2451,11 +2455,11 @@ async def _history_discovery(q: str, domain: str, lang: str):
                 # Wikidataの概念項目に人物が無い語（実存・純粋経験・共同幻想など）のための補完。
                 article = str((origin or {}).get("resolved_to") or q)
                 extra = await _history_bounded(
-                    _lineage_people_from_article(article, lang), timeout=20.0) or []
+                    _lineage_people_from_article(article, lang), timeout=25.0) or []
                 known = {str(x.get("qid")) for x in people if isinstance(x, dict)}
                 people = people + [x for x in extra if x.get("qid") not in known]
             # 未知語の初回はcacheが冷えており、8秒では系譜が空のまま返っていた。
-            lineage = await _history_bounded(_person_lineage(people, lang), timeout=25.0) or []
+            lineage = await _history_bounded(_person_lineage(people, lang), timeout=40.0) or []
         except Exception:
             # 系譜の取得失敗は空の系譜として見えるようにし、予備台帳自体は返す（公理1）。
             lineage = []
