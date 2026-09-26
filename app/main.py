@@ -2156,6 +2156,8 @@ async def _person_lineage(people: list, lang: str = "ja") -> list:
             "from_article": e.get("qid") in from_article,
             "born": born, "died": died,
             "life": _lineage_life(born, died),
+            "date_suspect": bool(born is not None and died is not None
+                                  and (died - born < 5 or died - born > 120)),
             "occupations": occ,
             "influenced_by_in_set": infl,
             "influenced_by_labels": [next((x.get("label") for x in ents if x.get("qid") == q), q)
@@ -2357,7 +2359,15 @@ def _history_discovery_from_sources(q: str, domain: str, lang: str,
                 "人物の生没年・職業・影響関係の候補。著作本文での用法は別途照合する。")
             infl = row.get("influenced_by_labels") or []
             if idx == 0:
-                relation = "この集合の中で最も古い層＝源流候補"
+                # 「縁起」で舎利弗(前568)が釈迦(前563)より上に来た。舎利弗は釈迦の弟子であり、
+                # 生年順は概念の先後ではない。古代の生没年は諸説あり差も小さい。
+                # ここで「源流」と断定するとデータが支えられない主張になる（A3）。
+                relation = "この集合内で最も古い生年。生年順は概念の先後を示さないため源流の断定ではない"
+                if len(shown) > 1:
+                    nxt = shown[1].get("born")
+                    cur = row.get("born")
+                    if isinstance(cur, int) and isinstance(nxt, int) and abs(nxt - cur) <= 60:
+                        relation += f"（2位との生年差は{abs(nxt - cur)}年。順序を先後の証拠にしない）"
             elif infl:
                 relation = "支流。この集合内で「" + "・".join(infl[:3]) + "」から影響を受けたとWikidataが記録"
             else:
@@ -2374,7 +2384,9 @@ def _history_discovery_from_sources(q: str, domain: str, lang: str,
                 "scholar_like": row.get("scholar_like", False),
                 "evidence": "candidate",
                 "evidence_note": ("Wikidataの記録であり、本文での引用・訳語・影響の実証ではない。"
-                                  "職業欄はそのまま表示する。関連の薄い人物の判断は利用者が行う。"),
+                                  "職業欄はそのまま表示する。関連の薄い人物の判断は利用者が行う。"
+                                  + ("　※生没年が不自然（在世期間が5年未満または120年超）。年代は要確認。"
+                                     if row.get("date_suspect") else "")),
                 "source_ids": [src_id, wd_source],
             })
         if excluded:
@@ -2478,10 +2490,14 @@ async def _history_bounded(coro, timeout: float = 8.0):
 
 async def _history_discovery(q: str, domain: str, lang: str):
     try:
+        # api_origin は初回（cacheが冷えた状態）で実測 14.7〜18.2秒かかる。既定の8秒で
+        # 打ち切ると、Wikidataが持つ人物（縁起なら釈迦を含む10名）が丸ごと失われ、
+        # 記事リンク由来の数名だけが残って源流候補が下流の人物（世親・300年）になっていた。
+        # 「縁起型の取りこぼし」はこれが原因で、特定の語ではなく初回の全語に起きていた。
         origin, anatomy, explore = await asyncio.gather(
-            _history_bounded(api_origin(q, lang)),
-            _history_bounded(api_anatomy(q, lang)),
-            _history_bounded(api_explore(q, lang)),
+            _history_bounded(api_origin(q, lang), timeout=30.0),
+            _history_bounded(api_anatomy(q, lang), timeout=15.0),
+            _history_bounded(api_explore(q, lang), timeout=15.0),
         )
         lineage = []
         try:
