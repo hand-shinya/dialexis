@@ -33,7 +33,17 @@ done
 # 決定論的にできないもの。デプロイgateには使わない（情報表示）。それ以外は不変条件スイート＝gate対象。
 # 外部サービス／ネットワーク応答に依存するスイート。ローカル環境で応答が欠けても、
 # 内部の不変条件gateを偽陽性で止めないよう情報表示へ分離する。
-INTEGRATION="applications_wave combine_ui extterm lenses_full origin play thinkers_graph thinkers_recall"
+# resolve を追加（2026-09-27・半田様の指示）: 「間主観→間主観性として辿った」の判定は
+# ja.wikipedia の opensearch 順位という外部状態に依存する。2026-09時点で ja.wikipedia には
+# 「間主観」「間主観性」の記事が存在せず、opensearch は ロバート・ストロロウ（精神分析家）と
+# 間々観音（寺院）しか返さないため、この assertion は決定論的に成立しない。
+# 変更前コード（974e923）を別worktreeで実行しても同一の 4/5 FAIL であることを確認済み＝
+# コード変更に起因しない外部データ変化である。
+# 【重要】これは分類の是正であってバグの解決ではない。「間主観性が精神分析家に解決される」
+# という本体の欠陥は未修理のまま公開されている。修理は独立した一本として扱う
+# （ja語→Wikidata項目→原語/英語名→SEP等の哲学典拠へ解決順序を変える方針・半田様提案）。
+# テストは削除せず情報表示として走り続けるので、失敗は見え続ける（公理1・沈黙しない）。
+INTEGRATION="applications_wave combine_ui extterm lenses_full origin play resolve thinkers_graph thinkers_recall"
 echo "══ 3a) 不変条件スイート（決定論・デプロイgate対象）══"
 for t in tests/e2e/*.e2e.js; do
   name=$(basename "$t"); stem="${name%.e2e.js}"
