@@ -2527,6 +2527,236 @@ async def _history_discovery(q: str, domain: str, lang: str):
         return None
 
 
+# ---------------------------------------------------------------------------
+# 文章スキャン（2026-09-27）
+# これまでの入口は「利用者が1語を選んで入れる」前提だった。しかし読者は、どの語が
+# 危ういのかを知らないから読み誤る。本や論文を読んでいる途中の人を助けるには、
+# 文章を受け取って「疑うべき語」を先に浮かび上がらせる必要がある。
+#
+# 単一の「危険度スコア」は出さない。データが支えられない断定になる（A3）。
+# 代わりに、機械で検証できる信号に名前を付けて並べ、判断は利用者に残す（P2・P6）。
+# 形態素解析器は入れない（この repo はビルド工程を持たない＝GENESIS 公理7）。
+# 字種の連なりで候補を切り出す。漢語複合語とカタカナ外来語は、まさに翻訳語の層である。
+# ---------------------------------------------------------------------------
+_SCAN_KANJI = re.compile(r"[一-鿿]{2,10}")
+_SCAN_KANA = re.compile(r"[゠-ヿー]{3,16}")
+_SCAN_LATIN = re.compile(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\-]{3,24}")
+# 「現存在（Dasein）」のように、訳語の直後に原語を括弧で添える書き方を捕まえる。
+# 訳者が原語を示した箇所は、まさに訳語の選択が起きた地点である。
+_SCAN_GLOSSED = re.compile(
+    r"([一-鿿゠-ヿー]{2,12})\s*[（(]\s*"
+    r"([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s\-]{2,30})\s*[）)]")
+
+
+def _scan_candidates(text: str, limit: int = 60) -> list:
+    """字種の連なりで候補語を切り出す。HTTPを使わない。"""
+    counts: dict[str, int] = {}
+    kinds: dict[str, str] = {}
+    for rx, kind in ((_SCAN_KANJI, "漢語"), (_SCAN_KANA, "カタカナ"),
+                     (_SCAN_LATIN, "ラテン文字")):
+        for m in rx.finditer(text or ""):
+            w = m.group(0).strip()
+            if len(w) < 2:
+                continue
+            counts[w] = counts.get(w, 0) + 1
+            kinds.setdefault(w, kind)
+    # 長く、繰り返し現れる語を先に見る。これは重要さの証明ではなく、有限の予算の配分である。
+    ordered = sorted(counts, key=lambda w: (-(counts[w] * len(w)), w))
+    return [{"word": w, "count": counts[w], "kind": kinds[w]} for w in ordered[:limit]]
+
+
+def _scan_glossed_pairs(text: str) -> list:
+    """本文中の「訳語（原語）」の対を拾う。"""
+    out, seen = [], set()
+    for m in _SCAN_GLOSSED.finditer(text or ""):
+        ja, orig = m.group(1).strip(), m.group(2).strip()
+        key = (ja, orig)
+        if ja and orig and key not in seen:
+            seen.add(key)
+            out.append({"translation": ja, "original": orig})
+    return out[:40]
+
+
+@app.get("/textscan")
+async def page_textscan(request: Request):
+    """文章スキャンの画面。app.js の単一dispatcher契約に触らない独立ページ。"""
+    return render(request, "textscan.html")
+
+
+@app.post("/api/text-scan")
+async def api_text_scan(request: Request, lang: str = "ja"):
+    """文章を受け取り、疑うべき語を信号つきで返す。
+
+    出力は候補であり判定ではない。各語に「なぜ挙がったか」を必ず添え、
+    深掘りは既存の /api/translation-history へ渡す。
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    text = str((body or {}).get("text") or "")[:20000]
+    if not text.strip():
+        raise HTTPException(400, "empty text")
+
+    cands = _scan_candidates(text)
+    pairs = _scan_glossed_pairs(text)
+    extra = []
+    for p in pairs:
+        extra.append(p["original"])
+        extra.append(p["translation"])
+        # 「unorganischer Leib」のような複数語の原語は、そのままでは項目に解決できない。
+        # 主要語（末尾）も併せて照会し、どちらかで比較できるようにする。
+        tail = p["original"].split()[-1] if " " in p["original"] else ""
+        if len(tail) >= 3:
+            extra.append(tail)
+            p["original_head"] = tail
+    probe_words = list(dict.fromkeys([c["word"] for c in cands] + extra))[:90]
+
+    results = await asyncio.gather(
+        *(wikidata.search(w, lang, limit=8) for w in probe_words),
+        return_exceptions=True)
+    info: dict[str, dict] = {}
+    for w, r in zip(probe_words, results):
+        if not isinstance(r, dict) or r.get("error"):
+            info[w] = {"hits": [], "top_qid": "", "top_desc": "", "disambiguation": False}
+            continue
+        hits = r.get("data") or []
+        descs = [str(h.get("description") or "") for h in hits]
+        info[w] = {
+            "hits": hits,
+            "top_qid": (hits[0].get("qid") if hits else ""),
+            "top_desc": (descs[0] if descs else ""),
+            "top_url": (hits[0].get("url") if hits else ""),
+            "sense_count": len(hits),
+            "disambiguation": any("曖昧さ回避" in d or "disambiguation" in d.lower()
+                                  for d in descs),
+        }
+
+    # 同じ項目を指す別の語＝訳語の揺れ。止揚・揚棄・アウフヘーベンはいずれもQ186999。
+    by_qid: dict[str, list] = {}
+    for w in probe_words:
+        qid = info[w]["top_qid"]
+        if qid:
+            by_qid.setdefault(qid, []).append(w)
+
+    flagged = []
+    for c in cands:
+        w = c["word"]
+        meta = info.get(w) or {}
+        signals = []
+        siblings = [x for x in by_qid.get(meta.get("top_qid") or "", []) if x != w]
+        if siblings:
+            signals.append({
+                "id": "translation_variance", "label": "同一の項目を指す別の語が本文にある",
+                "detail": "／".join(siblings[:6]),
+                "why": "同じ概念に複数の訳語が当てられている。どの語を選ぶかで含意が変わる",
+                "evidence": "candidate"})
+        if meta.get("disambiguation"):
+            signals.append({
+                "id": "disambiguation", "label": "曖昧さ回避ページが存在する",
+                "detail": meta.get("top_desc", ""),
+                "why": "この表記が複数の別概念に使われている",
+                "evidence": "candidate"})
+        if (meta.get("sense_count") or 0) >= 4:
+            signals.append({
+                "id": "many_senses", "label": f"別項目 {meta['sense_count']}件に分散",
+                "detail": "／".join(str(h.get("description") or "")[:24]
+                                   for h in (meta.get("hits") or [])[:4]),
+                "why": "同じ表記が領域をまたいで使われている。文脈の取り違えが起きやすい",
+                "evidence": "candidate"})
+        cluster = ORIG_CLUSTER_INDEX.get(w.lower())
+        if cluster:
+            signals.append({
+                "id": "known_collapse", "label": "検証済みの埋没語族",
+                "detail": str(cluster.get("note") or "")[:160],
+                "why": "複数の原語が日本語の一語へ収束していることが確認されている",
+                "evidence": "confirmed"})
+        if signals:
+            # 「過程」「自然」のような一般語も別項目は多い。分布の信号だけで上位に置くと
+            # 読者の注意を浪費する。関係の信号（同一項目を指す別の訳語がある・埋没が
+            # 確認済み）だけを重く扱い、分布の信号は参考に落とす。順位は重要度の証明ではない。
+            relational = {"translation_variance", "known_collapse"}
+            weight = sum(3 if x["id"] in relational else 1 for x in signals)
+            has_rel = any(x["id"] in relational for x in signals)
+            tier = ("要確認" if has_rel
+                    else ("参考" if all(x["id"] == "many_senses" for x in signals)
+                          else "留意"))
+            flagged.append({
+                "tier": tier, "weight": weight,
+                "tier_note": ("関係の信号（訳語の揺れ・確認済みの埋没）が出た語" if has_rel
+                              else "別項目が多いだけの語。一般語も同様に挙がる"),
+                "word": w, "count": c["count"], "kind": c["kind"],
+                "top_description": meta.get("top_desc", ""),
+                "wikidata_url": meta.get("top_url", ""),
+                "signals": signals,
+                "signal_count": len(signals),
+                "next_action": {
+                    "label": f"「{w}」の原語・翻訳・受容史を追う",
+                    "api": f"/api/translation-history?q={urllib.parse.quote(w)}&domain=philosophy&lang={lang}"},
+            })
+    flagged.sort(key=lambda x: (-x["weight"], -x["signal_count"], -x["count"], x["word"]))
+
+    # 「現存在（Dasein）」で訳語と原語が別項目を指していれば、乖離の直接証拠になる。
+    pair_findings = []
+    for p in pairs:
+        ja, orig = p["translation"], p["original"]
+        a, b = info.get(ja) or {}, info.get(orig) or {}
+        if not (b.get("top_qid") or "") and p.get("original_head"):
+            b = info.get(p["original_head"]) or b
+        qa, qb = a.get("top_qid") or "", b.get("top_qid") or ""
+        if not qa or not qb:
+            verdict, note = ("pending",
+                             "この対はまだ項目に結びついていない。原語を1語（例: Leib）で"
+                             "指定するか、訳語側から受容史を追うと比較が進む")
+        elif qa == qb:
+            verdict, note = "same_item", "訳語と原語が同じ項目を指す（この指標では乖離なし）"
+        else:
+            verdict, note = ("different_item",
+                             "訳語と原語が別の項目を指す。指す先がずれている可能性がある。"
+                             "ただし比較に使うのは検索の最上位ヒットであり、その候補自体が"
+                             "別義であることもある（例: alignment が政党連合に当たる）。"
+                             "これは見るべき地点の指示であって、誤訳の判定ではない")
+        pair_findings.append({
+            "translation": ja, "original": orig, "verdict": verdict, "note": note,
+            "translation_item": {"qid": qa, "description": a.get("top_desc", ""),
+                                 "url": a.get("top_url", "")},
+            "original_item": {"qid": qb, "description": b.get("top_desc", ""),
+                              "url": b.get("top_url", "")},
+            "evidence": "candidate",
+        })
+    pair_findings.sort(key=lambda x: 0 if x["verdict"] == "different_item" else 1)
+
+    return {
+        "schema_version": "dialexis.text-scan.v1",
+        "queried_at": now(),
+        "lang": lang,
+        "text_chars": len(text),
+        "candidates_examined": len(cands),
+        "items_probed": len(probe_words),
+        "flagged": flagged[:40],
+        "glossed_pairs": pair_findings,
+        "honesty": ("これは候補の提示であり判定ではない。信号はWikidataの項目構成から"
+                    "機械的に導いたもので、本文の意味・訳語の適否・誤訳の証明ではない。"
+                    "挙がらなかった語が安全だという意味でもない（この方式は字種の連なりと"
+                    "項目の有無しか見ていない）。"),
+        "tiers": [
+            {"tier": "要確認", "meaning": "同一項目を指す別の訳語が本文にある／埋没が確認済み。関係の信号"},
+            {"tier": "留意", "meaning": "曖昧さ回避ページがある。表記が複数の別概念に使われている"},
+            {"tier": "参考", "meaning": "別項目が多いだけ。一般語も同様に挙がるため、順位は重要度ではない"},
+        ],
+        "limits": [
+            "形態素解析を行わないため、語の切り出しは字種の連なりに依存する",
+            "一般語（概念・過程・自然など）も別項目が多いため挙がる。重要度の順位ではない",
+            "原語が本文に併記されていない訳語は、乖離の比較ができない",
+            "各語の深掘りは /api/translation-history を呼ぶ。そこでも版・頁の照合は未実施",
+            "訳語と原語の比較は検索の最上位ヒット同士で行う。その候補が別義のこともあり、"
+            "「別の項目を指す」は誤訳の判定ではなく、確かめる地点の指示である",
+        ],
+        "sources": [{"id": "wikidata-search", "label": "Wikidata 項目検索",
+                     "url": "https://www.wikidata.org/w/api.php", "evidence": "candidate"}],
+    }
+
+
 @app.get("/api/translation-history")
 async def api_translation_history(q: str, domain: str = "philosophy", lang: str = "ja",
                                   request: Request = None):

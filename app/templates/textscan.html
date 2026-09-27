@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}{{ t.nav_textscan if t.nav_textscan is defined else '文章から疑うべき語を拾う' }}{% endblock %}
+{% block content %}
+{#
+  文章スキャンの独立ページ（2026-09-27）。
+  app/static/app.js（4,900行・単一dispatcher契約）には手を入れず、この画面だけで完結させる。
+  既存の探索画面の契約を壊さないことを優先した。深掘りは既存の /origin へ渡す。
+#}
+<section class="ts-wrap">
+  <h1>読んでいる文章から、疑うべき語を拾う</h1>
+  <p class="muted">
+    本・論文・報告書・翻訳文を貼ってください。原語から離れている可能性、複数の訳語が
+    当てられている可能性、複数の意味に散っている可能性のある語を、機械で確かめられる
+    <b>信号</b>として並べます。順位は重要度の証明ではありません。判断は読む人が行います。
+  </p>
+
+  <textarea id="ts-text" rows="10" placeholder="ここに文章を貼る（最大20,000字）"></textarea>
+  <div class="ts-actions">
+    <button id="ts-run" type="button">この文章を調べる</button>
+    <span id="ts-state" class="muted" role="status" aria-live="polite"></span>
+  </div>
+
+  <div id="ts-meta" class="ts-meta" hidden></div>
+  <div id="ts-pairs" hidden></div>
+  <div id="ts-tiers"></div>
+  <div id="ts-notes" class="ts-notes" hidden></div>
+</section>
+
+<style>
+.ts-wrap{max-width:980px}
+.ts-wrap textarea{width:100%;box-sizing:border-box;font:inherit;padding:.7rem;border-radius:8px;
+  border:1px solid rgba(128,128,128,.45);background:transparent;color:inherit}
+.ts-actions{display:flex;gap:.8rem;align-items:center;margin:.6rem 0 1.2rem}
+.ts-actions button{padding:.55rem 1.1rem;border-radius:8px;cursor:pointer;font:inherit}
+.ts-meta{font-size:.9rem;opacity:.8;margin-bottom:1rem}
+.ts-tier{margin:1.4rem 0}
+.ts-tier > h2{font-size:1.05rem;margin:0 0 .2rem}
+.ts-tier > p.why{margin:0 0 .7rem;font-size:.86rem;opacity:.75}
+.ts-card{border:1px solid rgba(128,128,128,.35);border-radius:10px;padding:.7rem .9rem;margin:.55rem 0}
+.ts-card > .top{display:flex;flex-wrap:wrap;gap:.5rem;align-items:baseline}
+.ts-card > .top b{font-size:1.06rem}
+.ts-card > .top .tag{font-size:.74rem;padding:.1rem .45rem;border-radius:99px;
+  border:1px solid rgba(128,128,128,.5);opacity:.85}
+.ts-sig{margin:.45rem 0 0;padding-left:1rem;font-size:.9rem}
+.ts-sig li{margin:.2rem 0}
+.ts-sig .lab{font-weight:600}
+.ts-links{margin-top:.5rem;font-size:.87rem;display:flex;gap:.9rem;flex-wrap:wrap}
+.ts-flat{font-size:.92rem;line-height:1.9}
+.ts-flat a{margin-right:.15rem}
+.ts-pair{border-left:3px solid rgba(128,128,128,.5);padding:.5rem .8rem;margin:.5rem 0;font-size:.92rem}
+.ts-pair.diff{border-left-color:#c9743a}
+.ts-notes{margin-top:2rem;font-size:.85rem;opacity:.8}
+.ts-notes ul{padding-left:1.1rem}
+</style>
+
+<script>
+(function () {
+  "use strict";
+  var TIERS = [
+    { key: "要確認", why: "同一の項目を指す別の訳語が本文にある、または埋没が確認済みの語。関係の信号が出ています。" },
+    { key: "留意", why: "曖昧さ回避ページがある語。同じ表記が複数の別概念に使われています。" },
+    { key: "参考", why: "別項目が多いだけの語。一般語も同じように挙がるため、順位は重要度を意味しません。" }
+  ];
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
+    });
+  }
+  function el(id) { return document.getElementById(id); }
+  function wordLinks(f) {
+    var q = encodeURIComponent(f.word);
+    var out = '<a href="/origin?q=' + q + '" target="_blank" rel="noopener">原語・翻訳・受容史を追う</a>';
+    if (f.wikidata_url) {
+      out += '<a href="' + esc(f.wikidata_url) + '" target="_blank" rel="noopener">Wikidata の項目</a>';
+    }
+    return out;
+  }
+  function card(f) {
+    var h = '<article class="ts-card"><div class="top"><b>' + esc(f.word) + "</b>"
+      + '<span class="tag">' + esc(f.kind) + "</span>"
+      + '<span class="tag">本文に ' + esc(f.count) + " 回</span>";
+    if (f.top_description) h += '<span class="muted">' + esc(f.top_description) + "</span>";
+    h += "</div><ul class=\"ts-sig\">";
+    (f.signals || []).forEach(function (s) {
+      h += '<li><span class="lab">' + esc(s.label) + "</span>"
+        + (s.detail ? "： " + esc(s.detail) : "")
+        + '<br><span class="muted">' + esc(s.why) + "</span></li>";
+    });
+    h += '</ul><div class="ts-links">' + wordLinks(f) + "</div></article>";
+    return h;
+  }
+  function flat(list) {
+    return '<p class="ts-flat">' + list.map(function (f) {
+      return '<a href="/origin?q=' + encodeURIComponent(f.word) + '" target="_blank" rel="noopener">'
+        + esc(f.word) + "</a>";
+    }).join(" ／ ") + "</p>";
+  }
+  function pairs(list) {
+    if (!list || !list.length) return "";
+    var h = '<div class="ts-tier"><h2>本文で「訳語（原語）」と併記された対</h2>'
+      + '<p class="why">訳者が原語を示した箇所は、訳語の選択が起きた地点です。'
+      + '訳語と原語が別の項目を指していれば、指す先がずれている可能性があります。</p>';
+    list.forEach(function (p) {
+      var diff = p.verdict === "different_item";
+      h += '<div class="ts-pair' + (diff ? " diff" : "") + '"><b>' + esc(p.translation)
+        + "</b> ← <b>" + esc(p.original) + "</b><br>" + esc(p.note) + "<br>"
+        + '<span class="muted">訳語 ' + esc(p.translation_item.qid || "—") + "： "
+        + esc(p.translation_item.description || "—") + "<br>原語 "
+        + esc(p.original_item.qid || "—") + "： " + esc(p.original_item.description || "—")
+        + "</span></div>";
+    });
+    return h + "</div>";
+  }
+  function render(d) {
+    el("ts-meta").hidden = false;
+    el("ts-meta").innerHTML = "取得時刻 " + esc(d.queried_at) + "／" + esc(d.text_chars)
+      + " 字／候補 " + esc(d.candidates_examined) + " 語を切り出し、" + esc(d.items_probed)
+      + " 件を項目照会。挙がった語 " + esc((d.flagged || []).length) + " 件。";
+    var pw = el("ts-pairs");
+    pw.hidden = false;
+    pw.innerHTML = pairs(d.glossed_pairs);
+    var h = "";
+    TIERS.forEach(function (tier) {
+      var list = (d.flagged || []).filter(function (f) { return f.tier === tier.key; });
+      if (!list.length) return;
+      h += '<div class="ts-tier"><h2>' + esc(tier.key) + "（" + list.length + "）</h2>"
+        + '<p class="why">' + esc(tier.why) + "</p>"
+        + (tier.key === "参考" ? flat(list) : list.map(card).join(""))
+        + "</div>";
+    });
+    el("ts-tiers").innerHTML = h;
+    var n = el("ts-notes");
+    n.hidden = false;
+    n.innerHTML = "<p>" + esc(d.honesty) + "</p><ul>"
+      + (d.limits || []).map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("")
+      + "</ul><p>出所： "
+      + (d.sources || []).map(function (s) {
+          return '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.label) + "</a>";
+        }).join(" ／ ")
+      + "</p>";
+  }
+  el("ts-run").addEventListener("click", function () {
+    var text = el("ts-text").value || "";
+    var state = el("ts-state");
+    if (!text.trim()) { state.textContent = "文章を貼ると調べられます。"; return; }
+    state.textContent = "照会しています（初回は時間がかかります）…";
+    el("ts-run").disabled = true;
+    fetch("/api/text-scan?lang=" + encodeURIComponent(document.documentElement.lang || "ja"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.schema_version) {
+        render(d);
+        state.textContent = "完了。取得時刻 " + (d.queried_at || "");
+      } else {
+        state.textContent = "応答の形式が想定と違いました。文章を短くするか、時間をおいて再度お試しください。";
+      }
+    }).catch(function (e) {
+      state.textContent = "通信が途中で終わりました。時間をおいて再度お試しください（" + String(e) + "）";
+    }).then(function () { el("ts-run").disabled = false; });
+  });
+})();
+</script>
+{% endblock %}
