@@ -764,7 +764,6 @@ async def api_explore(q: str, lang: str = "en"):
             "recent_scholarship": oa_works}
 
 
-@app.get("/api/origin")
 def _canon_should_override(q: str, article_title: str, resolved: bool) -> bool:
     """典拠経路で記事経路の解決を差し替えるべきか（純関数・外部取得なし）。
 
@@ -782,6 +781,7 @@ def _canon_should_override(q: str, article_title: str, resolved: bool) -> bool:
     return not (q in t or t in q)
 
 
+@app.get("/api/origin")
 async def api_origin(q: str, lang: str = "ja"):
     """原語による探求 — 無中心の原点エンジン。どの言語の語からでも、Wiktionaryを
     語キーに、その概念が生まれた言語（入力言語自身のこともある）を辿り、通ってきた
@@ -806,15 +806,10 @@ async def api_origin(q: str, lang: str = "ja"):
     #    biased search), giving the concept-TRANSLATION-origin (疎外→独 Entfremdung,
     #    縁起→梵) and the multilingual WORD fan (the concept in N languages).
     #  ・語経路 wiktionary.trace — the word's linguistic etymology (空→梵 śūnyatā).
-    #  ・典拠経路 canon.resolve — ja.wikipedia の記事名に依らず、Wikidata項目を経て
-    #    原語表記とSEPの典拠へ届く。記事経路が弱いときの是正と、原語の提示に使う。
-    #    既存2経路と同時に走らせ、待ち時間を増やさない。
-    tr, cn, cv = await asyncio.gather(
-        wiktionary.trace(q, section_lang), concept.node(q, lang),
-        canon.resolve(q, lang))
+    tr, cn = await asyncio.gather(
+        wiktionary.trace(q, section_lang), concept.node(q, lang))
     td = tr["data"] if not tr["error"] else {}
     cd = cn["data"] if not cn["error"] else {}
-    canon_data = (cv.get("data") or {}) if not cv.get("error") else {}
 
     # 記事経路の解決が「弱い」ときだけ是正する。強いとき（辿った記事名が問いと表記を
     # 共有しているとき）は一切触らない。実測（基準値42語・2026-09-28）で弱かったのは
@@ -822,8 +817,16 @@ async def api_origin(q: str, lang: str = "ja"):
     # の6語だけで、残る36語の解決は保つ。現存在→現存在分析 のように典拠経路が外す語も
     # あるため、上書きの条件を「弱いとき」に限るのが要点である。
     canon_applied = None
+    canon_data: dict = {}
     _ct = str(cd.get("title") or "")
     _weak = _canon_should_override(q, _ct, bool(td.get("found") or cd.get("found")))
+    # 典拠経路は「弱いとき」だけ呼ぶ。全語で呼ぶと SEP のHTML取得を含む3往復が
+    # 毎回加算され、E2E（contrast／nav_viewstate／origin_danger）が時間切れで落ちた。
+    # 実測では42語中3語しか弱くないため、通常の語の応答時間は変わらない。
+    # 全語の原語・典拠は必要なときだけ /api/canon で個別に引く。
+    if _weak:
+        cv = await canon.resolve(q, lang)
+        canon_data = (cv.get("data") or {}) if not cv.get("error") else {}
     if _weak and canon_data.get("matched"):
         _item = canon_data.get("item") or {}
         _lb = str(_item.get("label") or "")
@@ -2642,6 +2645,29 @@ def _scan_glossed_pairs(text: str) -> list:
             seen.add(key)
             out.append({"translation": ja, "original": orig})
     return out[:40]
+
+
+@app.get("/api/canon")
+async def api_canon(q: str, lang: str = "ja"):
+    """語の原語表記と哲学典拠（SEP）を個別に引く。
+
+    /api/origin では「弱い解決」のときだけ内部で使う。全語でこれを呼ぶと
+    SEPのHTML取得が毎回加算され画面が待たされるため、必要なときだけ叩く入口を分けた。
+    """
+    if not q.strip():
+        raise HTTPException(400, "empty query")
+    res = await canon.resolve(q, lang)
+    data = (res.get("data") or {}) if not res.get("error") else {}
+    return {"query": q, "lang": lang, "queried_at": now(),
+            "matched": bool(data.get("matched")),
+            "item": data.get("item"),
+            "original_terms": data.get("original_terms") or [],
+            "canon_entries": data.get("canon_entries") or [],
+            "note": data.get("note") or "",
+            "sources": [{"id": "wikidata", "label": "Wikidata（項目・多言語ラベル）",
+                         "url": "https://www.wikidata.org/", "evidence": "candidate"},
+                        {"id": "sep", "label": "Stanford Encyclopedia of Philosophy",
+                         "url": "https://plato.stanford.edu/", "evidence": "candidate"}]}
 
 
 @app.get("/textscan")
