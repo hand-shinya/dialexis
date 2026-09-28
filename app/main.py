@@ -764,6 +764,40 @@ async def api_explore(q: str, lang: str = "en"):
             "recent_scholarship": oa_works}
 
 
+def _verified_lemmas_for(word: str) -> list:
+    """検証済みの埋没語族が、この日本語の語に与えている原語（純関数・外部取得なし）。
+
+    orig_clusters.json は 対象化 の原語を Vergegenständlichung とし、語義を
+    「能力を対象へ実現する過程。本来は否定的でなく、人間の自己確認」と定めている。
+    この情報は Wikidata のラベル一致より信頼度が高い（confirmed 対 candidate）。
+    """
+    cluster = ORIG_CLUSTER_INDEX.get((word or "").strip().lower())
+    if not cluster:
+        return []
+    out = []
+    for lem in (cluster.get("lemmas") or []):
+        if not isinstance(lem, dict):
+            continue
+        if (word in (lem.get("collapses_to") or [])) and lem.get("lemma"):
+            out.append(str(lem["lemma"]))
+    return out
+
+
+def _canon_contradicts_verified(item_labels: dict, verified_lemmas: list) -> bool:
+    """典拠経路が選んだ項目が、検証済みの原語を持たないか（純関数）。
+
+    対象化 は Q7075072（objectification・「人間や動物を物として扱うこと」）に
+    一致してしまう。この項目のラベルに Vergegenständlichung は無く、語義は
+    検証済みseedの「本来は否定的でない」と正面から矛盾する。読者はマルクスの
+    Vergegenständlichung を読んでいるつもりで dehumanization の文献へ導かれる。
+    空より危険な、もっともらしい誤りであるため差し替えを拒否する。
+    """
+    if not verified_lemmas:
+        return False
+    have = {str(v).strip().lower() for v in (item_labels or {}).values() if v}
+    return not any(str(l).strip().lower() in have for l in verified_lemmas)
+
+
 def _canon_should_override(q: str, article_title: str, resolved: bool) -> bool:
     """典拠経路で記事経路の解決を差し替えるべきか（純関数・外部取得なし）。
 
@@ -827,6 +861,23 @@ async def api_origin(q: str, lang: str = "ja"):
     if _weak:
         cv = await canon.resolve(q, lang)
         canon_data = (cv.get("data") or {}) if not cv.get("error") else {}
+    # 検証済みseedが原語を定めている語では、その原語を持たない項目へ差し替えない。
+    _verified = _verified_lemmas_for(q)
+    # 典拠経路を実際に呼んで項目が取れたときだけ突合する。呼んでいない語で
+    # 検査すると、空の「差し替え拒否」が毎回記録されてしまう。
+    _contradicts = bool(canon_data.get("matched")) and _canon_contradicts_verified(
+        ((canon_data.get("item") or {}).get("all_labels") or {}), _verified)
+    if _contradicts:
+        canon_data = dict(canon_data)
+        canon_data["matched"] = False
+        canon_data["verified_conflict"] = {
+            "verified_lemmas": _verified,
+            "rejected_item": (canon_data.get("item") or {}).get("qid"),
+            "rejected_label": (canon_data.get("item") or {}).get("label"),
+            "rejected_description": (canon_data.get("item") or {}).get("description"),
+            "why": "検証済みの埋没語族がこの語の原語を定めており、その原語を持たない項目"
+                   "だったため差し替えを拒否した。もっともらしい誤りは空より危険である",
+        }
     if _weak and canon_data.get("matched"):
         _item = canon_data.get("item") or {}
         _lb = str(_item.get("label") or "")
@@ -942,6 +993,8 @@ async def api_origin(q: str, lang: str = "ja"):
                        if ((canon_data.get("item") or {}).get("qid")
                            and (canon_data.get("item") or {}).get("qid") != cd.get("qid"))
                        else ""),
+            "verified_conflict": canon_data.get("verified_conflict"),
+            "verified_lemmas": _verified,
             "note": canon_data.get("note") or "",
         },
         "article_url": cd.get("article_url"),

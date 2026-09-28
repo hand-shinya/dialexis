@@ -33,3 +33,28 @@ def test_override_fires_only_on_weak_resolution():
     assert not _canon_should_override("道", "道", True)
     assert not _canon_should_override("間主観", "間主観性", True)
     assert not _canon_should_override("縁起", "縁起", True)
+
+
+def test_verified_lemmas_lookup():
+    """検証済みの埋没語族が与える原語を、seedから正しく引けること。"""
+    from app.main import _verified_lemmas_for
+    assert "Vergegenständlichung" in _verified_lemmas_for("対象化")
+    assert "Entfremdung" in _verified_lemmas_for("疎外")
+    assert _verified_lemmas_for("間主観性") == []
+
+
+def test_reject_override_that_contradicts_verified_seed():
+    """検証済みの原語を持たない項目への差し替えを拒否すること。
+
+    対象化 は Q7075072（objectification・「人間や動物を物として扱うこと」）に
+    表記が一致してしまうが、検証済みseedは原語を Vergegenständlichung とし
+    「本来は否定的でない」と定めている。dehumanization の文献へ導く誤りは
+    空より危険なので、この差し替えは通してはならない。
+    """
+    from app.main import _canon_contradicts_verified
+    objectification = {"ja": "対象化", "en": "objectification", "de": "Objektifizierung"}
+    assert _canon_contradicts_verified(objectification, ["Vergegenständlichung"])
+    alienation = {"ja": "疎外", "en": "social alienation", "de": "Entfremdung"}
+    assert not _canon_contradicts_verified(alienation, ["Entfremdung", "Entäußerung"])
+    # 検証済み原語が無い語では、この検査は何も止めない
+    assert not _canon_contradicts_verified(objectification, [])

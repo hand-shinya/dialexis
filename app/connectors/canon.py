@@ -144,6 +144,8 @@ async def resolve(word: str, lang: str = "ja") -> dict:
             "matched": True,
             "item": {"qid": ent.get("qid"), "label": ent.get("label"),
                      "label_en": en, "description": ent.get("description"),
+                     # 検証済み原語との突合に使う。表示用ではない。
+                     "all_labels": labels,
                      "url": ent.get("url") or f"https://www.wikidata.org/wiki/{ent.get('qid')}"},
             "original_terms": original_labels(ent),
             "canon_entries": entries,
