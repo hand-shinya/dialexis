@@ -28,6 +28,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import db
 from .db import get_conn, init_db, now, rows
+from .connectors import canon  # 哲学典拠への解決（2026-09-28）
 from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept, searxng, etymology
 from .connectors.base import cached_get_json, cached_get_text
 from . import citations as cites
@@ -764,6 +765,23 @@ async def api_explore(q: str, lang: str = "en"):
 
 
 @app.get("/api/origin")
+def _canon_should_override(q: str, article_title: str, resolved: bool) -> bool:
+    """典拠経路で記事経路の解決を差し替えるべきか（純関数・外部取得なし）。
+
+    差し替えるのは「弱い解決」のときだけである。記事経路が辿った名が問いと表記を
+    共有しているなら、たとえ典拠経路が別の項目を持っていても触らない。
+    現存在→現存在分析／道→thoroughfare のように典拠経路が外す語があるため、
+    この条件を狭く保つことが回帰を防ぐ要点である（基準値42語で不変39・改善3・回帰0）。
+    """
+    q = (q or "").strip()
+    t = (article_title or "").strip()
+    if not resolved:
+        return True
+    if not t:
+        return True
+    return not (q in t or t in q)
+
+
 async def api_origin(q: str, lang: str = "ja"):
     """原語による探求 — 無中心の原点エンジン。どの言語の語からでも、Wiktionaryを
     語キーに、その概念が生まれた言語（入力言語自身のこともある）を辿り、通ってきた
@@ -788,10 +806,40 @@ async def api_origin(q: str, lang: str = "ja"):
     #    biased search), giving the concept-TRANSLATION-origin (疎外→独 Entfremdung,
     #    縁起→梵) and the multilingual WORD fan (the concept in N languages).
     #  ・語経路 wiktionary.trace — the word's linguistic etymology (空→梵 śūnyatā).
-    tr, cn = await asyncio.gather(
-        wiktionary.trace(q, section_lang), concept.node(q, lang))
+    #  ・典拠経路 canon.resolve — ja.wikipedia の記事名に依らず、Wikidata項目を経て
+    #    原語表記とSEPの典拠へ届く。記事経路が弱いときの是正と、原語の提示に使う。
+    #    既存2経路と同時に走らせ、待ち時間を増やさない。
+    tr, cn, cv = await asyncio.gather(
+        wiktionary.trace(q, section_lang), concept.node(q, lang),
+        canon.resolve(q, lang))
     td = tr["data"] if not tr["error"] else {}
     cd = cn["data"] if not cn["error"] else {}
+    canon_data = (cv.get("data") or {}) if not cv.get("error") else {}
+
+    # 記事経路の解決が「弱い」ときだけ是正する。強いとき（辿った記事名が問いと表記を
+    # 共有しているとき）は一切触らない。実測（基準値42語・2026-09-28）で弱かったのは
+    # 対象化→対象関係論／間主観・間主観性→ロバート・ストロロウ／非有機的肉体・非有機的身体・仮象
+    # の6語だけで、残る36語の解決は保つ。現存在→現存在分析 のように典拠経路が外す語も
+    # あるため、上書きの条件を「弱いとき」に限るのが要点である。
+    canon_applied = None
+    _ct = str(cd.get("title") or "")
+    _weak = _canon_should_override(q, _ct, bool(td.get("found") or cd.get("found")))
+    if _weak and canon_data.get("matched"):
+        _item = canon_data.get("item") or {}
+        _lb = str(_item.get("label") or "")
+        if _item.get("qid") and _lb and _lb != _item.get("qid"):
+            canon_applied = {
+                "from": _ct or None, "to": _item.get("label"),
+                "qid": _item.get("qid"),
+                "why": "記事名による解決が問いと表記を共有していなかったため、"
+                       "Wikidataの非人物項目へ差し替えた（P8 語と著者は別次元）",
+            }
+            cd = dict(cd)
+            cd["resolved_from"] = cd.get("resolved_from") or q
+            cd["title"] = _lb
+            cd["qid"] = _item.get("qid")
+            cd["wikidata_url"] = _item.get("url") or cd.get("wikidata_url")
+            cd["found"] = True
     gen = await wiktionary.ja_senses(q) if lang == "ja" else None
     gen_senses = (gen["data"]["senses"] if gen and not gen["error"] and gen.get("data") else [])
 
@@ -874,6 +922,25 @@ async def api_origin(q: str, lang: str = "ja"):
         "breadth": sorted(breadth.values(), key=lambda x: x["name"]),
         "breadth_count": len(breadth),
         "qid": cd.get("qid"),
+        # 典拠経路（2026-09-28）。原語表記と哲学典拠の候補。既存fieldを置き換えず併記する。
+        "canon": {
+            "matched": bool(canon_data.get("matched")),
+            "item": canon_data.get("item"),
+            "original_terms": canon_data.get("original_terms") or [],
+            "canon_entries": canon_data.get("canon_entries") or [],
+            "applied": canon_applied,
+            # 典拠経路が記事経路と別の項目を指すことがある（現存在→現存在分析、道→thoroughfare）。
+            # 同一視させないため、別候補であることを機械的に示す（公理3）。
+            "same_item_as_resolved": bool(
+                (canon_data.get("item") or {}).get("qid")
+                and (canon_data.get("item") or {}).get("qid") == cd.get("qid")),
+            "caveat": ("典拠経路は記事経路と別の項目を指している。二つの候補として扱い、"
+                       "どちらがこの語を論じているかは本文で確かめる"
+                       if ((canon_data.get("item") or {}).get("qid")
+                           and (canon_data.get("item") or {}).get("qid") != cd.get("qid"))
+                       else ""),
+            "note": canon_data.get("note") or "",
+        },
         "article_url": cd.get("article_url"),
         "wikidata_url": cd.get("wikidata_url"),
         "wiktionary_url": td.get("url"),
