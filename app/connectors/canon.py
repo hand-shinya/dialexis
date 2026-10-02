@@ -53,6 +53,24 @@ def _looks_like_a_term(label: str, word: str) -> bool:
     return len(label) <= max(len(word) * 3, len(word) + 8)
 
 
+def is_latin_script(word: str) -> bool:
+    """ラテン文字を主体とする語か（純関数・外部取得なし）。
+
+    原語そのままで典拠を引くかの判定に使う。実測（2026-10-02）で
+    sep.search("Stimmung") は Martin Heidegger を返すが、sep.search("間主観性") は
+    Zhu Xi を返す。日本語をそのまま投げると雑音になるため、ラテン文字の語に限る。
+    """
+    w = (word or "").strip()
+    if not w:
+        return False
+    letters = [c for c in w if c.isalpha()]
+    if not letters:
+        return False
+    latin = sum(1 for c in letters if "A" <= c <= "Z" or "a" <= c <= "z"
+                or "\u00c0" <= c <= "\u024f")
+    return latin * 2 >= len(letters)
+
+
 def _overlaps(a: str, b: str) -> bool:
     """表記が重なるか。間主観 ↔ 間主観性 を同族と見なすための最小判定。"""
     a, b = (a or "").strip(), (b or "").strip()
@@ -126,19 +144,34 @@ async def resolve(word: str, lang: str = "ja") -> dict:
             })
         labels = ent.get("labels") or {}
         en = labels.get("en") or ent.get("label_en") or ""
-        entries = []
-        if en:
-            s = await sep.search(en, limit=5)
-            if not s.get("error"):
-                for h in (s.get("data") or []):
-                    if isinstance(h, dict) and h.get("title"):
-                        entries.append({
-                            "authority": "Stanford Encyclopedia of Philosophy",
-                            "title": h.get("title"), "url": h.get("url") or "",
-                            "evidence": "candidate",
-                            "note": "英語名で照会した典拠候補。項目がこの語を論じている"
-                                    "ことの確認は本文で行う",
-                        })
+        # 原語そのままでも典拠を引く。実測で SEP は Stimmung・Befindlichkeit の
+        # どちらでも Martin Heidegger を返すが、従来は4か所すべてが英語ラベル経由で
+        # 呼んでおり、原語で叩く経路が存在しなかった。だから Stimmung は
+        # テレビ局へ流れた。在る資源を使っていなかっただけである。
+        terms, entries, seen_titles = [], [], set()
+        if is_latin_script(word):
+            terms.append(word.strip())
+        if en and en not in terms:
+            terms.append(en)
+        for term in terms:
+            s = await sep.search(term, limit=5)
+            if s.get("error"):
+                continue
+            for h in (s.get("data") or []):
+                if not (isinstance(h, dict) and h.get("title")):
+                    continue
+                if h["title"] in seen_titles:
+                    continue
+                seen_titles.add(h["title"])
+                entries.append({
+                    "authority": "Stanford Encyclopedia of Philosophy",
+                    "title": h.get("title"), "url": h.get("url") or "",
+                    "queried_with": term,
+                    "locator": (h.get("snippet") or "")[:400],
+                    "evidence": "candidate",
+                    "note": f"「{term}」で照会した典拠候補。項目がこの語を論じている"
+                            "ことの確認は本文で行う",
+                })
         return ok("canon", now(), False, {
             "query": word,
             "matched": True,
@@ -149,6 +182,7 @@ async def resolve(word: str, lang: str = "ja") -> dict:
                      "url": ent.get("url") or f"https://www.wikidata.org/wiki/{ent.get('qid')}"},
             "original_terms": original_labels(ent),
             "canon_entries": entries,
+            "authority_terms_tried": terms,
             "wikipedia": ent.get("wikipedia") or {},
             "note": "解決の一次を記事名からWikidata項目へ移し、典拠はSEPで確かめる経路。"
                     "項目の存在は語義の同一性を証明しない",

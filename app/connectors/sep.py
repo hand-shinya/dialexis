@@ -68,14 +68,23 @@ async def search(q: str, limit: int = 6) -> dict:
         h, ts, cached = await _get_html(
             f"{BASE}/search/searcher.py?query={httpx.QueryParams({'q': q})['q']}", ttl=86400)
         seen, out = set(), []
-        # Result rows: <a href="...entries/<slug>/">Title</a>
-        for m in re.finditer(r'entries/([a-z0-9-]+)/[^"]*"[^>]*>(.*?)</a>', h, re.S):
-            slug, title = m.group(1), _clean(m.group(2))
+        # 該当箇所は result_snippet に入る。実測（2026-10-02）で Stimmung の検索では
+        # heidegger 項目の snippet に「Mood (Stimmung)」と節名が出る。利用者が本文の
+        # どこを読むべきかを示す材料であり、捨ててはならない。
+        # 構造は result_listing 単位で、snippet は検索器のdebug出力 <!-- の直前で終わる。
+        for block in re.split(r'<div class="result_listing">', h)[1:]:
+            m = re.search(r'entries/([a-z0-9-]+)/', block)
+            t = re.search(r'result_title".*?>(.*?)</a>', block, re.S)
+            if not m or not t:
+                continue
+            slug, title = m.group(1), _clean(t.group(1))
             if slug in seen or not title or title.lower().startswith("http"):
                 continue
             seen.add(slug)
+            sn = re.search(r'result_snippet"\s*>(.*?)(?:<!--|</div>)', block, re.S)
             out.append({"slug": slug, "title": title,
-                        "url": f"{BASE}/entries/{slug}/"})
+                        "url": f"{BASE}/entries/{slug}/",
+                        "snippet": (_clean(sn.group(1))[:400] if sn else "")})
             if len(out) >= limit:
                 break
         return ok("sep", ts, cached, out)
