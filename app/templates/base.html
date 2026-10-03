@@ -19,6 +19,8 @@
     <a href="/explore" class="{{ 'on' if path.startswith('/explore') }}">{{ t.nav_explore }}</a>
     <a href="/desk" class="{{ 'on' if path.startswith('/desk') or path.startswith('/ledger') or path.startswith('/project') }}">{{ t.nav_desk }}</a>
     <a href="/deepsearch" class="{{ 'on' if path.startswith('/deepsearch') }}">{{ t.nav_deepsearch }}</a>
+    {# 一語の原語と典拠をたどる入口（2026-10-03）。/api/canon が未到達だった是正。 #}
+    <a href="/word" class="{{ 'on' if path.startswith('/word') }}">{{ t.nav_word if t.nav_word is defined else '原語と典拠' }}</a>
     {# 文章から疑うべき語を拾う入口（2026-09-27）。i18nキー未定義でも落ちないよう既定文を置く。 #}
     <a href="/textscan" class="{{ 'on' if path.startswith('/textscan') }}">{{ t.nav_textscan if t.nav_textscan is defined else '文章スキャン' }}</a>
     <a href="/validation?lang={{ lang }}" class="{{ 'on' if path.startswith('/validation') }}">{{ t.nav_validation }}</a>

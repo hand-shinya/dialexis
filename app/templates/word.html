@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}一語の原語と典拠{% endblock %}
+{% block content %}
+{#
+  一語の原語と典拠を引く独立ページ（2026-10-03）。
+  app/static/app.js（単一dispatcher契約）には手を入れず、この画面だけで完結させる。
+  /api/canon は 2026-09-28 に作ったが、どの画面からも呼ばれていなかった。
+  作った入口が利用者に到達していなければ、作っていないのと同じである。
+#}
+<section class="wd-wrap">
+  <h1>一語の原語と典拠をたどる</h1>
+  <p class="muted">
+    日本語の訳語から、同じ語義の枠に並ぶ原語（ギリシャ語・ラテン語・独語など）と、
+    哲学典拠の該当箇所を引きます。得られるのは<b>一般辞書の訳語等価</b>であり、
+    哲学術語の原語そのものではありません。確認は本文で行ってください。
+  </p>
+
+  <div class="wd-form">
+    <input id="wd-q" type="text" placeholder="例: 愛／理性／普通／Stimmung" autocomplete="off">
+    <button id="wd-run" type="button">たどる</button>
+    <span id="wd-state" class="muted" role="status" aria-live="polite"></span>
+  </div>
+
+  <div id="wd-out"></div>
+</section>
+
+<style>
+.wd-wrap{max-width:900px}
+.wd-form{display:flex;gap:.6rem;align-items:center;margin:1rem 0 1.4rem;flex-wrap:wrap}
+.wd-form input{flex:1 1 18rem;font:inherit;padding:.55rem .7rem;border-radius:8px;
+  border:1px solid rgba(128,128,128,.45);background:transparent;color:inherit}
+.wd-form button{padding:.55rem 1.1rem;border-radius:8px;cursor:pointer;font:inherit}
+.wd-sec{margin:1.5rem 0}
+.wd-sec > h2{font-size:1.05rem;margin:0 0 .25rem}
+.wd-sec > p.why{margin:0 0 .7rem;font-size:.86rem;opacity:.75}
+.wd-card{border:1px solid rgba(128,128,128,.35);border-radius:10px;padding:.7rem .9rem;margin:.5rem 0}
+.wd-orig{display:flex;flex-wrap:wrap;gap:.45rem;margin:.5rem 0}
+.wd-orig span{border:1px solid rgba(128,128,128,.4);border-radius:99px;padding:.15rem .6rem;font-size:.94rem}
+.wd-orig span b{opacity:.6;font-weight:600;font-size:.78rem;margin-right:.3rem}
+.wd-loc{font-size:.88rem;opacity:.85;margin:.3rem 0 0;padding-left:.8rem;
+  border-left:2px solid rgba(128,128,128,.4)}
+.wd-meta{font-size:.84rem;opacity:.75;margin-top:1.6rem}
+.wd-meta ul{padding-left:1.1rem}
+</style>
+
+<script>
+(function () {
+  "use strict";
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
+    });
+  }
+  function el(id) { return document.getElementById(id); }
+
+  function origSection(te) {
+    var hit = te && te.hit;
+    if (!hit) {
+      var tried = ((te && te.headwords_checked) || []).map(function (c) {
+        return c.headword + "（枠" + c.sense_blocks + "件"
+          + (c.bare_blocks ? "・語義ラベル無し" + c.bare_blocks + "件" : "") + "）";
+      });
+      return '<div class="wd-sec"><h2>原語</h2>'
+        + '<p class="why">この語では訳語表の語義枠に到達していません。'
+        + '試した見出し語を示します。空であることと、探し方が足りないことは別です。</p>'
+        + '<div class="wd-card">試した見出し語: '
+        + (tried.length ? esc(tried.join("／")) : "（なし）") + "</div></div>";
+    }
+    var chips = (hit.originals || []).map(function (o) {
+      return "<span><b>" + esc(o.lang) + "</b>" + esc(o.term) + "</span>";
+    }).join("");
+    var h = '<div class="wd-sec"><h2>原語（同じ語義の枠に並ぶもの）</h2>'
+      + '<p class="why">見出し語「' + esc(hit.headword) + '」の語義枠「' + esc(hit.sense)
+      + '」に入っている語です。枠を跨いだ語は含めていません。</p>'
+      + '<div class="wd-card"><div class="wd-orig">' + chips + "</div>";
+    if ((hit.japanese_in_sense || []).length > 1) {
+      h += '<p class="wd-loc">同じ枠の日本語: ' + esc(hit.japanese_in_sense.join("／"))
+        + "</p>";
+    }
+    h += "</div>";
+    if ((hit.other_senses || []).length) {
+      h += '<div class="wd-sec"><h2>同じ見出し語の別の語義</h2>'
+        + '<p class="why">同じ英語の語が別の意味で使われている枠です。'
+        + '一つの訳語の下に由来の違う意味が重なっていないかを、ここで確かめられます。</p>'
+        + '<div class="wd-card">' + esc(hit.other_senses.join("／")) + "</div></div>";
+    }
+    return h + "</div>";
+  }
+
+  function canonSection(d) {
+    var es = d.canon_entries || [];
+    if (!es.length) {
+      return '<div class="wd-sec"><h2>哲学典拠</h2>'
+        + '<p class="why">照会した語: '
+        + esc((d.authority_terms_tried || []).join("／") || "（なし）")
+        + "</p></div>";
+    }
+    var h = '<div class="wd-sec"><h2>哲学典拠（候補）</h2>'
+      + '<p class="why">照会に使った語を各項目に示します。'
+      + 'その項目がこの語を論じていることの確認は、本文で行ってください。</p>';
+    es.forEach(function (e) {
+      h += '<div class="wd-card"><b>'
+        + (e.url ? '<a class="ext-link" href="' + esc(e.url)
+                 + '" target="_blank" rel="noopener">' + esc(e.title) + "</a>"
+                 : esc(e.title))
+        + "</b> <span class=\"muted\">" + esc(e.authority || "") + "</span>";
+      if (e.queried_with) {
+        h += ' <span class="muted">（' + esc(e.queried_with) + "で照会）</span>";
+      }
+      if (e.locator) h += '<p class="wd-loc">' + esc(e.locator) + "</p>";
+      h += "</div>";
+    });
+    return h + "</div>";
+  }
+
+  function itemSection(d) {
+    var it = d.item;
+    if (!it) return "";
+    var h = '<div class="wd-sec"><h2>項目</h2><div class="wd-card"><b>'
+      + esc(it.label || "") + "</b>";
+    if (it.label_en) h += ' <span class="muted">' + esc(it.label_en) + "</span>";
+    if (it.description) h += "<br>" + esc(it.description);
+    if (it.url) {
+      h += '<p class="wd-loc"><a class="ext-link" href="' + esc(it.url)
+        + '" target="_blank" rel="noopener">' + esc(it.qid || "Wikidata") + "</a></p>";
+    }
+    return h + "</div></div>";
+  }
+
+  function render(d) {
+    var h = origSection(d.translation_edge) + itemSection(d) + canonSection(d);
+    if ((d.original_terms || []).length) {
+      h += '<div class="wd-sec"><h2>項目の多言語表記</h2>'
+        + '<p class="why">同じ項目が各言語でどう呼ばれているかです。'
+        + '語義の枠とは別の層で、語源の連鎖でもありません。</p>'
+        + '<div class="wd-card"><div class="wd-orig">'
+        + d.original_terms.map(function (o) {
+            return "<span><b>" + esc(o.lang) + "</b>" + esc(o.term) + "</span>";
+          }).join("")
+        + "</div></div></div>";
+    }
+    var layer = (d.translation_edge || {}).layer || "";
+    h += '<div class="wd-meta"><p>取得時刻 ' + esc(d.queried_at || "") + "</p><ul>";
+    if (layer) h += "<li>" + esc(layer) + "</li>";
+    h += "<li>原語は候補です。検証済みの語族が原語を定める語では、そちらが優先されます</li>"
+      + "<li>語義ラベルの無い訳語枠は採っていません。語義が特定できないためです</li></ul>"
+      + "<p>出所: "
+      + (d.sources || []).map(function (s) {
+          return '<a class="ext-link" href="' + esc(s.url)
+            + '" target="_blank" rel="noopener">' + esc(s.label) + "</a>";
+        }).join(" ／ ")
+      + "</p></div>";
+    el("wd-out").innerHTML = h;
+  }
+
+  function run() {
+    var q = (el("wd-q").value || "").trim();
+    var st = el("wd-state");
+    if (!q) { st.textContent = "語を入れるとたどれます。"; return; }
+    st.textContent = "外部の辞典と典拠に照会しています（初回は時間がかかります）…";
+    el("wd-run").disabled = true;
+    fetch("/api/canon?q=" + encodeURIComponent(q) + "&lang="
+          + encodeURIComponent(document.documentElement.lang || "ja"))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.queried_at) {
+          render(d);
+          st.textContent = d.matched ? "完了。" : "到達しませんでした。試した経路を下に示します。";
+        } else {
+          st.textContent = "応答の形式が想定と違いました。時間をおいて再度お試しください。";
+        }
+      })
+      .catch(function (e) {
+        st.textContent = "通信が途中で終わりました。時間をおいて再度お試しください（"
+          + String(e) + "）";
+      })
+      .then(function () { el("wd-run").disabled = false; });
+  }
+
+  el("wd-run").addEventListener("click", run);
+  el("wd-q").addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter") run();
+  });
+  // ?q= があれば自動で引く（他画面からリンクできるようにする）
+  var pre = new URLSearchParams(location.search).get("q");
+  if (pre) { el("wd-q").value = pre; run(); }
+})();
+</script>
+{% endblock %}

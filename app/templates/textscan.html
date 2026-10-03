@@ -69,7 +69,8 @@
   function el(id) { return document.getElementById(id); }
   function wordLinks(f) {
     var q = encodeURIComponent(f.word);
-    var out = '<a href="/origin?q=' + q + '" target="_blank" rel="noopener">原語・翻訳・受容史を追う</a>';
+    var out = '<a href="/word?q=' + q + '" target="_blank" rel="noopener">原語と典拠をたどる</a>'
+      + '<a href="/origin?q=' + q + '" target="_blank" rel="noopener">原語・翻訳・受容史を追う</a>';
     if (f.wikidata_url) {
       out += '<a href="' + esc(f.wikidata_url) + '" target="_blank" rel="noopener">Wikidata の項目</a>';
     }

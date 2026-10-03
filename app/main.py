@@ -29,6 +29,7 @@ from fastapi.templating import Jinja2Templates
 from . import db
 from .db import get_conn, init_db, now, rows
 from .connectors import canon  # 哲学典拠への解決（2026-09-28）
+from .connectors import translation_edge  # 訳語辺（2026-10-02）
 from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept, searxng, etymology
 from .connectors.base import cached_get_json, cached_get_text
 from . import citations as cites
@@ -2709,18 +2710,41 @@ async def api_canon(q: str, lang: str = "ja"):
     """
     if not q.strip():
         raise HTTPException(400, "empty query")
-    res = await canon.resolve(q, lang)
+    # 典拠経路と訳語辺を同時に走らせる。独立endpointなので api_origin の
+    # 時間予算（残余1,800ms）に縛られない。
+    # 訳語辺は日本語の語から原語へ届く唯一の経路である。実測で「愛」は
+    # love/translations の「strong affection」枠から grc=ἀγάπη/φιλία/ἔρως/στοργή を返す。
+    res, te_res = await asyncio.gather(
+        canon.resolve(q, lang), translation_edge.collapse(q, lang))
     data = (res.get("data") or {}) if not res.get("error") else {}
+    te = (te_res.get("data") or {}) if not te_res.get("error") else {}
     return {"query": q, "lang": lang, "queried_at": now(),
-            "matched": bool(data.get("matched")),
+            # どちらかの経路が当たれば到達とする
+            "matched": bool(data.get("matched") or te.get("matched")),
             "item": data.get("item"),
             "original_terms": data.get("original_terms") or [],
             "canon_entries": data.get("canon_entries") or [],
+            "authority_terms_tried": data.get("authority_terms_tried") or [],
+            "translation_edge": te,
             "note": data.get("note") or "",
             "sources": [{"id": "wikidata", "label": "Wikidata（項目・多言語ラベル）",
                          "url": "https://www.wikidata.org/", "evidence": "candidate"},
                         {"id": "sep", "label": "Stanford Encyclopedia of Philosophy",
-                         "url": "https://plato.stanford.edu/", "evidence": "candidate"}]}
+                         "url": "https://plato.stanford.edu/", "evidence": "candidate"},
+                        {"id": "wiktionary-translations",
+                         "label": "Wiktionary 語義別訳語表（下位ページを含む）",
+                         "url": "https://en.wiktionary.org/", "evidence": "candidate"}]}
+
+
+@app.get("/word")
+async def page_word(request: Request):
+    """一語の原語と典拠をたどる画面。
+
+    /api/canon は 2026-09-28 に作ったが、どの画面からも呼ばれていなかった。
+    作った入口が利用者に到達していなければ、作っていないのと同じである。
+    app.js の単一dispatcher契約には触らない独立ページとして足す。
+    """
+    return render(request, "word.html")
 
 
 @app.get("/textscan")
