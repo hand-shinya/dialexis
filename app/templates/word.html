@@ -148,7 +148,7 @@
     h += '<div class="wd-meta"><p>取得時刻 ' + esc(d.queried_at || "") + "</p><ul>";
     if (layer) h += "<li>" + esc(layer) + "</li>";
     h += "<li>原語は候補です。検証済みの語族が原語を定める語では、そちらが優先されます</li>"
-      + "<li>語義ラベルの無い訳語枠は採っていません。語義が特定できないためです</li></ul>"
+      + "<li>語義ラベルの無い訳語枠は採っていません。語義の特定に必要な見出しを待っています</li></ul>"
       + "<p>出所: "
       + (d.sources || []).map(function (s) {
           return '<a class="ext-link" href="' + esc(s.url)

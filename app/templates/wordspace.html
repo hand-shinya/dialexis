@@ -160,15 +160,25 @@
   function corpusSection(c) {
     if (!c || !Object.keys(c.by_decade || {}).length) {
       return '<div class="ws-sec"><h2>文献空間（用例層）</h2><p class="why">'
-        + "この語では近代刊行物の全文に出現が見つかりませんでした。"
-        + (c && (c.variants_tried || []).length
-            ? "試した表記は " + esc(c.variants_tried.join("・")) + " です。" : "")
-        + "0件であることと、探し方が足りないことは別です。</p></div>";
+        + (c && c.too_short
+            ? "この語は1字で、全文索引の単位（2字）に合いません。"
+              + ((c.substitutes || []).length
+                  ? "類義語 " + esc(c.substitutes.join("・")) + " でも結果が得られませんでした。"
+                  : "辞書層の2字以上の類義語を待っています。登録されれば代替照会が働きます。")
+            : "この語の近代刊行物での出現は0件でした。"
+              + ((c && (c.variants_tried || []).length)
+                  ? "試した表記は " + esc(c.variants_tried.join("・")) + " です。" : ""))
+        + "0件であることと、索引の単位に合わないことは別です。</p></div>";
     }
     var peak = Object.keys(c.by_decade).reduce(function (a, b) {
       return c.by_decade[b] > c.by_decade[a] ? b : a;
     });
     var h = '<div class="ws-sec"><h2>文献空間（用例層）</h2>'
+      + (c.substituted_for
+          ? '<p class="ws-tip">「' + esc(c.substituted_for) + '」は1字のため全文索引で'
+            + '索引の単位（2字）に合いません。類義語 <b>' + esc((c.substitutes || []).join("・"))
+            + '</b> で代替照会した分布です。元の語そのものの分布ではありません。</p>'
+          : "")
       + '<p class="why">近代刊行物の全文OCRでの出現です。辞書とは観点が違い、'
       + 'いつ・誰が・どの分野で使ったかの事実を示します。'
       + '表記は ' + esc((c.variants_tried || []).join("・")) + ' で引きました。</p>'
@@ -234,7 +244,7 @@
   function modernSection(mo) {
     if (!mo || !mo.counted) {
       return '<div class="ws-sec"><h2>現代層（研究文献）</h2>'
-        + '<p class="why">現代の研究文献に、この語での文献が見つかりませんでした。'
+        + '<p class="why">現代の研究文献での該当は0件でした。'
         + '0件であることと、探し方が足りないことは別です。</p></div>';
     }
     var h = '<div class="ws-sec"><h2>現代層（研究文献・新しい順）</h2>'

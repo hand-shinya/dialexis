@@ -5,7 +5,10 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ["app/static/app.js", "app/main.py"]
+# 2026-10-05: 独立ページのtemplateも利用者に見える文言を持つ。gateの対象に入れる。
+FILES = ["app/static/app.js", "app/main.py",
+         "app/templates/wordspace.html", "app/templates/word.html",
+         "app/templates/textscan.html"]
 
 BAD = [
     r"できませんでした", r"できません(?!か)", r"でき(ず|ない)[、。」\s]", r"引けま(せん|ない)",

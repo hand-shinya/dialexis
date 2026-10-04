@@ -30,6 +30,9 @@ FULLTEXT = "https://lab.ndl.go.jp/dl/api/book/fulltext-json/{}"
 VIEWER = "https://lab.ndl.go.jp/dl/book/{}"
 LAYER = "近代刊行物の全文OCRの出現分布。標本であり全体の分布ではない"
 MAX_SAMPLE = 100
+# 全文索引は2字単位と見られる。実測（10-05）で 愛・恋・道・性・理 は hit=0、
+# 愛情・恋愛・慈愛・道徳・理性 は 10000 だった。1字の語は代替語で引く。
+MIN_KEYWORD_CHARS = 2
 TRANSLATOR_RE = re.compile(r"(.+?)\s*訳(?:述)?$")
 AUTHOR_RE = re.compile(r"(.+?)\s*(?:共著|共編|著|編|撰|稿|講述|講義|述|輯|校|共)$")
 # 1つの責任表示に複数名が並ぶ。実測「山田俊蔵, 大角豊次郎 共」。
@@ -163,6 +166,16 @@ async def _one(word: str, sample: int, ndc: str = "") -> dict:
 
 async def survey(word: str, sample: int = MAX_SAMPLE, variants: int = 2) -> dict:
     """1語の用例層。新旧字体の両方で引き、標本であることを明示して返す。"""
+    if len((word or "").strip()) < MIN_KEYWORD_CHARS:
+        # 無駄な要求を出さない。0件と「索引の単位に合わない」を区別して返す。
+        d = tally([])
+        d.update({"word": word, "sample_size": sample, "errors": [],
+                  "variants_tried": [word], "hit_by_variant": {},
+                  "hit_total_reported": 0, "too_short": True, "layer": LAYER,
+                  "note": "全文索引は2字単位で、1字の語は代替語で引く必要がある。"
+                          "0件であることとは別である。"})
+        from .base import now as _now
+        return ok("ndl-fulltext", _now(), False, d)
     try:
         forms = kanji_variants.expand(word, limit=max(1, variants))
         res = await asyncio.gather(*[_one(f, sample) for f in forms],
@@ -177,6 +190,7 @@ async def survey(word: str, sample: int = MAX_SAMPLE, variants: int = 2) -> dict
             raise RuntimeError("; ".join(errors) or "no result")
         d = merge_variants(per)
         d.update({"word": word, "sample_size": sample, "errors": errors,
+                  "too_short": False,
                   "note": "総hitは上限10000に見え、年での並べ替えは非対応。"
                           "分布は先頭{}件の標本である。".format(sample)})
         ts = next(iter(per.values()))["retrieved_at"]

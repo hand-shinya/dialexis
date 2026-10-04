@@ -2815,6 +2815,28 @@ def modern_tally(cinii_items: list, oa_items: list) -> dict:
             "layer": "現代の研究文献。NDLの全文（概ね1940年代まで）の後を埋める"}
 
 
+def _corpus_substitutes(d: dict, limit: int = 3) -> list:
+    """1字の語を照会するための代替語を、辞書層の辺から選ぶ。
+
+    全文索引は2字単位のため、「愛」「道」のような1字の語は代替語で引く。
+    類義語→関連語→派生語の順に2字以上のものを採る。読みは語ではないので採らない。
+    代替であることは呼び出し側が payload に明示する。
+    """
+    picked, seen = [], set()
+    for kind in ("synonym", "related", "derived"):
+        for e in (d or {}).get("relations") or []:
+            t = (e.get("term") or "").strip()
+            if e.get("kind") != kind or len(t) < ndl_fulltext.MIN_KEYWORD_CHARS:
+                continue
+            if t in seen:
+                continue
+            seen.add(t)
+            picked.append(t)
+            if len(picked) >= limit:
+                return picked
+    return picked
+
+
 @app.get("/api/wordspace")
 async def api_wordspace(q: str, lang: str = "ja", sample: int = 100):
     """1語の関連空間。辞書層の辺と、用例層の分布を別々に返す。
@@ -2841,6 +2863,34 @@ async def api_wordspace(q: str, lang: str = "ja", sample: int = 100):
 
     d = _data(d_res, "ja.wiktionary")
     c = _data(c_res, "ndl-fulltext")
+    # 1字の語は全文索引の単位（2字）に合わない。辞書層の類義語で代替照会し、代替と明示する。
+    if c.get("too_short"):
+        subs = _corpus_substitutes(d)
+        if subs:
+            sub_res = await asyncio.gather(
+                *[ndl_fulltext.survey(t, sample=sample) for t in subs],
+                return_exceptions=True)
+            merged = [_data(r, "ndl-fulltext:" + t) for t, r in zip(subs, sub_res)]
+            got = [x for x in merged if x and x.get("sampled")]
+            if got:
+                base = dict(got[0])
+                for extra in got[1:]:
+                    for k, v in (extra.get("by_decade") or {}).items():
+                        base.setdefault("by_decade", {})
+                        base["by_decade"][k] = base["by_decade"].get(k, 0) + v
+                    base["works"] = (base.get("works") or []) + (extra.get("works") or [])
+                    base["sampled"] = (base.get("sampled") or 0) + (extra.get("sampled") or 0)
+                base["by_decade"] = dict(sorted((base.get("by_decade") or {}).items()))
+                base.update({
+                    "substituted_for": q, "substitutes": subs,
+                    "note": "「{}」は1字で、全文索引の単位（2字）に合う形へ置き換えた。"
+                            "辞書層の類義語{}で代替照会した結果である。元の語の分布ではない。"
+                            .format(q, "・".join(subs)),
+                })
+                c = base
+            else:
+                c["substituted_for"] = q
+                c["substitutes"] = subs
     modern = modern_tally(_data(ci_res, "cinii") or [], _data(oa_res, "openalex") or [])
     return {"query": q, "lang": lang, "queried_at": now(),
             "dictionary": d, "corpus": c, "modern": modern, "edges": _dict_edges(d),
