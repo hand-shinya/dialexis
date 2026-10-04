@@ -21,6 +21,7 @@
     <span id="wd-state" class="muted" role="status" aria-live="polite"></span>
   </div>
 
+  <p class="muted" id="wd-link" hidden></p>
   <div id="wd-out"></div>
 </section>
 
@@ -128,6 +129,10 @@
   }
 
   function render(d) {
+    var ln = el("wd-link");
+    ln.hidden = false;
+    ln.innerHTML = '<a href="/wordspace?q=' + encodeURIComponent(d.query || "")
+      + '">この語の関連空間と文献空間を見る（類義・対義・時代別・訳者別）</a>';
     var h = origSection(d.translation_edge) + itemSection(d) + canonSection(d);
     if ((d.original_terms || []).length) {
       h += '<div class="wd-sec"><h2>項目の多言語表記</h2>'

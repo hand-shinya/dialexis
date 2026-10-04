@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}関連空間と文献空間{% endblock %}
+{% block content %}
+{#
+  1語の関連空間（辞書層）と文献空間（用例層）の画面（2026-10-05）。
+  半田様の設計: 辞書層は関係の型を、用例層は時代・著者・分野・文脈の分布を与える。
+  観点と構造が違うので、重ねずに2つの空間として描く。
+  app/static/app.js（単一dispatcher契約）には触らない独立ページ。
+#}
+<section class="ws-wrap">
+  <h1>1語から、関連空間と文献空間を見る</h1>
+  <p class="muted">
+    上は<b>辞書層</b>です。類義・対義・関連・読みを、既存の辞書から取った関係として
+    並べます。どの語もそのまま次の入口になります。下は<b>用例層</b>です。
+    その語が、いつ・誰によって・どの分野で使われたかの分布です。
+    辞書層は関係の型を、用例層は事実の分布を与えます。重ねていません。
+  </p>
+
+  <div class="ws-form">
+    <input id="ws-q" type="text" placeholder="例: 自然／理性／権理／労働" autocomplete="off">
+    <button id="ws-run" type="button">空間を見る</button>
+    <span id="ws-state" class="muted" role="status" aria-live="polite"></span>
+  </div>
+
+  <div id="ws-trail" class="ws-trail" hidden></div>
+  <div id="ws-out"></div>
+</section>
+
+<style>
+.ws-wrap{max-width:1040px}
+.ws-form{display:flex;gap:.6rem;align-items:center;margin:1rem 0 .8rem;flex-wrap:wrap}
+.ws-form input{flex:1 1 18rem;font:inherit;padding:.55rem .7rem;border-radius:8px;
+  border:1px solid rgba(128,128,128,.45);background:transparent;color:inherit}
+.ws-form button{padding:.55rem 1.1rem;border-radius:8px;cursor:pointer;font:inherit}
+.ws-trail{font-size:.86rem;opacity:.8;margin-bottom:1rem}
+.ws-trail a{margin:0 .15rem}
+.ws-sec{margin:1.8rem 0}
+.ws-sec > h2{font-size:1.08rem;margin:0 0 .25rem}
+.ws-sec > p.why{margin:0 0 .8rem;font-size:.86rem;opacity:.75}
+.ws-card{border:1px solid rgba(128,128,128,.35);border-radius:10px;padding:.8rem .9rem;margin:.6rem 0}
+.ws-group{margin:.7rem 0}
+.ws-group > h3{font-size:.9rem;margin:0 0 .35rem;opacity:.8;font-weight:600}
+.ws-pills{display:flex;flex-wrap:wrap;gap:.4rem}
+.ws-pill{border:1px solid rgba(128,128,128,.45);border-radius:99px;padding:.2rem .7rem;
+  font-size:.95rem;cursor:pointer;background:transparent;color:inherit;font-family:inherit}
+.ws-pill:hover{border-color:currentColor}
+.ws-pill .sn{font-size:.72rem;opacity:.6;margin-left:.3rem}
+.ws-pill.k-antonym{border-style:dashed}
+.ws-pill.k-reading{opacity:.75}
+.ws-senses{margin:.3rem 0 0;padding-left:1.1rem;font-size:.92rem}
+.ws-senses li{margin:.22rem 0}
+.ws-chart{width:100%;height:auto;display:block;overflow:visible}
+.ws-chart text{fill:currentColor;font-size:10px}
+.ws-chart .bar{fill:currentColor;opacity:.45}
+.ws-chart .bar.hi{opacity:.85}
+.ws-chart .axis{stroke:currentColor;opacity:.3}
+.ws-works{font-size:.9rem;margin:.6rem 0 0;padding:0;list-style:none}
+.ws-works li{padding:.35rem 0;border-top:1px solid rgba(128,128,128,.22)}
+.ws-works .yr{display:inline-block;min-width:3.4rem;opacity:.7;font-variant-numeric:tabular-nums}
+.ws-works .loc{display:block;font-size:.85rem;opacity:.8;padding-left:3.4rem;margin-top:.15rem}
+.ws-meta{font-size:.84rem;opacity:.75;margin-top:1.6rem}
+.ws-meta ul{padding-left:1.1rem}
+.ws-tip{border-left:3px solid currentColor;padding:.45rem .8rem;margin:.6rem 0;
+  font-size:.88rem;opacity:.85}
+</style>
+
+<script>
+(function () {
+  "use strict";
+  var NDC = {
+    "1": "哲学", "10": "哲学総記", "100": "哲学", "121": "日本思想", "123": "中国の思想",
+    "130": "西洋哲学", "140": "心理学", "150": "倫理学", "160": "宗教",
+    "2": "歴史", "290": "地理・紀行", "3": "社会科学", "310": "政治", "320": "法律",
+    "321": "法学", "323": "憲法", "324": "民法", "325": "商法", "329": "国際法",
+    "330": "経済", "331": "経済学", "360": "社会", "366": "労働", "370": "教育",
+    "371": "教育学", "4": "自然科学", "5": "技術", "7": "芸術", "8": "言語", "9": "文学"
+  };
+  function ndcName(code) {
+    var c = String(code || "");
+    return NDC[c] || NDC[c.slice(0, 2)] || NDC[c.slice(0, 1)] || "分類" + c;
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
+    });
+  }
+  function el(id) { return document.getElementById(id); }
+
+  var ORDER = ["synonym", "antonym", "related", "derived", "reading"];
+  var TITLE = {
+    synonym: "類義（近い意味に置かれている語）",
+    antonym: "対義（反対に置かれている語）",
+    related: "関連（同じ場で使われる語）",
+    derived: "派生（この語から作られた語）",
+    reading: "読み（音の系統。呉音と漢音の差が意味の層に対応することがある）"
+  };
+
+  function pill(e) {
+    var sn = e.sense ? '<span class="sn">' + esc(e.sense) + "</span>" : "";
+    return '<button type="button" class="ws-pill k-' + esc(e.kind) + '" data-term="'
+      + esc(e.term) + '">' + esc(e.term) + sn + "</button>";
+  }
+
+  function dictSection(d, edges) {
+    if (!d || (!edges.length && !(d.senses || []).length)) {
+      return '<div class="ws-sec"><h2>辞書層</h2><p class="why">'
+        + (d && d.missing ? "ja.wiktionary にこの項目がありません。"
+                          : "この語では辞書層の辺に到達していません。")
+        + '項目が無いことと、関係が存在しないことは別です。</p>'
+        + (d && d.url ? '<div class="ws-card"><a class="ext-link" href="' + esc(d.url)
+            + '" target="_blank" rel="noopener">辞書の該当ページを開く</a></div>' : "")
+        + "</div>";
+    }
+    var h = '<div class="ws-sec"><h2>関連空間（辞書層）</h2>'
+      + '<p class="why">既存の辞書の節から取った関係です。AIの判断は挟んでいません。'
+      + '語をおすと、その語の空間へ進みます。連鎖はここから続きます。</p>'
+      + '<div class="ws-card">';
+    if ((d.senses || []).length) {
+      h += "<ol class=\"ws-senses\">"
+        + d.senses.slice(0, 6).map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("")
+        + "</ol>";
+    }
+    ORDER.forEach(function (kind) {
+      var list = edges.filter(function (e) { return e.kind === kind; });
+      if (!list.length) return;
+      h += '<div class="ws-group"><h3>' + esc(TITLE[kind]) + "（" + list.length + "）</h3>"
+        + '<div class="ws-pills">' + list.map(pill).join("") + "</div></div>";
+    });
+    h += "</div>";
+    if (d.url) {
+      h += '<p class="why"><a class="ext-link" href="' + esc(d.url)
+        + '" target="_blank" rel="noopener">辞書の該当ページ</a>　'
+        + esc(d.layer || "") + "</p>";
+    }
+    return h + "</div>";
+  }
+
+  function bars(data, labelFn, highlightFn) {
+    var keys = Object.keys(data);
+    if (!keys.length) return "";
+    var max = Math.max.apply(null, keys.map(function (k) { return data[k]; }));
+    var bw = 100 / keys.length, h = 90;
+    var out = '<svg class="ws-chart" viewBox="0 0 100 ' + (h + 22) + '" role="img">';
+    keys.forEach(function (k, i) {
+      var v = data[k], bh = max ? (v / max) * h : 0;
+      var x = i * bw + bw * 0.12, w = bw * 0.76;
+      out += '<rect class="bar' + (highlightFn && highlightFn(k) ? " hi" : "")
+        + '" x="' + x.toFixed(2) + '" y="' + (h - bh).toFixed(2)
+        + '" width="' + w.toFixed(2) + '" height="' + bh.toFixed(2) + '"></rect>'
+        + '<text x="' + (i * bw + bw / 2).toFixed(2) + '" y="' + (h - bh - 1.5).toFixed(2)
+        + '" text-anchor="middle">' + v + "</text>"
+        + '<text x="' + (i * bw + bw / 2).toFixed(2) + '" y="' + (h + 9)
+        + '" text-anchor="middle">' + esc(labelFn(k)) + "</text>";
+    });
+    out += '<line class="axis" x1="0" y1="' + h + '" x2="100" y2="' + h + '"></line></svg>';
+    return out;
+  }
+
+  function corpusSection(c) {
+    if (!c || !Object.keys(c.by_decade || {}).length) {
+      return '<div class="ws-sec"><h2>文献空間（用例層）</h2><p class="why">'
+        + "この語では近代刊行物の全文に出現が見つかりませんでした。"
+        + (c && (c.variants_tried || []).length
+            ? "試した表記は " + esc(c.variants_tried.join("・")) + " です。" : "")
+        + "0件であることと、探し方が足りないことは別です。</p></div>";
+    }
+    var peak = Object.keys(c.by_decade).reduce(function (a, b) {
+      return c.by_decade[b] > c.by_decade[a] ? b : a;
+    });
+    var h = '<div class="ws-sec"><h2>文献空間（用例層）</h2>'
+      + '<p class="why">近代刊行物の全文OCRでの出現です。辞書とは観点が違い、'
+      + 'いつ・誰が・どの分野で使ったかの事実を示します。'
+      + '表記は ' + esc((c.variants_tried || []).join("・")) + ' で引きました。</p>'
+      + '<div class="ws-card"><h3>時代別（10年ごと・標本 ' + esc(c.sampled) + ' 件）</h3>'
+      + bars(c.by_decade, function (k) { return k + "s"; },
+             function (k) { return k === peak; });
+    if (c.unknown_year) {
+      h += '<p class="why">年の記録が無い資料が ' + esc(c.unknown_year) + " 件あります。"
+        + "どの年代にも入れていません。</p>";
+    }
+    h += "</div>";
+
+    var ndcTop = {};
+    Object.keys(c.by_ndc || {}).slice(0, 8).forEach(function (k) { ndcTop[k] = c.by_ndc[k]; });
+    if (Object.keys(ndcTop).length) {
+      h += '<div class="ws-card"><h3>分野別（NDC分類）</h3>'
+        + bars(ndcTop, ndcName) + "</div>";
+    }
+
+    var people = [];
+    (c.translators || []).slice(0, 6).forEach(function (t) {
+      people.push('<button type="button" class="ws-pill" data-term="' + esc(t[0])
+        + '">' + esc(t[0]) + '<span class="sn">訳 ' + t[1] + "</span></button>");
+    });
+    (c.authors || []).slice(0, 6).forEach(function (a) {
+      people.push('<button type="button" class="ws-pill" data-term="' + esc(a[0])
+        + '">' + esc(a[0]) + '<span class="sn">著 ' + a[1] + "</span></button>");
+    });
+    if (people.length) {
+      h += '<div class="ws-card"><h3>誰が使ったか（訳者と著者）</h3>'
+        + '<p class="why">訳者は、この語がどの原語に当てられたかを決めた人です。</p>'
+        + '<div class="ws-pills">' + people.join("") + "</div></div>";
+    }
+
+    if ((c.works || []).length) {
+      h += '<div class="ws-card"><h3>どの文脈で使われたか（古い順）</h3><ul class="ws-works">'
+        + c.works.slice(0, 14).map(function (w) {
+            var who = (w.translators || []).length
+              ? esc(w.translators.join("・")) + " 訳"
+              : esc((w.authors || []).join("・"));
+            return "<li><span class=\"yr\">" + (w.year || "年不明") + "</span>"
+              + (w.url ? '<a class="ext-link" href="' + esc(w.url)
+                  + '" target="_blank" rel="noopener">' + esc(w.title) + "</a>"
+                  : esc(w.title))
+              + (who ? " <span class=\"muted\">" + who + "</span>" : "")
+              + (w.editions > 1 ? ' <span class="muted">版' + w.editions + "</span>" : "")
+              + ((w.locators || []).length
+                  ? '<span class="loc">' + esc(w.locators[0]) + "</span>" : "")
+              + "</li>";
+          }).join("")
+        + "</ul></div>";
+    }
+    return h + "</div>";
+  }
+
+  var TRAIL = [];
+  function renderTrail() {
+    var t = el("ws-trail");
+    if (TRAIL.length < 2) { t.hidden = true; return; }
+    t.hidden = false;
+    t.innerHTML = "辿った道: " + TRAIL.map(function (w, i) {
+      return i === TRAIL.length - 1
+        ? "<b>" + esc(w) + "</b>"
+        : '<a href="#" data-trail="' + esc(w) + '">' + esc(w) + "</a>";
+    }).join(" → ");
+  }
+
+  function render(d) {
+    el("ws-out").innerHTML =
+      dictSection(d.dictionary, d.edges || [])
+      + corpusSection(d.corpus)
+      + '<div class="ws-meta"><p>取得時刻 ' + esc(d.queried_at || "") + "</p><ul>"
+      + "<li>" + esc(d.honesty || "") + "</li>"
+      + ((d.errors || []).length
+          ? "<li>取得できなかった層: " + esc(d.errors.join("／")) + "</li>" : "")
+      + "</ul><p>出所: "
+      + (d.sources || []).map(function (s) {
+          return '<a class="ext-link" href="' + esc(s.url)
+            + '" target="_blank" rel="noopener">' + esc(s.label) + "</a>";
+        }).join(" ／ ")
+      + "</p></div>";
+  }
+
+  function run(word, push) {
+    var q = (word || el("ws-q").value || "").trim();
+    var st = el("ws-state");
+    if (!q) { st.textContent = "語を入れると空間が出ます。"; return; }
+    el("ws-q").value = q;
+    if (push !== false) {
+      if (TRAIL[TRAIL.length - 1] !== q) TRAIL.push(q);
+      renderTrail();
+      history.replaceState(null, "", "/wordspace?q=" + encodeURIComponent(q));
+    }
+    st.textContent = "辞書と全文に照会しています（初回は時間がかかります）…";
+    el("ws-run").disabled = true;
+    fetch("/api/wordspace?q=" + encodeURIComponent(q) + "&lang="
+          + encodeURIComponent(document.documentElement.lang || "ja"))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.queried_at) {
+          render(d);
+          var n = (d.edges || []).length;
+          st.textContent = "完了。辺 " + n + " 本。";
+        } else {
+          st.textContent = "応答の形式が想定と違いました。時間をおいて再度お試しください。";
+        }
+      })
+      .catch(function (e) {
+        st.textContent = "通信が途中で終わりました（" + String(e) + "）";
+      })
+      .then(function () { el("ws-run").disabled = false; });
+  }
+
+  el("ws-run").addEventListener("click", function () { run(); });
+  el("ws-q").addEventListener("keydown", function (ev) { if (ev.key === "Enter") run(); });
+  document.addEventListener("click", function (ev) {
+    var p = ev.target.closest ? ev.target.closest(".ws-pill") : null;
+    if (p && p.dataset.term) { ev.preventDefault(); run(p.dataset.term); return; }
+    var a = ev.target.closest ? ev.target.closest("[data-trail]") : null;
+    if (a) {
+      ev.preventDefault();
+      var w = a.getAttribute("data-trail");
+      TRAIL = TRAIL.slice(0, TRAIL.indexOf(w) + 1);
+      renderTrail();
+      run(w, false);
+    }
+  });
+  var pre = new URLSearchParams(location.search).get("q");
+  if (pre) run(pre);
+})();
+</script>
+{% endblock %}

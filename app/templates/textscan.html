@@ -21,6 +21,7 @@
   </div>
 
   <div id="ts-meta" class="ts-meta" hidden></div>
+  <div id="ts-hint" class="ts-hint" hidden></div>
   <div id="ts-pairs" hidden></div>
   <div id="ts-tiers"></div>
   <div id="ts-notes" class="ts-notes" hidden></div>
@@ -49,6 +50,8 @@
 .ts-flat a{margin-right:.15rem}
 .ts-pair{border-left:3px solid rgba(128,128,128,.5);padding:.5rem .8rem;margin:.5rem 0;font-size:.92rem}
 .ts-pair.diff{border-left-color:#c9743a}
+.ts-hint{border-left:3px solid currentColor;padding:.5rem .85rem;margin:0 0 1rem;font-size:.9rem;opacity:.9}
+.ts-hint ul{margin:.35rem 0 0;padding-left:1.1rem}
 .ts-notes{margin-top:2rem;font-size:.85rem;opacity:.8}
 .ts-notes ul{padding-left:1.1rem}
 </style>
@@ -69,7 +72,8 @@
   function el(id) { return document.getElementById(id); }
   function wordLinks(f) {
     var q = encodeURIComponent(f.word);
-    var out = '<a href="/word?q=' + q + '" target="_blank" rel="noopener">原語と典拠をたどる</a>'
+    var out = '<a href="/wordspace?q=' + q + '" target="_blank" rel="noopener">関連空間と文献空間を見る</a>'
+      + '<a href="/word?q=' + q + '" target="_blank" rel="noopener">原語と典拠をたどる</a>'
       + '<a href="/origin?q=' + q + '" target="_blank" rel="noopener">原語・翻訳・受容史を追う</a>';
     if (f.wikidata_url) {
       out += '<a href="' + esc(f.wikidata_url) + '" target="_blank" rel="noopener">Wikidata の項目</a>';
@@ -117,6 +121,13 @@
     el("ts-meta").innerHTML = "取得時刻 " + esc(d.queried_at) + "／" + esc(d.text_chars)
       + " 字／候補 " + esc(d.candidates_examined) + " 語を切り出し、" + esc(d.items_probed)
       + " 件を項目照会。挙がった語 " + esc((d.flagged || []).length) + " 件。";
+    var hint = d.narrowing_hint;
+    el("ts-hint").hidden = !hint;
+    if (hint) {
+      el("ts-hint").innerHTML = "<b>" + esc(hint.message) + "</b><ul>"
+        + hint.suggestions.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("")
+        + "</ul>";
+    }
     var pw = el("ts-pairs");
     pw.hidden = false;
     pw.innerHTML = pairs(d.glossed_pairs);

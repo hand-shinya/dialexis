@@ -30,6 +30,7 @@ from . import db
 from .db import get_conn, init_db, now, rows
 from .connectors import canon  # 哲学典拠への解決（2026-09-28）
 from .connectors import translation_edge  # 訳語辺（2026-10-02）
+from .connectors import ja_wiktionary, ndl_fulltext  # 辞書層と用例層（2026-10-05）
 from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept, searxng, etymology
 from .connectors.base import cached_get_json, cached_get_text
 from . import citations as cites
@@ -2736,6 +2737,72 @@ async def api_canon(q: str, lang: str = "ja"):
                          "url": "https://en.wiktionary.org/", "evidence": "candidate"}]}
 
 
+# ── 関連空間（2026-10-05・半田様の設計） ──
+# 辞書層は関係の型（類義・対義・関連・読み）を、用例層は分布（時代・著者・分野・
+# 文脈）を与える。同じ語を扱っても観点と構造が違うため、重ねずに2層として返す。
+# ヘルパはdecoratorより上に置く。2026-09-30に decorator と def の間へ関数を挿し、
+# FastAPIが純関数をhandlerに束ねて全endpointが422になった事故があった。
+_EDGE_LABEL = {"synonym": "類義", "antonym": "対義", "related": "関連",
+               "derived": "派生", "reading": "読み"}
+
+
+def _dict_edges(d: dict) -> list:
+    """辞書層を、次に辿れる辺の列にする。種類と出所を必ず付ける。"""
+    out = []
+    for e in (d.get("relations") or []):
+        out.append({"term": e["term"], "kind": e["kind"],
+                    "label": _EDGE_LABEL.get(e["kind"], e["kind"]),
+                    "sense": e.get("sense") or "", "source": "ja.wiktionary"})
+    for r in (d.get("readings") or []):
+        out.append({"term": r["kana"], "kind": "reading", "label": "読み",
+                    "sense": r.get("yomi") or "", "source": "ja.wiktionary"})
+    return out
+
+
+@app.get("/api/wordspace")
+async def api_wordspace(q: str, lang: str = "ja", sample: int = 100):
+    """1語の関連空間。辞書層の辺と、用例層の分布を別々に返す。
+
+    どちらか一方が落ちても、もう一方は返す（公理1: 沈黙する失敗が最悪）。
+    用例層は先頭sample件の標本であり、その宣言をpayloadから落とさない。
+    """
+    if not q.strip():
+        raise HTTPException(400, "empty query")
+    d_res, c_res = await asyncio.gather(
+        ja_wiktionary.lookup(q), ndl_fulltext.survey(q, sample=sample),
+        return_exceptions=True)
+    errors = []
+
+    def _data(res, name):
+        if isinstance(res, Exception):
+            errors.append(f"{name}: {type(res).__name__}: {res}")
+            return {}
+        if res.get("error"):
+            errors.append(f"{name}: {res['error']}")
+            return {}
+        return res.get("data") or {}
+
+    d = _data(d_res, "ja.wiktionary")
+    c = _data(c_res, "ndl-fulltext")
+    return {"query": q, "lang": lang, "queried_at": now(),
+            "dictionary": d, "corpus": c, "edges": _dict_edges(d),
+            "errors": errors,
+            "honesty": "辞書層は一般辞書の関係記述であり哲学術語の定義ではない。"
+                       "用例層は全文OCRの標本分布であり全体の分布ではない。",
+            "sources": [{"id": "ja-wiktionary", "label": "ja.wiktionary（類義・対義・関連・読み）",
+                         "url": d.get("url") or "https://ja.wiktionary.org/",
+                         "evidence": "candidate"},
+                        {"id": "ndl-fulltext",
+                         "label": "NDL次世代デジタルライブラリー（近代刊行物の全文）",
+                         "url": "https://lab.ndl.go.jp/dl/", "evidence": "primary"}]}
+
+
+@app.get("/wordspace")
+async def page_wordspace(request: Request):
+    """関連空間と文献空間の画面。app.js の単一dispatcher契約に触らない独立ページ。"""
+    return render(request, "wordspace.html")
+
+
 @app.get("/word")
 async def page_word(request: Request):
     """一語の原語と典拠をたどる画面。
@@ -2751,6 +2818,32 @@ async def page_word(request: Request):
 async def page_textscan(request: Request):
     """文章スキャンの画面。app.js の単一dispatcher契約に触らない独立ページ。"""
     return render(request, "textscan.html")
+
+
+# 抽出語が多いときの絞り込み案内（2026-10-05・半田様の指摘）。
+# 案内の根拠（語数・閾値・具体策）を payload に持たせ、画面が勝手に言わない形にする。
+NARROWING_THRESHOLD = 10
+LONG_TEXT_CHARS = 4000
+
+
+def narrowing_hint(flagged: int, text_chars: int):
+    """挙がった語が多いとき、範囲を狭める具体策を返す。少なければ None。"""
+    if flagged <= NARROWING_THRESHOLD:
+        return None
+    long_text = text_chars >= LONG_TEXT_CHARS
+    msg = "挙がった語が{}件あります。".format(flagged)
+    if long_text:
+        msg += "本文が{:,}字あるためです。".format(text_chars)
+    msg += "範囲を狭めると、抽出される語は絞られます。"
+    return {
+        "flagged": flagged, "text_chars": text_chars,
+        "threshold": NARROWING_THRESHOLD, "message": msg,
+        "suggestions": [
+            "気になった一文だけ、または一段落だけを貼る",
+            "見出しや注を外し、論の本体だけを貼る",
+            "まず1語を選び、関連空間でその語の周りを見る",
+        ],
+    }
 
 
 @app.post("/api/text-scan")
@@ -2904,6 +2997,7 @@ async def api_text_scan(request: Request, lang: str = "ja"):
         "candidates_examined": len(cands),
         "items_probed": len(probe_words),
         "flagged": flagged[:40],
+        "narrowing_hint": narrowing_hint(len(flagged), len(text)),
         "glossed_pairs": pair_findings,
         "honesty": ("これは候補の提示であり判定ではない。信号はWikidataの項目構成から"
                     "機械的に導いたもので、本文の意味・訳語の適否・誤訳の証明ではない。"
