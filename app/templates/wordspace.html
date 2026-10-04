@@ -175,8 +175,15 @@
       + bars(c.by_decade, function (k) { return k + "s"; },
              function (k) { return k === peak; });
     if (c.unknown_year) {
-      h += '<p class="why">年の記録が無い資料が ' + esc(c.unknown_year) + " 件あります。"
-        + "どの年代にも入れていません。</p>";
+      h += '<p class="why">年の記録が無い、または刊年として成立しない資料が '
+        + esc(c.unknown_year) + " 件あります。どの年代にも入れていません。</p>";
+    }
+    var sus = Object.keys(c.suspect_years || {});
+    if (sus.length) {
+      h += '<p class="why">' + sus.map(function (y) {
+        return y + "年が " + c.suspect_years[y] + " 件";
+      }).join("／") + "。所蔵側の代入値である可能性があります。"
+        + "実在しうる年なので消していません。該当書名をご確認ください。</p>";
     }
     h += "</div>";
 

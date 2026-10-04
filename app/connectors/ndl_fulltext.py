@@ -18,6 +18,7 @@
 """
 import asyncio
 import collections
+import datetime
 import html as _html
 import re
 
@@ -33,6 +34,12 @@ TRANSLATOR_RE = re.compile(r"(.+?)\s*訳(?:述)?$")
 AUTHOR_RE = re.compile(r"(.+?)\s*(?:共著|共編|著|編|撰|稿|講述|講義|述|輯|校|共)$")
 # 1つの責任表示に複数名が並ぶ。実測「山田俊蔵, 大角豊次郎 共」。
 NAME_SPLIT_RE = re.compile(r"[、,]\s*")
+# 役割語。分割後の各名にも付くことがある（実測「原野彦太郎 訳||斎田功太郎 編」）。
+ROLE_TAIL_RE = re.compile(r"\s*(?:共著|共編|著|編|撰|稿|講述|講義|述|輯|校|訳述|訳|共)+$")
+# 刊年として成立しない値。実測でNDL側に西暦1000年が入っていた。
+YEAR_MIN = 1500
+# NDLが代入値として使うと思われる年。実在しうるので消さず、件数だけ出す。
+SUSPECT_YEARS = (1800,)
 PAREN_RE = re.compile(r"[（(][^）)]*[）)]")
 
 
@@ -44,6 +51,19 @@ def _clean(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def _plausible_year(y) -> int:
+    """刊年として使える値だけを返す。使えなければ0（不明）にする。"""
+    try:
+        y = int(y or 0)
+    except (TypeError, ValueError):
+        return 0
+    return y if YEAR_MIN <= y <= datetime.date.today().year else 0
+
+
+def _strip_role(name: str) -> str:
+    return ROLE_TAIL_RE.sub("", (name or "").strip()).strip()
+
+
 def _people(responsibility: str) -> tuple:
     """責任表示を著者と訳者に分ける。訳者が誰かは訳語史の核である。"""
     authors, translators = [], []
@@ -53,23 +73,25 @@ def _people(responsibility: str) -> tuple:
             continue
         m = TRANSLATOR_RE.match(name)
         if m:
-            translators.extend(NAME_SPLIT_RE.split(m.group(1).strip()))
+            translators.extend(_strip_role(x) for x in NAME_SPLIT_RE.split(m.group(1).strip()))
             continue
         m = AUTHOR_RE.match(name)
-        authors.extend(NAME_SPLIT_RE.split((m.group(1) if m else name).strip()))
+        authors.extend(_strip_role(x) for x in NAME_SPLIT_RE.split((m.group(1) if m else name).strip()))
     return [a for a in authors if a], [t for t in translators if t]
 
 
 def tally(items: list) -> dict:
     """標本から年代・分野・人・書名の分布を作る（純関数）。"""
-    dec, ndc = collections.Counter(), collections.Counter()
+    dec, ndc, suspect = collections.Counter(), collections.Counter(), collections.Counter()
     au, tr = collections.Counter(), collections.Counter()
     unknown_year = unknown_ndc = 0
     works: dict = {}
     for it in items or []:
-        y = it.get("publishyear") or 0
+        y = _plausible_year(it.get("publishyear"))
         if y:
             dec[int(y) // 10 * 10] += 1
+            if y in SUSPECT_YEARS:
+                suspect[y] += 1
         else:
             unknown_year += 1
         code = (it.get("ndc") or "").strip()
@@ -106,6 +128,7 @@ def tally(items: list) -> dict:
     for w in ordered:
         w["url"] = VIEWER.format(w["id"]) if w["id"] else ""
     return {"by_decade": dict(sorted(dec.items())), "by_ndc": dict(ndc.most_common()),
+            "suspect_years": dict(sorted(suspect.items())),
             "authors": au.most_common(20), "translators": tr.most_common(20),
             "unknown_year": unknown_year, "unknown_ndc": unknown_ndc,
             "works": ordered, "sampled": len(items or [])}

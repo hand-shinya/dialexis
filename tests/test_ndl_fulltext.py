@@ -111,3 +111,55 @@ def test_multiple_names_in_one_part_are_split():
 def test_translator_pair_is_split():
     a, t = nf._people("木村鋭一, 立花俊吉 訳")
     assert t == ["木村鋭一", "立花俊吉"], t
+
+
+BAD_YEARS = [
+    {"id": "a", "title": "西暦1000年の書", "publishyear": 1000, "ndc": "100",
+     "responsibility": "某 著", "highlights": []},
+    {"id": "b", "title": "1800年の書", "publishyear": 1800, "ndc": "100",
+     "responsibility": "某 著", "highlights": []},
+    {"id": "c", "title": "正しい年の書", "publishyear": 1877, "ndc": "100",
+     "responsibility": "某 著", "highlights": []},
+    {"id": "d", "title": "未来の書", "publishyear": 2999, "ndc": "100",
+     "responsibility": "某 著", "highlights": []},
+]
+
+
+def test_impossible_years_are_treated_as_unknown():
+    """刊年として成立しない値は不明に寄せる。
+
+    実測（10-05 本番）: 「理性」で西暦1000年が11件出た。近代の資料である。
+    1500年より前と、今年より後は刊年として採らない。
+    """
+    t = nf.tally(BAD_YEARS)
+    assert 1000 not in t["by_decade"] and 2990 not in t["by_decade"], t["by_decade"]
+    assert t["unknown_year"] == 2, t["unknown_year"]
+
+
+def test_placeholder_year_is_flagged_not_deleted():
+    """1800年は実在しうる刊年である。消さずに疑わしい値として数える。
+
+    実測で明治の『言論叢』『商法通論』に1800が入っていた。NDL側の代入値と
+    思われるが、我々には判定できない。黙って捨てず、件数を出して利用者に委ねる。
+    """
+    t = nf.tally(BAD_YEARS)
+    assert t["by_decade"].get(1800) == 1, t["by_decade"]
+    assert t["suspect_years"].get(1800) == 1, t["suspect_years"]
+
+
+def test_impossible_year_still_keeps_the_work():
+    """年が使えなくても資料そのものは捨てない。年不明として残す。"""
+    t = nf.tally(BAD_YEARS)
+    titles = {w["title"] for w in t["works"]}
+    assert "西暦1000年の書" in titles, titles
+    bad = [w for w in t["works"] if w["title"] == "西暦1000年の書"][0]
+    assert bad["year"] == 0
+
+
+def test_role_suffix_is_stripped_from_each_split_name():
+    """分割した各名から役割語を落とす。実測で訳者に「斎田功太郎 編」が入った。"""
+    a, t = nf._people("原野彦太郎 訳||斎田功太郎 編")
+    assert t == ["原野彦太郎"], t
+    assert a == ["斎田功太郎"], a
+    _, t2 = nf._people("木村鋭一, 立花俊吉 編 訳")
+    assert t2 == ["木村鋭一", "立花俊吉"], t2
