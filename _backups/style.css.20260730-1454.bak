@@ -1,0 +1,345 @@
+:root {
+  --ink: #1d2430; --paper: #f7f5f0; --card: #ffffff; --line: #ddd6c8;
+  --accent: #7a5c2e; --accent2: #2e5c7a; --muted: #6b7280;
+  --ok: #2f7d4f; --warn: #b45309; --bad: #b91c1c;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Hiragino Mincho ProN", "Yu Mincho", Georgia, "Noto Serif JP", serif;
+       background: var(--paper); color: var(--ink); line-height: 1.65; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1rem;
+         padding: .8rem 1.2rem; border-bottom: 2px solid var(--ink); background: var(--card); }
+.brand { font-size: 1.5rem; font-weight: 700; text-decoration: none; color: var(--ink); }
+.brand-sub { font-size: .72rem; font-weight: 400; color: var(--muted); margin-left: .8rem; }
+nav { display: flex; flex-wrap: wrap; gap: .9rem; margin-left: auto;
+      font-family: system-ui, sans-serif; font-size: .9rem; }
+nav a { color: var(--ink); text-decoration: none; padding-bottom: 2px; }
+nav a.on { border-bottom: 2px solid var(--accent); }
+.langsw { color: var(--muted); }
+main { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1.2rem 4rem; }
+footer { border-top: 1px solid var(--line); padding: 1rem 1.2rem; color: var(--muted);
+         font-size: .8rem; font-family: system-ui, sans-serif; }
+h1 { font-size: 1.7rem; margin: .8rem 0; }
+h2 { font-size: 1.15rem; border-left: 4px solid var(--accent); padding-left: .6rem; }
+.hero { text-align: center; padding: 3rem 0 1.5rem; }
+.hero h1 { font-size: 3rem; letter-spacing: .15em; margin: 0; }
+.tagline { color: var(--muted); }
+.searchbox { display: flex; gap: .5rem; max-width: 640px; margin: 1.2rem auto; }
+.searchbox input[type=text] { flex: 1; }
+/* Question-first entry (PoC A): a door for the nameless-curious. Blue accent =
+   invitation/wonder, set apart from the scholarly brown of the results below. */
+.qdoors-wrap { max-width: 720px; margin: 1.4rem auto 0; text-align: center; }
+.qdoors-title { font-size: .95rem; color: var(--ink); margin: 0 0 .7rem; }
+.qdoors { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; }
+.qdoor { display: inline-block; padding: .5rem .9rem; font-size: .95rem;
+  color: var(--accent2); background: var(--card); text-decoration: none;
+  border: 1px solid var(--accent2); border-radius: 999px; transition: all .12s ease; }
+.qdoor:hover, .qdoor:focus { background: var(--accent2); color: var(--paper); }
+.qdoors-hint { margin: .8rem 0 0; }
+@media (prefers-reduced-motion: reduce) { .qdoor { transition: none; } }
+input, select, textarea { font: inherit; padding: .5rem .7rem; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--card); width: 100%; }
+.formrow { display: flex; gap: .5rem; margin: .5rem 0; }
+.formrow label { min-width: 11rem; align-self: center; font-family: system-ui, sans-serif; font-size: .85rem; }
+button, .btn { font-family: system-ui, sans-serif; font-size: .9rem; cursor: pointer;
+  background: var(--ink); color: var(--paper); border: 0; border-radius: 4px;
+  padding: .55rem 1.1rem; text-decoration: none; display: inline-block; }
+button.secondary { background: var(--muted); }
+button.small { padding: .25rem .6rem; font-size: .78rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+  padding: 1rem 1.2rem; margin: 1rem 0; }
+.axioms ol li { margin: .45rem 0; }
+.muted { color: var(--muted); font-size: .9rem; }
+.two-col { display: grid; grid-template-columns: 1.4fr 1fr; gap: 1rem; }
+@media (max-width: 860px) { .two-col { grid-template-columns: 1fr; } }
+.graphbox { height: 480px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; }
+.badge { display: inline-block; font-family: system-ui, sans-serif; font-size: .7rem;
+  padding: .1rem .5rem; border-radius: 999px; border: 1px solid var(--line);
+  background: #efe9dc; margin-right: .3rem; }
+.badge.ai { background: #fde8e8; border-color: #f3b4b4; }
+.badge.live { background: #e2f4e8; }
+.badge.err { background: #fde8e8; color: var(--bad); }
+.badge.conf-confirmed { background: #dcf3e3; }
+.badge.conf-high_probability { background: #e7f0d9; }
+.badge.conf-unverified { background: #fdf1d7; }
+.badge.conf-interpretive_hypothesis { background: #e5e0f5; }
+.badge.conf-speculation { background: #f5e0ee; }
+.srcline { font-family: system-ui, sans-serif; font-size: .75rem; color: var(--muted); }
+.result-item { border-bottom: 1px dashed var(--line); padding: .5rem 0; }
+.result-item:last-child { border-bottom: 0; }
+table.plain { width: 100%; border-collapse: collapse; font-family: system-ui, sans-serif; font-size: .85rem; }
+table.plain th, table.plain td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
+#settings-msg { margin-top: .6rem; color: var(--ok); font-family: system-ui, sans-serif; font-size: .85rem; }
+.notice-ai { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 4px;
+  padding: .6rem .9rem; font-size: .85rem; font-family: system-ui, sans-serif; margin: .5rem 0; }
+pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
+  border: 1px solid var(--line); border-radius: 4px; padding: .8rem; }
+/* 原語基底 card — the foundation, so it wears the scholarly accent (brown) and
+   sits visually heaviest; distinct from the blue SEP orientation card below. */
+.orig-card { border-left: 4px solid var(--accent); background: #fbf9f4; }
+.orig-card h2 { border-left: 0; padding-left: 0; }
+.orig-lemmas td, .orig-lemmas th { vertical-align: top; }
+.orig-lemmas b { font-size: 1.02rem; color: var(--accent); }
+.orig-note { font-size: .9rem; margin: .6rem 0 .4rem; }
+.word-card { border-left: 4px solid var(--ink); text-align: center; }
+.theword { font-size: 2.2rem; margin: .3rem 0; letter-spacing: .05em; }
+.lineage-card { border-left: 4px solid var(--accent); }
+.lineage { margin: .5rem 0; padding-left: 1.4rem; }
+.lineage li { margin: .7rem 0; }
+.lineage li i { color: var(--accent); }
+/* new-tab preference — the global input{width:100%} rule stretched the checkbox
+   and threw it to the centre; pin it back to an inline, left-aligned control. */
+.origin-pref { font-family: system-ui, sans-serif; font-size: .85rem; color: var(--muted);
+  margin: .2rem 0 .8rem; }
+.origin-pref label { display: inline-flex; align-items: center; gap: .4rem; cursor: pointer; }
+.origin-pref input[type=checkbox] { width: auto; margin: 0; }
+.gm-senses { margin: .3rem 0 .5rem; padding-left: 1.3rem; }
+.gm-senses li { margin: .3rem 0; }
+.gm-enc summary { font-family: system-ui, sans-serif; font-size: .82rem; color: var(--muted); cursor: pointer; }
+/* 二相の並置 — both facets share identical styling so neither reads as superior. */
+.facets { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; margin-top: .8rem; }
+@media (max-width: 720px) { .facets { grid-template-columns: 1fr; } }
+.facet-col { border-top: 3px solid var(--line); padding-top: .6rem; }
+.facet-col h4 { font-family: system-ui, sans-serif; font-size: .92rem; margin: 0 0 .5rem; }
+/* 言語空間の重力グラフ */
+/* 操作shell＝ナビ＋共通メニュー＋グラフを一つの枠に（グラフは欠損しうる子・普遍性） */
+#origin-shell { border: 1px solid var(--line); border-radius: 8px; background: #fcfbf8;
+  margin: 1rem 0; overflow: hidden; }
+#origin-graph-wrap { background: #fcfbf8; }
+.graph-thin { padding: .8rem; }
+.graph-head { display: flex; align-items: center; gap: .8rem; padding: .5rem .8rem;
+  border-bottom: 1px solid var(--line); font-family: system-ui, sans-serif; }
+.graph-title { font-size: .78rem; color: var(--muted); flex: 1; }
+#origin-graph { display: block; width: 100%; height: 62vh; min-height: 420px; cursor: grab; touch-action: none; }
+#origin-graph:active { cursor: grabbing; }
+#graph-note { padding: 0 .8rem .5rem; margin: 0; }
+.navbtn { margin-right: .3rem; }
+.navbtn:disabled { opacity: .35; cursor: default; }
+.graph-stage { position: relative; }
+/* 処理中インジケータ（選択した付近に出す・おしゃれなスピナー） */
+#graph-busy { position: absolute; z-index: 40; display: flex; align-items: center; gap: .5rem;
+  background: rgba(20,24,34,.92); color: #fff; padding: .5rem .8rem; border-radius: 999px;
+  font-family: system-ui, sans-serif; font-size: .82rem; box-shadow: 0 6px 20px rgba(0,0,0,.3);
+  transform: translate(-50%, -50%); pointer-events: none; }
+#graph-busy .spin { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.3);
+  border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* A: 組み合わせ探索パネル（AND/意味/NOT/OR/比較） */
+.cmb-in { width: 100%; padding: .5rem .6rem; font-size: .95rem; border: 1px solid var(--line);
+  border-radius: 6px; margin: .3rem 0 .6rem; box-sizing: border-box; }
+.cmb-ops { display: flex; flex-wrap: wrap; gap: .4rem; }
+.cmb-op { font-size: .84rem; padding: .35rem .7rem; border: 1px solid var(--accent);
+  border-radius: 999px; background: var(--paper); color: var(--accent); cursor: pointer; }
+.cmb-op:hover { background: var(--accent); color: var(--paper); }
+/* B: 視点・目的・難易度パネル */
+.psp-g { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin: .4rem 0; }
+.psp-l { font-size: .78rem; color: var(--muted); width: 3.6rem; }
+.psp-chip { font-size: .82rem; padding: .28rem .6rem; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
+.psp-chip.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.psp-ops { margin: .6rem 0; }
+.psp-prompt { width: 100%; height: 200px; font-size: .82rem; padding: .5rem; box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: 6px; font-family: ui-monospace, monospace; }
+/* D: 棚（収集・経路・自分のレンズ） */
+.shelf-list { display: flex; flex-wrap: wrap; gap: .4rem; margin: .2rem 0 .4rem; }
+.shelf-item { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid var(--line);
+  border-radius: 999px; padding: .2rem .5rem; font-size: .84rem; }
+.shelf-item a { text-decoration: none; }
+.shelf-go, .path-go, .lens-use { color: var(--accent); }
+.shelf-x, .path-x, .lens-x { color: var(--muted); font-weight: 700; }
+/* 普遍: 画面に出した語はクリックでサイト内探索へ（行き止まりにしない） */
+.ext-term { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); cursor: pointer; }
+.ext-term:hover { background: var(--accent); color: var(--paper); border-radius: 3px; }
+/* 並置比較カード（訳語 vs 原語の意味空間） */
+.contrast { display: flex; gap: .8rem; flex-wrap: wrap; }
+.ct-col { flex: 1 1 260px; border: 1px solid var(--line); border-radius: 8px; padding: .3rem .7rem .6rem; background: var(--paper); }
+.ct-ul { margin: .2rem 0 .4rem; padding-left: 1.1rem; font-size: .88rem; line-height: 1.5; }
+.ct-ul li { margin: .2rem 0; }
+/* 語源解剖 */
+.anat-comp { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
+.anat-part { border: 1px solid var(--line); border-radius: 6px; padding: .25rem .5rem; font-size: .9rem; }
+.anat-plus { font-weight: 700; color: var(--accent); margin: 0 .2rem; }
+.anat-gloss { display: block; font-size: .76rem; color: var(--muted); }
+#dx-toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 90;
+  background: rgba(20,24,34,.94); color: #fff; padding: .5rem .9rem; border-radius: 999px;
+  font-family: system-ui, sans-serif; font-size: .85rem; box-shadow: 0 6px 20px rgba(0,0,0,.3); display: none; }
+/* レンズ切替: 同じ言葉・同じデータを、いくつもの見方（地図）で見る入口（間口を広げる） */
+.graph-lens { display: flex; flex-wrap: wrap; gap: .4rem; padding: .5rem .8rem;
+  border-bottom: 1px solid var(--line); font-family: system-ui, sans-serif; align-items: center; }
+.lens-chip { font-size: .82rem; padding: .28rem .7rem; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
+.lens-chip:hover { border-color: var(--accent); }
+.lens-chip.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.lens-chip.empty { opacity: .4; cursor: default; }
+.lens-n { font-size: .72rem; opacity: .7; margin-left: .15rem; }
+.lens-chip.on .lens-n { opacity: .85; }
+/* 上部の帯＝中心語の共通メニュー パッケージ（案C・全ノード共通・常時表示） */
+.tm-label { font-family: Georgia, "Times New Roman", serif; font-weight: 600; font-size: .95rem;
+  color: var(--ink); margin-right: .3rem; padding-right: .5rem; border-right: 1px solid var(--line); }
+.tm-chip { font-size: .82rem; padding: .28rem .62rem; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.tm-chip:hover { border-color: var(--accent); background: #f2eee4; }
+/* 「今この地図が何の見方(menu)で描かれているか」を示すバッジ（クリックで切替） */
+.tm-view { font-size: .82rem; padding: .28rem .66rem; border: 1px solid var(--accent);
+  border-radius: 999px; background: var(--accent); color: var(--paper); cursor: pointer; white-space: nowrap; font-weight: 600; }
+.tm-view:hover { filter: brightness(1.08); }
+/* パネル下部の普遍「この語で続ける」フッター＝空状態でも行き止まりにしない（全パネル共通） */
+.gp-cont { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; padding: .6rem .9rem;
+  border-top: 1px solid var(--line); background: #faf7f0; position: sticky; bottom: 0; }
+.gp-cont-h { font-family: system-ui, sans-serif; font-size: .8rem; color: var(--muted); margin-right: .2rem; }
+.gp-cont-b { font-family: system-ui, sans-serif; font-size: .8rem; padding: .24rem .6rem; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.gp-cont-b:hover { border-color: var(--accent); background: #f2eee4; }
+/* 👓 見方を選ぶ（この地図の切り口）パネルのレンズ一覧 */
+.lens-list { display: flex; flex-direction: column; gap: .4rem; margin-top: .5rem; }
+.lens-row { text-align: left; border: 1px solid var(--line); border-radius: 8px; background: var(--paper);
+  padding: .5rem .7rem; cursor: pointer; display: flex; flex-direction: column; gap: .15rem; font-family: system-ui, sans-serif; }
+.lens-row:hover { border-color: var(--accent); background: #f2eee4; }
+.lens-row b { font-size: .9rem; color: var(--ink); }
+.lens-cap { font-size: .76rem; color: var(--muted); line-height: 1.4; }
+/* パネル左上「←メニュー」＝別のメニュー項目を選び直す戻る導線 */
+.gp-back { background: none; border: 1px solid var(--line); border-radius: 6px; color: var(--accent2);
+  font-family: system-ui, sans-serif; font-size: .8rem; padding: .2rem .5rem; cursor: pointer; }
+.gp-back:hover { border-color: var(--accent); }
+/* 専用描画レンズ（使用例カード・時代変遷チャート） */
+#graph-alt { padding: .6rem .8rem 1rem; min-height: 300px; }
+.usage-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .6rem; }
+.ucard { border: 1px solid var(--line); border-radius: 8px; padding: .6rem .7rem; background: var(--paper); }
+.ucard .ut { font-weight: 600; font-size: .9rem; line-height: 1.35; }
+.ucard .um { font-size: .76rem; color: var(--muted); margin-top: .3rem; }
+.ucard a { color: var(--accent); text-decoration: none; }
+.tl-wrap { display: flex; flex-direction: column; gap: .5rem; }
+.tl-legend { display: flex; flex-wrap: wrap; gap: .8rem; font-size: .8rem; font-family: system-ui, sans-serif; }
+.tl-legend span { display: inline-flex; align-items: center; gap: .3rem; }
+.tl-sw { width: 12px; height: 3px; display: inline-block; border-radius: 2px; }
+#tl-canvas { width: 100%; height: 52vh; min-height: 340px; display: block; }
+.lens-empty { color: var(--muted); padding: 1.5rem .5rem; font-family: system-ui, sans-serif; }
+/* グラフのコンテキストメニュー（選択時の7択・kind別） */
+#graph-menu { position: absolute; z-index: 50; width: 300px; background: var(--card);
+  border: 1px solid var(--ink); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.18);
+  font-family: system-ui, sans-serif; overflow: hidden; }
+.gm-title { font-size: .78rem; color: var(--paper); background: var(--ink); padding: .45rem .7rem; cursor: move; user-select: none; }
+#graph-menu { box-shadow: 0 6px 24px rgba(0,0,0,.28); }
+.gm-item { padding: .5rem .7rem; font-size: .86rem; cursor: pointer; border-top: 1px solid var(--line); }
+.gm-item:hover { background: #f2eee4; }
+.gm-soon { color: var(--muted); cursor: default; }
+.gm-soon:hover { background: transparent; }
+#graph-panel { position: fixed; z-index: 60; left: 50%; top: 8vh; transform: translateX(-50%);
+  width: min(680px, 92vw); max-height: 80vh; overflow: auto; background: var(--card);
+  border: 1px solid var(--ink); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+.gp-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: .6rem .9rem; border-bottom: 1px solid var(--line); font-family: system-ui, sans-serif;
+  position: sticky; top: 0; background: var(--card); }
+.gp-x { background: none; color: var(--muted); font-size: 1.3rem; padding: 0 .3rem; }
+.gp-body { padding: .8rem .9rem 1.1rem; }
+.ext-cat { margin: .5rem 0; line-height: 2; }
+.ext-cat-h { font-family: system-ui, sans-serif; font-size: .72rem; color: var(--muted);
+  display: inline-block; min-width: 5.5rem; }
+.ext-link { display: inline-block; font-family: system-ui, sans-serif; font-size: .82rem;
+  color: var(--accent2); text-decoration: none; border: 1px solid var(--line); border-radius: 6px;
+  padding: .12rem .5rem; margin: .12rem .15rem; }
+.ext-link:hover { border-color: var(--accent2); background: #eef3f7; }
+.gp-h { font-family: system-ui, sans-serif; font-size: .9rem; margin: .8rem 0 .3rem; border-left: 3px solid var(--accent2); padding-left: .5rem; }
+.gp-ul { margin: .2rem 0 .6rem; padding-left: 1.3rem; font-size: .9rem; }
+.gp-ul li { margin: .25rem 0; }
+/* 探究の次元ナビゲータ */
+.dim-card { border-left: 4px solid var(--accent2); }
+.dims { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .6rem; }
+.dim { font-family: system-ui, sans-serif; font-size: .86rem; cursor: pointer; text-align: left;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+  padding: .45rem .7rem; display: inline-flex; align-items: center; gap: .4rem; }
+.dim:hover { border-color: var(--accent2); }
+.dim-x { opacity: .72; }
+.dim-b { font-size: .66rem; padding: .05rem .4rem; border-radius: 999px; font-family: system-ui, sans-serif; }
+.dim-ok { background: #e2f4e8; color: var(--ok); }
+.dim-part { background: #fdf1d7; color: var(--warn); }
+.dim-soon { background: #eee; color: var(--muted); }
+/* ⚠ 埋没の明示警告 — このポータルの核心価値。目立たせる（が下品にしない） */
+.warn-card { border-left: 5px solid var(--warn); background: #fffaf2; }
+.warn-card h3 { color: var(--warn); margin-top: 0; }
+.collapse-tbl td { vertical-align: top; padding: .45rem .5rem; }
+.collapse-tbl b a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); font-size: 1.05rem; }
+.collapse-tbl b a:hover { border-bottom-style: solid; }
+/* 変容の連鎖（宿痾の可視化）— 現在語 ← … ← 原点、実語形つき */
+.origin-lang { color: var(--accent); font-size: 1.05rem; }
+.chain-label { font-family: system-ui, sans-serif; font-size: .82rem; color: var(--muted); margin: .8rem 0 .3rem; }
+.chain { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
+.chain-now, .chain-step { display: inline-flex; flex-direction: column; align-items: center;
+  border: 1px solid var(--line); border-radius: 6px; padding: .3rem .6rem; background: var(--card); }
+.chain-now { border-color: var(--ink); }
+.chain-lang { font-family: system-ui, sans-serif; font-size: .72rem; color: var(--muted); }
+.chain-form { font-size: 1.05rem; }
+.chain-arrow { color: var(--accent); font-size: 1.1rem; }
+.badge.warn2 { background: #fdf1d7; }
+/* breadth — この語を担う言語の広がり（データの和集合） */
+.breadth { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
+.blang { font-family: system-ui, sans-serif; font-size: .8rem; padding: .2rem .55rem;
+  border: 1px solid var(--accent2); border-radius: 999px; color: var(--accent2); }
+.orig-sense { margin: .3rem 0 .6rem; }
+.orig-collo td { vertical-align: top; padding: .3rem .5rem; }
+.orig-collo td:first-child { white-space: nowrap; color: var(--muted); font-size: .82rem; font-family: system-ui, sans-serif; }
+.orig-collo a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+.orig-collo a:hover { border-bottom-style: solid; }
+.return-card { border-left: 4px solid var(--accent2); background: #eef3f7; }
+.return-card h3 { margin-top: 0; }
+.sep-card { border-left: 4px solid var(--accent2); }
+.sep-card h3 { font-size: .95rem; margin: .8rem 0 .3rem; }
+.debatemap li { margin: .2rem 0; font-weight: 600; }
+.biblist { font-family: system-ui, sans-serif; font-size: .82rem; }
+.biblist li { margin: .35rem 0; }
+
+/* PoC-0: adopt bridge */
+.adopt-picker { font-family: system-ui, sans-serif; margin: .4rem 0 .8rem; }
+.adopt-picker select { width: auto; }
+.adopt-btn { padding: .12rem .5rem; font-size: .72rem; background: var(--accent2); }
+.adopt-btn.done { background: var(--ok); }
+
+/* PoC-1: reading-stance decision surface */
+.osf { font-family: system-ui, sans-serif; font-size: .85rem; background: #eef3f7;
+  border-left: 3px solid var(--accent2); border-radius: 0 5px 5px 0; padding: .5rem .8rem; margin: .5rem 0; }
+.gate-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .6rem 0; }
+.gatebtn { font-family: system-ui, sans-serif; font-size: .85rem; background: var(--paper);
+  color: var(--ink); border: 1px solid var(--line); border-radius: 5px; padding: .35rem .7rem; cursor: pointer; }
+.gatebtn.on { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+.fcards { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; margin: .7rem 0; }
+@media (max-width: 640px) { .fcards { grid-template-columns: 1fr; } }
+.fcard { border: 1px solid var(--line); border-radius: 6px; padding: .7rem .8rem; }
+.fcard.rec { border-left: 3px solid var(--accent); }
+.fcard h4 { font-family: system-ui, sans-serif; font-size: .9rem; margin: 0 0 .4rem; }
+.recbadge { font-family: system-ui, sans-serif; font-size: .62rem; background: var(--accent);
+  color: var(--paper); border-radius: 999px; padding: .05rem .5rem; }
+.facet { font-family: system-ui, sans-serif; font-size: .78rem; margin: .2rem 0; }
+.facet .fk { color: var(--muted); font-size: .68rem; margin-right: .35rem; }
+.facet.blind .fk { color: var(--bad); }
+.facet.out .fk { color: var(--accent2); }
+.llm-meta { font-family: system-ui, sans-serif; font-size: .8rem; background: #fff7ed;
+  border: 1px solid #fed7aa; border-radius: 5px; padding: .5rem .7rem; margin: .6rem 0; }
+
+/* structure-bearing view (replaces the decorative cose graph) */
+.struct-h { font-family: system-ui, sans-serif; font-size: .9rem; border-left: 4px solid var(--line);
+  padding-left: .5rem; margin: 1rem 0 .4rem; }
+.struct-node { border-left: 3px solid var(--line); padding: .4rem .7rem; margin: .3rem 0;
+  cursor: pointer; border-radius: 0 4px 4px 0; }
+.struct-node:hover, .struct-node:focus-visible { background: #faf8f3; outline: 2px solid var(--accent); outline-offset: -2px; }
+.struct-node b { font-weight: 600; }
+.struct-rel { margin-top: .2rem; }
+.struct-rel i { font-style: italic; color: var(--accent); }
+#manual-entry summary { font-family: system-ui, sans-serif; font-size: .85rem; cursor: pointer; color: var(--muted); }
+/* #1 概念固有の次元（記事構造から発見・共通次元と分離） */
+.dim-disc { margin-top: .8rem; border-top: 1px dashed var(--line); padding-top: .6rem; }
+.dim-disc-h { font-family: system-ui, sans-serif; font-size: .82rem; color: var(--accent); margin: 0 0 .4rem; }
+.dim-disc-list { display: flex; flex-wrap: wrap; gap: .4rem; }
+.dim-disc-l { font-family: system-ui, sans-serif; font-size: .84rem; color: var(--accent);
+  text-decoration: none; border: 1px solid var(--accent); border-radius: 6px; padding: .2rem .55rem; }
+.dim-disc-l:hover { background: var(--accent); color: var(--paper); }
+.anat-summary { font-family: system-ui, sans-serif; font-size: .88rem; line-height: 1.6; color: var(--ink); margin: .3rem 0 .6rem; }
+/* 逆側logic: 否定表示の代わりに差し込む建設的代替（この語で続ける） */
+.nomiss { padding: .4rem 0; }
+.nomiss-lead { font-family: system-ui, sans-serif; font-size: .9rem; color: var(--ink); margin: .2rem 0 .6rem; line-height: 1.6; }
+.nomiss-acts { display: flex; flex-wrap: wrap; gap: .4rem; }
+.nomiss-b { font-family: system-ui, sans-serif; font-size: .82rem; padding: .3rem .7rem; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.nomiss-b:hover { border-color: var(--accent); background: #f2eee4; }
+.breadth-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .4rem; }
+.breadth-chip { font-family: system-ui, sans-serif; font-size: .82rem; padding: .2rem .55rem;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
+.breadth-chip a { color: var(--accent2); text-decoration: none; }

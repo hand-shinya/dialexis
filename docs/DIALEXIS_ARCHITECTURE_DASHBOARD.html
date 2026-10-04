@@ -1,0 +1,882 @@
+<!doctype html>
+<html lang="ja" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Dialexis — 仕様・アーキテクチャ・検証ダッシュボード</title>
+  <style>
+    :root {
+      --bg: #f5f2ea;
+      --paper: #fffdf8;
+      --paper-2: #f8f6ef;
+      --ink: #1d2430;
+      --muted: #68717b;
+      --line: #d9d5ca;
+      --line-strong: #a9a398;
+      --accent: #a63d30;
+      --accent-2: #23566f;
+      --accent-3: #c9882e;
+      --ok: #26734a;
+      --warn: #a46618;
+      --bad: #a63d30;
+      --violet: #76539b;
+      --shadow: 0 18px 50px rgba(29, 36, 48, .10);
+      --shadow-soft: 0 8px 24px rgba(29, 36, 48, .08);
+      --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --serif: Georgia, "Times New Roman", "Noto Serif JP", serif;
+      --radius: 14px;
+    }
+    html[data-theme="night"] {
+      --bg: #11171c;
+      --paper: #192229;
+      --paper-2: #202b32;
+      --ink: #edf2f1;
+      --muted: #aab6b8;
+      --line: #34434a;
+      --line-strong: #5a6a70;
+      --accent: #ee8b75;
+      --accent-2: #83c6df;
+      --accent-3: #e4b45b;
+      --ok: #75c794;
+      --warn: #e9bd69;
+      --bad: #ee8b75;
+      --violet: #c3a1e4;
+      --shadow: 0 18px 50px rgba(0, 0, 0, .30);
+      --shadow-soft: 0 8px 24px rgba(0, 0, 0, .24);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 84% 4%, rgba(166, 61, 48, .10), transparent 29rem),
+        radial-gradient(circle at 12% 32%, rgba(35, 86, 111, .08), transparent 28rem),
+        var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+    a { color: var(--accent-2); }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    :focus-visible { outline: 3px solid var(--accent-3); outline-offset: 3px; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: .75rem 1.2rem;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--paper) 88%, transparent);
+      backdrop-filter: blur(15px);
+    }
+    .brand { display: flex; align-items: baseline; gap: .65rem; text-decoration: none; color: var(--ink); }
+    .brand strong { font-family: var(--serif); font-size: 1.32rem; letter-spacing: .05em; }
+    .brand span { color: var(--muted); font-size: .68rem; letter-spacing: .14em; text-transform: uppercase; }
+    .top-actions { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; justify-content: flex-end; }
+    .icon-btn, .small-btn, .nav-btn, .tab-btn {
+      border: 1px solid var(--line);
+      background: var(--paper);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: .16s ease;
+    }
+    .icon-btn { width: 2.2rem; height: 2.2rem; }
+    .small-btn { padding: .42rem .7rem; font-size: .78rem; }
+    .small-btn:hover, .icon-btn:hover, .nav-btn:hover, .tab-btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: calc(100vh - 60px); }
+    .sidebar {
+      position: sticky;
+      top: 60px;
+      align-self: start;
+      height: calc(100vh - 60px);
+      overflow: auto;
+      padding: 1.2rem .85rem;
+      border-right: 1px solid var(--line);
+      background: color-mix(in srgb, var(--paper) 74%, transparent);
+    }
+    .side-kicker { color: var(--muted); font-size: .67rem; letter-spacing: .13em; text-transform: uppercase; }
+    .side-current { margin: .6rem 0 1.1rem; padding: .75rem; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); box-shadow: var(--shadow-soft); }
+    .side-current strong { display: block; font-size: .88rem; }
+    .side-current code { display: block; margin-top: .25rem; color: var(--accent-2); font-size: .68rem; overflow-wrap: anywhere; }
+    .side-nav { display: grid; gap: .22rem; }
+    .nav-btn { width: 100%; padding: .55rem .7rem; border-radius: 9px; text-align: left; font-size: .78rem; }
+    .nav-btn.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--paper)); color: var(--accent); font-weight: 700; }
+    .side-note { margin-top: 1.25rem; padding: .75rem; border-left: 3px solid var(--accent-3); color: var(--muted); font-size: .72rem; line-height: 1.55; }
+    .main { min-width: 0; max-width: 1500px; width: 100%; margin: 0 auto; padding: 1.4rem clamp(1rem, 3vw, 3.2rem) 5rem; }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr);
+      gap: 1.2rem;
+      align-items: stretch;
+      padding: 1.2rem 0 1.5rem;
+    }
+    .eyebrow { color: var(--accent); font-size: .72rem; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+    h1, h2, h3, h4 { line-height: 1.2; }
+    h1 { max-width: 850px; margin: .45rem 0 .75rem; font-family: var(--serif); font-size: clamp(2.1rem, 5vw, 4.7rem); letter-spacing: -.04em; }
+    h2 { margin: 0; font-family: var(--serif); font-size: clamp(1.45rem, 2.6vw, 2.2rem); }
+    h3 { margin: 0; font-size: 1rem; }
+    p { margin: .45rem 0; }
+    .lead { max-width: 760px; color: var(--muted); font-size: clamp(.96rem, 1.35vw, 1.15rem); }
+    .mission {
+      margin-top: 1rem;
+      padding: .9rem 1rem;
+      border-left: 5px solid var(--accent);
+      background: color-mix(in srgb, var(--accent) 9%, var(--paper));
+      border-radius: 0 12px 12px 0;
+      font-family: var(--serif);
+      font-size: 1.1rem;
+    }
+    .boundary {
+      position: relative;
+      overflow: hidden;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(140deg, color-mix(in srgb, var(--accent-2) 13%, var(--paper)), var(--paper));
+      box-shadow: var(--shadow);
+    }
+    .boundary::after { content: "MAP ≠ ORACLE"; position: absolute; right: -1.1rem; bottom: .2rem; color: color-mix(in srgb, var(--accent-2) 16%, transparent); font-size: 2.2rem; font-weight: 900; transform: rotate(-12deg); }
+    .boundary h3 { color: var(--accent-2); }
+    .boundary ul { position: relative; z-index: 1; margin: .7rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: .82rem; }
+    .boundary li { margin: .4rem 0; }
+    .chip-row { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .8rem; }
+    .chip, .status-chip, .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: .2rem .5rem;
+      background: var(--paper);
+      color: var(--muted);
+      font-size: .68rem;
+      white-space: nowrap;
+    }
+    .chip.ok, .status-chip.ok { border-color: color-mix(in srgb, var(--ok) 55%, var(--line)); color: var(--ok); background: color-mix(in srgb, var(--ok) 8%, var(--paper)); }
+    .chip.warn, .status-chip.warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); color: var(--warn); background: color-mix(in srgb, var(--warn) 9%, var(--paper)); }
+    .chip.accent { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); color: var(--accent); }
+    .section { margin-top: 2.6rem; scroll-margin-top: 78px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: .85rem; }
+    .section-head p { max-width: 760px; color: var(--muted); font-size: .84rem; }
+    .section-index { color: var(--accent); font-family: var(--serif); font-size: 1.1rem; }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      box-shadow: var(--shadow-soft);
+    }
+    .status-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .65rem; }
+    .metric { min-height: 105px; padding: .75rem; }
+    .metric-label { color: var(--muted); font-size: .68rem; }
+    .metric-value { margin-top: .2rem; font-family: var(--serif); font-size: 1.45rem; }
+    .metric-note { margin-top: .2rem; color: var(--muted); font-size: .66rem; }
+    .dot { display: inline-block; width: .45rem; height: .45rem; margin-right: .25rem; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 15%, transparent); }
+    .axiom-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; }
+    .axiom { position: relative; min-height: 150px; padding: .85rem; overflow: hidden; }
+    .axiom:nth-child(1), .axiom:nth-child(5) { border-top: 3px solid var(--accent); }
+    .axiom:nth-child(2), .axiom:nth-child(6) { border-top: 3px solid var(--accent-2); }
+    .axiom:nth-child(3), .axiom:nth-child(7) { border-top: 3px solid var(--accent-3); }
+    .axiom:nth-child(4) { border-top: 3px solid var(--violet); }
+    .axiom-num { color: var(--muted); font-size: .68rem; letter-spacing: .12em; }
+    .axiom strong { display: block; margin: .3rem 0; font-family: var(--serif); font-size: 1.05rem; }
+    .axiom p { color: var(--muted); font-size: .77rem; }
+    .axiom .reject { margin-top: .5rem; color: var(--accent); font-size: .68rem; }
+    .arch-wrap { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(250px, .65fr); gap: .8rem; align-items: stretch; }
+    .arch-card { overflow: hidden; padding: .3rem; }
+    .arch-svg { display: block; width: 100%; height: auto; min-height: 420px; background: linear-gradient(145deg, color-mix(in srgb, var(--paper-2) 60%, var(--paper)), var(--paper)); border-radius: 11px; }
+    .arch-svg .edge { fill: none; stroke: var(--line-strong); stroke-width: 2; stroke-dasharray: 5 5; opacity: .8; }
+    .arch-svg .edge.live { stroke: var(--accent-2); stroke-width: 2.8; opacity: 1; }
+    .arch-svg .arch-node { cursor: pointer; }
+    .arch-svg .arch-node rect { fill: var(--paper); stroke: var(--line-strong); stroke-width: 2; transition: .16s ease; }
+    .arch-svg .arch-node:hover rect, .arch-svg .arch-node.active rect { stroke: var(--accent); stroke-width: 3.5; filter: drop-shadow(0 5px 7px rgba(0,0,0,.16)); }
+    .arch-svg .arch-node.active rect { fill: color-mix(in srgb, var(--accent) 10%, var(--paper)); }
+    .arch-svg text { fill: var(--ink); font-family: var(--sans); pointer-events: none; }
+    .arch-svg .node-title { font-size: 17px; font-weight: 800; }
+    .arch-svg .node-sub { fill: var(--muted); font-size: 12px; }
+    .arch-svg .edge-label { fill: var(--muted); font-size: 11px; }
+    .inspector { padding: 1rem; }
+    .inspector-kicker { color: var(--accent); font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; }
+    .inspector h3 { margin: .25rem 0 .5rem; font-family: var(--serif); font-size: 1.35rem; }
+    .inspector p, .inspector li { color: var(--muted); font-size: .8rem; }
+    .inspector ul { margin: .55rem 0; padding-left: 1.1rem; }
+    .layer-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
+    .layer { min-height: 180px; padding: .9rem; }
+    .layer-number { color: var(--accent-2); font-size: .7rem; font-weight: 800; letter-spacing: .12em; }
+    .layer h3 { margin: .35rem 0; font-family: var(--serif); font-size: 1.18rem; }
+    .layer p { color: var(--muted); font-size: .78rem; }
+    .layer .file { display: block; margin-top: .6rem; color: var(--accent-2); font-family: ui-monospace, monospace; font-size: .68rem; overflow-wrap: anywhere; }
+    .mode-tabs, .road-tabs { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .7rem; }
+    .tab-btn { padding: .45rem .75rem; font-size: .76rem; }
+    .tab-btn.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--paper)); color: var(--accent); font-weight: 700; }
+    .mode-panel, .road-panel { display: none; }
+    .mode-panel.active, .road-panel.active { display: block; animation: reveal .25s ease; }
+    @keyframes reveal { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    .mode-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: .8rem; }
+    .mode-card { padding: 1rem; }
+    .mode-card h3 { font-family: var(--serif); font-size: 1.35rem; }
+    .mode-card p, .mode-card li { color: var(--muted); font-size: .82rem; }
+    .mode-card ul { padding-left: 1.1rem; }
+    .pipeline { display: flex; flex-wrap: wrap; align-items: stretch; gap: .4rem; margin-top: .8rem; }
+    .pipeline-step { flex: 1 1 125px; min-width: 100px; padding: .65rem; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-2); }
+    .pipeline-step b { display: block; color: var(--accent-2); font-size: .72rem; }
+    .pipeline-step span { color: var(--muted); font-size: .68rem; }
+    .pipeline-arrow { align-self: center; color: var(--accent); font-size: 1.4rem; }
+    .relation-board { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: .7rem; align-items: center; margin-top: .8rem; }
+    .relation-box { min-height: 150px; padding: .9rem; border: 1px solid var(--line); border-radius: 13px; background: var(--paper); }
+    .relation-box.ledger { border-color: color-mix(in srgb, var(--accent-2) 60%, var(--line)); background: color-mix(in srgb, var(--accent-2) 7%, var(--paper)); }
+    .relation-box.project { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); background: color-mix(in srgb, var(--accent) 7%, var(--paper)); }
+    .relation-box h3 { font-family: var(--serif); font-size: 1.12rem; }
+    .relation-box p, .relation-box li { color: var(--muted); font-size: .75rem; }
+    .relation-box ul { padding-left: 1rem; }
+    .relation-mid { display: grid; gap: .35rem; text-align: center; color: var(--muted); font-size: .72rem; }
+    .relation-mid strong { display: block; padding: .35rem; border: 1px dashed var(--line-strong); border-radius: 9px; color: var(--accent-2); }
+    .relation-mid span { color: var(--accent); font-size: 1.2rem; }
+    .db-strip { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .75rem; }
+    .db-pill { padding: .38rem .55rem; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-2); color: var(--muted); font-family: ui-monospace, monospace; font-size: .68rem; }
+    .flow-shell { padding: 1rem; }
+    .flow { display: grid; grid-template-columns: repeat(7, minmax(100px, 1fr)); gap: .35rem; align-items: stretch; }
+    .flow-step { position: relative; min-height: 108px; padding: .65rem; border: 1px solid var(--line); border-radius: 11px; background: var(--paper-2); cursor: pointer; }
+    .flow-step:hover, .flow-step.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--paper)); }
+    .flow-step:not(:last-child)::after { content: "→"; position: absolute; top: 38%; right: -1rem; z-index: 2; color: var(--accent); font-size: 1.2rem; }
+    .flow-step b { display: block; color: var(--accent-2); font-size: .7rem; }
+    .flow-step strong { display: block; margin-top: .2rem; font-family: var(--serif); font-size: .95rem; }
+    .flow-step small { display: block; margin-top: .25rem; color: var(--muted); font-size: .65rem; line-height: 1.35; }
+    .flow-detail { min-height: 84px; margin-top: .7rem; padding: .7rem .85rem; border-left: 4px solid var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--paper)); color: var(--muted); font-size: .8rem; }
+    .branch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; margin-top: .7rem; }
+    .branch { padding: .8rem; border: 1px dashed var(--line-strong); border-radius: 11px; }
+    .branch.good { border-color: var(--ok); }
+    .branch.bad { border-color: var(--bad); }
+    .branch h4 { margin: 0 0 .3rem; font-size: .82rem; }
+    .branch p { margin: 0; color: var(--muted); font-size: .74rem; }
+    .surface-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .65rem; }
+    .surface { padding: .85rem; min-height: 170px; }
+    .surface h3 { font-family: var(--serif); font-size: 1.2rem; }
+    .surface .surface-id { display: block; margin: .35rem 0; color: var(--accent-2); font-family: ui-monospace, monospace; font-size: .68rem; }
+    .surface p, .surface li { color: var(--muted); font-size: .76rem; }
+    .surface ul { padding-left: 1.05rem; }
+    .mobile-callout { margin-top: .75rem; padding: .8rem; border: 1px solid color-mix(in srgb, var(--accent-3) 50%, var(--line)); border-radius: 11px; background: color-mix(in srgb, var(--accent-3) 9%, var(--paper)); }
+    .mobile-callout strong { color: var(--warn); }
+    .evidence-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(250px, .75fr); gap: .8rem; }
+    .ladder { display: grid; gap: .38rem; }
+    .evidence-row { display: grid; grid-template-columns: 150px 1fr max-content; gap: .65rem; align-items: center; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
+    .evidence-row strong { font-size: .76rem; }
+    .evidence-row span { color: var(--muted); font-size: .7rem; }
+    .evidence-row em { padding: .18rem .45rem; border-radius: 999px; background: var(--paper-2); color: var(--accent-2); font-size: .64rem; font-style: normal; }
+    .source-envelope { padding: 1rem; }
+    .source-envelope h3 { font-family: var(--serif); font-size: 1.25rem; }
+    .json-card { margin-top: .65rem; padding: .75rem; border-radius: 10px; background: #162027; color: #d8e6e5; font: .72rem/1.55 ui-monospace, monospace; overflow: auto; }
+    .json-key { color: #f4bf6c; }
+    .json-val { color: #93d7a7; }
+    .failure-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; }
+    .failure { padding: .85rem; border-top: 3px solid var(--bad); }
+    .failure .when { color: var(--muted); font-size: .66rem; letter-spacing: .06em; }
+    .failure h3 { margin: .3rem 0 .5rem; font-family: var(--serif); font-size: 1.08rem; }
+    .failure dl { margin: 0; }
+    .failure dt { color: var(--accent); font-size: .68rem; font-weight: 800; }
+    .failure dd { margin: .1rem 0 .45rem; color: var(--muted); font-size: .74rem; }
+    .verification-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: .8rem; }
+    .verify-card { padding: 1rem; }
+    .progress-line { display: flex; align-items: center; gap: .5rem; margin: .65rem 0; font-size: .74rem; }
+    .progress-line label { width: 120px; color: var(--muted); }
+    .bar { flex: 1; height: 8px; overflow: hidden; border-radius: 99px; background: var(--paper-2); }
+    .bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--ok), var(--accent-2)); }
+    .pass { color: var(--ok); font-weight: 800; font-size: .68rem; }
+    .command { position: relative; margin-top: .65rem; padding: .8rem 3.3rem .8rem .8rem; overflow: auto; border-radius: 10px; background: #162027; color: #e8f0ee; font: .72rem/1.55 ui-monospace, monospace; white-space: pre-wrap; }
+    .copy-btn { position: absolute; top: .45rem; right: .45rem; border: 1px solid #52656b; border-radius: 6px; padding: .25rem .4rem; background: #26353b; color: #e8f0ee; cursor: pointer; font-size: .65rem; }
+    .deploy-rail { display: grid; gap: .4rem; margin-top: .7rem; }
+    .deploy-step { display: grid; grid-template-columns: 30px 1fr; gap: .55rem; align-items: start; }
+    .deploy-step .num { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: color-mix(in srgb, var(--accent-2) 14%, var(--paper)); color: var(--accent-2); font-size: .7rem; font-weight: 800; }
+    .deploy-step strong { display: block; font-size: .77rem; }
+    .deploy-step span { color: var(--muted); font-size: .7rem; }
+    .roadmap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+    .roadmap-card { padding: 1rem; }
+    .roadmap-card h3 { margin-bottom: .55rem; font-family: var(--serif); font-size: 1.3rem; }
+    .roadmap-list { display: grid; gap: .4rem; }
+    .roadmap-item { display: grid; grid-template-columns: 70px 1fr; gap: .5rem; padding: .5rem 0; border-bottom: 1px dotted var(--line); }
+    .roadmap-item b { color: var(--accent); font-size: .68rem; }
+    .roadmap-item span { color: var(--muted); font-size: .76rem; }
+    .inventory { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .76rem; }
+    th, td { padding: .55rem .6rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--accent-2); font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; }
+    td { color: var(--muted); }
+    td code { color: var(--ink); font-size: .7rem; }
+    .search-strip { display: flex; align-items: center; gap: .5rem; margin-bottom: .8rem; }
+    .search-strip input { width: min(360px, 100%); padding: .55rem .7rem; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); color: var(--ink); }
+    .filter-empty { display: none; padding: 1rem; color: var(--muted); font-size: .8rem; }
+    .footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .7rem; }
+    .footer code { color: var(--accent-2); }
+    .muted { color: var(--muted); }
+    @media (max-width: 1120px) {
+      .status-grid { grid-template-columns: repeat(3, 1fr); }
+      .axiom-grid { grid-template-columns: repeat(3, 1fr); }
+      .failure-grid { grid-template-columns: repeat(2, 1fr); }
+      .flow { grid-template-columns: repeat(4, 1fr); }
+      .flow-step:nth-child(4)::after { display: none; }
+    }
+    @media (max-width: 860px) {
+      .layout { display: block; }
+      .sidebar { position: sticky; top: 60px; z-index: 30; height: auto; padding: .55rem .75rem; border-right: 0; border-bottom: 1px solid var(--line); }
+      .side-kicker, .side-current, .side-note { display: none; }
+      .side-nav { display: flex; overflow-x: auto; gap: .35rem; }
+      .nav-btn { width: auto; flex: 0 0 auto; white-space: nowrap; }
+      .hero, .arch-wrap, .mode-grid, .evidence-grid, .verification-grid { grid-template-columns: 1fr; }
+      .arch-svg { min-height: 360px; }
+    }
+    @media (max-width: 640px) {
+      .topbar { align-items: flex-start; padding: .65rem .75rem; }
+      .brand { min-width: 0; display: block; }
+      .brand strong { display: block; font-size: 1.1rem; }
+      .brand span { display: block; margin-top: -.1rem; font-size: .58rem; }
+      .top-actions { gap: .25rem; }
+      .top-actions .status-chip { display: none; }
+      .main { padding: 1rem .7rem 3rem; }
+      .status-grid, .axiom-grid, .layer-grid, .surface-grid, .branch-grid, .roadmap-grid, .failure-grid { grid-template-columns: 1fr; }
+      .section-head { display: block; }
+      .section-head p { margin-top: .5rem; }
+      .flow { grid-template-columns: 1fr; }
+      .flow-step:not(:last-child)::after { content: "↓"; top: auto; right: 50%; bottom: -.95rem; }
+      .flow-step:nth-child(4)::after { display: block; }
+      .relation-board { grid-template-columns: 1fr; }
+      .relation-mid { grid-template-columns: 1fr; }
+      .relation-mid span { transform: rotate(90deg); }
+      .pipeline-arrow { display: none; }
+      .evidence-row { grid-template-columns: 1fr; gap: .2rem; }
+      .arch-svg { min-height: 300px; }
+      .arch-svg .node-title { font-size: 14px; }
+      .arch-svg .node-sub { font-size: 10px; }
+      .arch-svg .edge-label { display: none; }
+    }
+    @media print {
+      .topbar, .sidebar, .top-actions, .search-strip, .copy-btn { display: none !important; }
+      .layout { display: block; }
+      .main { max-width: none; padding: 0; }
+      .card { box-shadow: none; break-inside: avoid; }
+      .section { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#overview" aria-label="Dialexis architecture dashboard">
+      <strong>DIALEXIS</strong><span>仕様・アーキテクチャ・検証 Atlas</span>
+    </a>
+    <div class="top-actions">
+      <span class="status-chip ok"><span class="dot"></span>検証済み製品 f7affab8</span>
+      <span class="status-chip">現行反映 2026-08-27</span>
+      <button class="small-btn" id="printBtn" type="button">印刷 / PDF</button>
+      <button class="icon-btn" id="themeBtn" type="button" aria-label="テーマ切替">☾</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="side-kicker">Project atlas</div>
+      <div class="side-current">
+        <strong>Dialexis</strong>
+        <span class="muted">反省的哲学研究インフラ</span>
+        <code>HEAD 5e94bb77</code>
+      </div>
+      <nav class="side-nav" aria-label="ダッシュボード内目次">
+        <button class="nav-btn active" data-scroll="overview">00　現在地・中心命題</button>
+        <button class="nav-btn" data-scroll="architecture">01　実行アーキテクチャ</button>
+        <button class="nav-btn" data-scroll="research-model">02　研究モデル</button>
+        <button class="nav-btn" data-scroll="interaction">03　操作と状態</button>
+        <button class="nav-btn" data-scroll="evidence">04　証拠と透明性</button>
+        <button class="nav-btn" data-scroll="failures">05　失敗史</button>
+        <button class="nav-btn" data-scroll="verification">06　検証・公開運用</button>
+        <button class="nav-btn" data-scroll="roadmap">07　計画・残課題</button>
+      </nav>
+      <div class="side-note">
+        この画面は真理の地図ではなく、仕様・コード・失敗・検証へ戻るための探索レンズです。
+        <br><br>
+        <strong>未検証</strong>と表示された事項は、成功実装と混同しないでください。
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="hero" id="overview">
+        <div>
+          <div class="eyebrow">Reflexive Philosophy Infrastructure / current atlas</div>
+          <h1>問いを、出典と反証可能性を持つ研究過程へ。</h1>
+          <p class="lead">
+            Dialexisは、辞書・検索・AI回答の終点を作るのではなく、
+            翻訳・検索によって見えなくなった差異を、次の問い・証拠・反証・判断へ接続するための研究基盤です。
+          </p>
+          <div class="mission">中心命題：翻訳・検索によって失われる差異を、出典と反証可能性を保った研究過程へ変換する。</div>
+          <div class="chip-row">
+            <span class="chip accent">無料・鍵不要のLevel 0</span>
+            <span class="chip ok">外部情報源に取得時刻</span>
+            <span class="chip">Map / Ledger / Project</span>
+            <span class="chip warn">人間確認まで未確認</span>
+          </div>
+        </div>
+        <aside class="boundary">
+          <h3>境界宣言</h3>
+          <ul>
+            <li>人類の知を網羅する装置ではない。</li>
+            <li>自動抽出は証拠ではなく候補。</li>
+            <li>グラフは真理の地図ではなく探索レンズ。</li>
+            <li>成功条件は「答えが出た」ではなく、問いが深まり次の検証へ進めること。</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="status-grid" aria-label="現行ステータス">
+        <div class="card metric"><div class="metric-label">現行HEAD</div><div class="metric-value">5e94bb77</div><div class="metric-note">main / 検証マーカー記録</div></div>
+        <div class="card metric"><div class="metric-label">検証対象コード</div><div class="metric-value">f7affab8</div><div class="metric-note">SHA gate基準</div></div>
+        <div class="card metric"><div class="metric-label">Python tests</div><div class="metric-value">108</div><div class="metric-note"><span class="dot"></span>passed</div></div>
+        <div class="card metric"><div class="metric-label">決定論的E2E</div><div class="metric-value">全件</div><div class="metric-note"><span class="dot"></span>gate PASS</div></div>
+        <div class="card metric"><div class="metric-label">Mobile surface</div><div class="metric-value">8 / 8</div><div class="metric-note">390×844 実ブラウザ</div></div>
+        <div class="card metric"><div class="metric-label">公開healthz</div><div class="metric-value">未検証</div><div class="metric-note">現在の公開URLは未再照会</div></div>
+      </section>
+
+      <section class="section" id="axioms">
+        <div class="section-head">
+          <div><span class="section-index">00-A</span><h2>設計を縛る七公理</h2></div>
+          <p>機能を増やす前に、何を保存し、何を棄却し、何を上位概念へ持ち上げるかを決める憲法層。</p>
+        </div>
+        <div class="axiom-grid">
+          <article class="card axiom" data-search="問い 変換 question transformation"><div class="axiom-num">AXIOM 01</div><strong>問いの変換</strong><p>知識を消費させず、利用者の問いをより深い問いへ変換する。</p><div class="reject">棄却：答えだけで終了するUI</div></article>
+          <article class="card axiom" data-search="使用 貢献 public"><div class="axiom-num">AXIOM 02</div><strong>使用即貢献</strong><p>一人で使っても価値があり、利用の痕跡が将来の公共土壌になる。</p><div class="reject">棄却：コミュニティ参加を前提にする</div></article>
+          <article class="card axiom" data-search="レンズ 外部情報源"><div class="axiom-num">AXIOM 03</div><strong>レンズ原理</strong><p>百科事典を内部に溜めず、外部の生きた情報源へ接続する。</p><div class="reject">棄却：静的な知識DB</div></article>
+          <article class="card axiom" data-search="鮮度 retrieved timestamp"><div class="axiom-num">AXIOM 04</div><strong>鮮度の刻印</strong><p>外部情報には出所と取得時刻を付け、古さを沈黙させない。</p><div class="reject">棄却：時刻のない要約</div></article>
+          <article class="card axiom" data-search="退化 階梯 Level 0"><div class="axiom-num">AXIOM 05</div><strong>退化階梯</strong><p>全機能に無料・鍵不要・決定論的なLevel 0を持たせ、鍵は昇格だけに使う。</p><div class="reject">棄却：LLMキー必須の基盤</div></article>
+          <article class="card axiom" data-search="AI 透明性 ledger confidence"><div class="axiom-num">AXIOM 06</div><strong>AI透明性</strong><p>AIが触れた出力は明示・台帳記録・確度分類し、人間確認まで未確認にする。</p><div class="reject">棄却：AI出力を地の文へ混ぜる</div></article>
+          <article class="card axiom" data-search="撤退可能性 export JSON-LD"><div class="axiom-num">AXIOM 07</div><strong>撤退可能性</strong><p>Markdown / JSON-LD / BibTeX / CSL JSONへ持ち出し、サイト消滅後も研究を残す。</p><div class="reject">棄却：独自形式ロックイン</div></article>
+        </div>
+      </section>
+
+      <section class="section" id="architecture">
+        <div class="section-head">
+          <div><span class="section-index">01</span><h2>実行アーキテクチャ</h2></div>
+          <p>下のノードをクリックすると、その責務・正本ファイル・失敗時の契約が右側に表示されます。</p>
+        </div>
+        <div class="arch-wrap">
+          <div class="card arch-card">
+            <svg class="arch-svg" viewBox="0 0 1120 560" role="img" aria-label="Dialexis実行アーキテクチャ図">
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="currentColor"></path></marker>
+                <linearGradient id="browserGrad" x1="0" x2="1"><stop stop-color="#23566f" stop-opacity=".18"></stop><stop offset="1" stop-color="#fffdf8" stop-opacity=".1"></stop></linearGradient>
+              </defs>
+              <path class="edge live" d="M300 110 C395 110, 430 110, 510 110" marker-end="url(#arrow)"></path>
+              <path class="edge live" d="M745 95 C835 65, 858 65, 900 65" marker-end="url(#arrow)"></path>
+              <path class="edge" d="M745 125 C830 170, 855 185, 900 190" marker-end="url(#arrow)"></path>
+              <path class="edge" d="M745 155 C835 265, 855 315, 900 315" marker-end="url(#arrow)"></path>
+              <path class="edge live" d="M570 420 C570 350, 620 300, 620 190" marker-end="url(#arrow)"></path>
+              <path class="edge" d="M930 390 C830 440, 760 445, 690 420" marker-end="url(#arrow)"></path>
+              <path class="edge" d="M745 245 C825 380, 855 450, 900 475" marker-end="url(#arrow)"></path>
+              <text class="edge-label" x="355" y="96">fetch JSON / view state</text>
+              <text class="edge-label" x="796" y="51">live lenses</text>
+              <text class="edge-label" x="792" y="178">provenance / cache</text>
+              <text class="edge-label" x="792" y="300">BYO key / Level 2</text>
+              <text class="edge-label" x="480" y="350">scheduled watch</text>
+              <text class="edge-label" x="775" y="466">Markdown / JSON-LD</text>
+
+              <g class="arch-node active" data-node="browser" role="button" tabindex="0" transform="translate(55 65)">
+                <rect width="245" height="105" rx="16" fill="url(#browserGrad)"></rect>
+                <text class="node-title" x="18" y="32">Browser / UI</text>
+                <text class="node-sub" x="18" y="57">vanilla JS + CSS + Canvas 2D</text>
+                <text class="node-sub" x="18" y="78">Context / Menu / Action / Map</text>
+              </g>
+              <g class="arch-node" data-node="fastapi" role="button" tabindex="0" transform="translate(510 55)">
+                <rect width="235" height="150" rx="16"></rect>
+                <text class="node-title" x="18" y="34">FastAPI</text>
+                <text class="node-sub" x="18" y="61">app/main.py / pages + APIs</text>
+                <text class="node-sub" x="18" y="82">single orchestration boundary</text>
+                <text class="node-sub" x="18" y="103">timeout / fallback / provenance</text>
+              </g>
+              <g class="arch-node" data-node="connectors" role="button" tabindex="0" transform="translate(900 10)">
+                <rect width="195" height="110" rx="16"></rect>
+                <text class="node-title" x="16" y="31">Connectors</text>
+                <text class="node-sub" x="16" y="56">Wikidata / Wikipedia / SEP</text>
+                <text class="node-sub" x="16" y="76">OpenAlex / NDL / CiNii…</text>
+              </g>
+              <g class="arch-node" data-node="sqlite" role="button" tabindex="0" transform="translate(900 145)">
+                <rect width="195" height="110" rx="16"></rect>
+                <text class="node-title" x="16" y="31">SQLite</text>
+                <text class="node-sub" x="16" y="56">projects / ledgers / cache</text>
+                <text class="node-sub" x="16" y="76">provenance / AI ledger</text>
+              </g>
+              <g class="arch-node" data-node="llm" role="button" tabindex="0" transform="translate(900 280)">
+                <rect width="195" height="110" rx="16"></rect>
+                <text class="node-title" x="16" y="31">LLM adapter</text>
+                <text class="node-sub" x="16" y="56">Anthropic / OpenAI / Gemini</text>
+                <text class="node-sub" x="16" y="76">Ollama / browser key only</text>
+              </g>
+              <g class="arch-node" data-node="harvester" role="button" tabindex="0" transform="translate(455 420)">
+                <rect width="235" height="100" rx="16"></rect>
+                <text class="node-title" x="18" y="32">Harvester</text>
+                <text class="node-sub" x="18" y="57">cron / systemd timer</text>
+                <text class="node-sub" x="18" y="77">harvester_status.json</text>
+              </g>
+              <g class="arch-node" data-node="export" role="button" tabindex="0" transform="translate(900 420)">
+                <rect width="195" height="100" rx="16"></rect>
+                <text class="node-title" x="16" y="32">Exit / Export</text>
+                <text class="node-sub" x="16" y="57">Markdown / JSON-LD</text>
+                <text class="node-sub" x="16" y="77">BibTeX / CSL JSON</text>
+              </g>
+            </svg>
+          </div>
+          <aside class="card inspector" id="archInspector" aria-live="polite">
+            <div class="inspector-kicker">Selected component</div>
+            <h3 id="inspectorTitle">Browser / UI</h3>
+            <div id="inspectorBody">
+              <p>利用者の操作を、すべて共通Surface Managerと単一Dispatcherへ渡す入口です。</p>
+              <ul><li>ビルド工程なし</li><li>MapはCanvas 2D</li><li>LLMキーはsessionStorageのみ</li></ul>
+              <span class="tag">app/static/app.js</span>
+            </div>
+          </aside>
+        </div>
+
+        <div class="section-head" style="margin-top:1.3rem">
+          <div><span class="section-index">01-A</span><h2>6層の責務分離</h2></div>
+          <p>同じ情報を別の概念として重複保存せず、出所・履歴・証拠・解釈を層ごとに保つ。</p>
+        </div>
+        <div class="layer-grid">
+          <article class="card layer" data-search="source 資料 connectors"><div class="layer-number">LAYER 1 / SOURCE</div><h3>資料層</h3><p>無料の外部情報源へライブ照会。取得時刻・source・errorを封筒にして返す。</p><code class="file">app/connectors/</code></article>
+          <article class="card layer" data-search="concept 概念 wikidata"><div class="layer-number">LAYER 2 / CONCEPT</div><h3>概念層</h3><p>Wikidata QID、語・原語・関連概念を探索レンズとして配置する。</p><code class="file">/api/origin /api/anatomy</code></article>
+          <article class="card layer" data-search="argument 論証 premise"><div class="layer-number">LAYER 3 / ARGUMENT</div><h3>論証層</h3><p>問い・主張・根拠・反証・隠れた前提を、妥当性と健全性を分けて扱う。</p><code class="file">arguments / argument_premises</code></article>
+          <article class="card layer" data-search="historical 受容 history"><div class="layer-number">LAYER 4 / HISTORICAL</div><h3>歴史層</h3><p>人物・著作・翻訳・受容を、候補から本文照合へ進む時間構造で表す。</p><code class="file">translation_history_seed.json</code></article>
+          <article class="card layer" data-search="research process 研究台帳 project"><div class="layer-number">LAYER 5 / RESEARCH</div><h3>研究過程層</h3><p>研究台帳と研究プロジェクトを分離し、再利用・版固定・採用関係を保存する。</p><code class="file">app/db.py / /api/ledgers</code></article>
+          <article class="card layer" data-search="reflexive ai transparency"><div class="layer-number">LAYER 6 / REFLEXIVE</div><h3>反省層</h3><p>AIの介入、確度、未確認、視点の選択自体を研究過程の一部として見える化する。</p><code class="file">ai_ledger / counter_checklists.json</code></article>
+        </div>
+      </section>
+
+      <section class="section" id="research-model">
+        <div class="section-head">
+          <div><span class="section-index">02</span><h2>検索・台帳・プロジェクトの三分法</h2></div>
+          <p>「検索結果」と「研究資産」を同じものにしないことが、Dialexisの価値を守る構造上の核心です。</p>
+        </div>
+        <div class="mode-tabs" role="tablist">
+          <button class="tab-btn active" data-tab-group="mode" data-tab="search-mode" type="button">単純検索</button>
+          <button class="tab-btn" data-tab-group="mode" data-tab="ledger-mode" type="button">研究台帳</button>
+          <button class="tab-btn" data-tab-group="mode" data-tab="project-mode" type="button">研究プロジェクト</button>
+        </div>
+        <div class="mode-panel active" id="search-mode" data-panel-group="mode">
+          <div class="mode-grid">
+            <article class="card mode-card"><h3>現在の結果を探索する</h3><p>入力語から外部情報源を照会し、Map・意味単位・多言語・人物・著作・組み合わせを表示します。通常は永続保存しません。</p><div class="pipeline"><div class="pipeline-step"><b>入力語</b><span>term / person / work</span></div><div class="pipeline-arrow">→</div><div class="pipeline-step"><b>意味Map</b><span>Canvas + Context</span></div><div class="pipeline-arrow">→</div><div class="pipeline-step"><b>共通Menu</b><span>Action registry</span></div><div class="pipeline-arrow">→</div><div class="pipeline-step"><b>次の問い</b><span>sourceへ進む</span></div></div></article>
+            <article class="card mode-card"><h3>壊れたときも結果を説明する</h3><ul><li>primary source timeout → 同じ条件のfallback</li><li>empty → 条件・出所・再試行・次Action</li><li>例外 → Map / Contextを保持</li><li>人物名 → 一般語の語源検索へ落とさない</li></ul></article>
+          </div>
+        </div>
+        <div class="mode-panel" id="ledger-mode" data-panel-group="mode">
+          <div class="mode-grid">
+            <article class="card mode-card"><h3>翻訳・受容史を研究資産へ昇格</h3><p>原語・訳語・版・訳者・引用・受容・保存／欠損／追加・反証課題・出典を証拠階層付きで保持します。</p><div class="pipeline"><div class="pipeline-step"><b>予備台帳</b><span>ready / discovery</span></div><div class="pipeline-arrow">→</div><div class="pipeline-step"><b>人間照合</b><span>locator / quote</span></div><div class="pipeline-arrow">→</div><div class="pipeline-step"><b>版を更新</b><span>ledger_versions</span></div></div></article>
+            <article class="card mode-card"><h3>台帳は独立した共有資産</h3><p>台帳はプロジェクトの子ノートではありません。複数プロジェクトから同じ台帳を参照し、プロジェクトは台帳の一部だけを採用できます。</p><span class="tag">candidate ≠ confirmed</span> <span class="tag">source ≠ interpretation</span></article>
+          </div>
+        </div>
+        <div class="mode-panel" id="project-mode" data-panel-group="mode">
+          <div class="mode-grid">
+            <article class="card mode-card"><h3>研究プロジェクトで問いを組み立てる</h3><p>利用者自身の問い・主張・根拠・反証・不確実性・解釈・判断を研究過程グラフとして保持します。</p><div class="db-strip"><span class="db-pill">question</span><span class="db-pill">claim</span><span class="db-pill">evidence</span><span class="db-pill">counterclaim</span><span class="db-pill">uncertainty</span><span class="db-pill">decision</span></div></article>
+            <article class="card mode-card"><h3>台帳のどの版を使ったかを残す</h3><p><code>pinned_version</code> と <code>adopted_version</code> によって、台帳が更新されても過去の研究の参照時点を追跡できます。</p><span class="tag">Markdown</span> <span class="tag">JSON-LD</span> <span class="tag">BibTeX</span></article>
+          </div>
+        </div>
+
+        <div class="card" style="padding:1rem; margin-top:.8rem;">
+          <div class="section-head" style="margin-bottom:.2rem"><div><span class="section-index">02-A</span><h2 style="font-size:1.45rem;">再利用関係</h2></div><p>多対多をUIの見た目だけでなくSQLiteの関係として持つ。</p></div>
+          <div class="relation-board">
+            <div class="relation-box ledger"><h3>研究台帳</h3><p>翻訳・原典・版・受容・出典を保持する再利用資産。</p><ul><li>ledger_entries</li><li>ledger_sources</li><li>ledger_relations</li><li>ledger_tasks</li></ul></div>
+            <div class="relation-mid"><strong>project_ledger_links<br><small>role / pinned_version</small></strong><span>⇄</span><strong>project_ledger_entries<br><small>relation / adopted_version / use_note</small></strong></div>
+            <div class="relation-box project"><h3>研究プロジェクト</h3><p>利用者の問いと判断を進める研究過程。</p><ul><li>questions / claims</li><li>evidence / counterclaims</li><li>interpretations / decisions</li><li>exportable graph</li></ul></div>
+          </div>
+          <div class="db-strip"><span class="db-pill">1 ledger → N projects</span><span class="db-pill">1 project → N ledgers</span><span class="db-pill">原台帳を自動改変しない</span><span class="db-pill">forkで分岐可能</span></div>
+        </div>
+      </section>
+
+      <section class="section" id="interaction">
+        <div class="section-head">
+          <div><span class="section-index">03</span><h2>操作・状態・帰路の共通基盤</h2></div>
+          <p>Menuごとに個別の例外処理を増やさず、すべての操作を同じ状態機械へ通します。</p>
+        </div>
+        <div class="card flow-shell">
+          <div class="flow" role="list">
+            <div class="flow-step active" data-flow="input"><b>01 / INPUT</b><strong>入力</strong><small>語・人物・著作・将来は文／引用</small></div>
+            <div class="flow-step" data-flow="resolve"><b>02 / RESOLVE</b><strong>同定</strong><small>term / person / work / pair</small></div>
+            <div class="flow-step" data-flow="map"><b>03 / MAP</b><strong>意味Map</strong><small>Canvas + stable ID</small></div>
+            <div class="flow-step" data-flow="menu"><b>04 / MENU</b><strong>共通Menu</strong><small>ACTIONS registry</small></div>
+            <div class="flow-step" data-flow="action"><b>05 / ACTION</b><strong>Action面</strong><small>async + processing state</small></div>
+            <div class="flow-step" data-flow="outcome"><b>06 / OUTCOME</b><strong>結果</strong><small>success / empty / fallback</small></div>
+            <div class="flow-step" data-flow="continue"><b>07 / CONTINUE</b><strong>次の一手</strong><small>再試行 / 台帳 / project</small></div>
+          </div>
+          <div class="flow-detail" id="flowDetail">入力は終点ではありません。中心語を定義し、Mapから次の操作を選び、結果を研究過程へ接続します。</div>
+          <div class="branch-grid">
+            <div class="branch good"><h4>成功時の共通契約</h4><p>処理中表示 → 実データ → source / retrieved_at → 1回だけ状態commit → 次Action。成功していない結果でMapを上書きしない。</p></div>
+            <div class="branch bad"><h4>空・遅延・失敗時の共通契約</h4><p>操作名・条件・原因・出所・再試行・同じ語から続けるActionを表示。Map / Context / 親ViewStateを保持する。</p></div>
+          </div>
+        </div>
+
+        <div class="surface-grid" style="margin-top:.8rem;">
+          <article class="card surface" data-search="Context panorama mobile desktop"><h3>Context</h3><code class="surface-id">#dx-context</code><p>概念全景。デスクトップでは右側の固定ドック、スマートフォンではMap直下の通常フロー。</p><ul><li>永続面</li><li>ページを覆わない</li><li>閉じるまで保持</li></ul></article>
+          <article class="card surface" data-search="Menu actions popup"><h3>Menu</h3><code class="surface-id">#graph-menu</code><p>選択語・人物・著作・関係の標準操作。タイトル全体をドラッグ領域にする。</p><ul><li>Actionと排他</li><li>stable target</li><li>実クリック検証</li></ul></article>
+          <article class="card surface" data-search="Action panel dispatcher"><h3>Action</h3><code class="surface-id">#graph-panel</code><p>意味・解剖・比較・翻訳受容史・台帳保存などの結果面。</p><ul><li>actionHistory</li><li>親面へ戻る</li><li>loadingを可視化</li></ul></article>
+        </div>
+        <div class="mobile-callout"><strong>Mobile invariant:</strong> 640px以下ではContextを固定100vhドックにしない。Mapを先に見せ、ContextはMapの下へ流し、ページ全体を縦スクロールさせる。これは2026-08-22の人間報告から一般化した共通Surface規則です。</div>
+      </section>
+
+      <section class="section" id="evidence">
+        <div class="section-head">
+          <div><span class="section-index">04</span><h2>証拠・確度・透明性</h2></div>
+          <p>検索ヒット、書誌、本文、解釈を同じ色に塗らない。画面に出す情報の認識論的な身分を分ける。</p>
+        </div>
+        <div class="evidence-grid">
+          <div class="ladder">
+            <div class="evidence-row"><strong>本文・書誌を確認</strong><span>オンライン本文または権威ある書誌が限定的主張を直接支持</span><em>confirmed</em></div>
+            <div class="evidence-row"><strong>書誌を確認</strong><span>作品・版の存在は確認。該当頁・訳語・引用は別途</span><em>bibliography</em></div>
+            <div class="evidence-row"><strong>有力・要照合</strong><span>妥当な経路があるが、版・ロケータ・本文の確認が未完了</span><em>strong</em></div>
+            <div class="evidence-row"><strong>解釈・再構成</strong><span>受容や思想上の関係を読む仮説。原著者の直接引用ではない</span><em>interpretive</em></div>
+            <div class="evidence-row"><strong>調査候補</strong><span>次の照合に残す入口。確定事実として表示しない</span><em>candidate</em></div>
+            <div class="evidence-row"><strong>未確認</strong><span>資料には現れるが、原典・版・頁が未確認</span><em>unverified</em></div>
+          </div>
+          <article class="card source-envelope">
+            <h3>外部情報源の封筒</h3>
+            <p class="muted">すべてのConnectorは、データだけでなく出所・取得時刻・cache・errorを返します。</p>
+            <div class="json-card">{<br>&nbsp; <span class="json-key">"source"</span>: <span class="json-val">"openalex"</span>,<br>&nbsp; <span class="json-key">"retrieved_at"</span>: <span class="json-val">"ISO8601"</span>,<br>&nbsp; <span class="json-key">"cached"</span>: <span class="json-val">false</span>,<br>&nbsp; <span class="json-key">"error"</span>: <span class="json-val">null</span>,<br>&nbsp; <span class="json-key">"data"</span>: <span class="json-val">…</span><br>}</div>
+            <div class="chip-row"><span class="chip ok">errorを握りつぶさない</span><span class="chip">DIALEXIS_CONTACT</span><span class="chip">TTL cache</span></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="failures">
+        <div class="section-head">
+          <div><span class="section-index">05</span><h2>失敗史は仕様の一部</h2></div>
+          <p>症状を局所修正で終わらせず、再発源のlogicを共通契約へ持ち上げた記録。</p>
+        </div>
+        <div class="search-strip"><input id="filterInput" type="search" placeholder="失敗・機能・ファイルを検索…" aria-label="ダッシュボード内検索"><span class="muted" id="filterCount">全項目</span></div>
+        <div class="failure-grid" id="searchArea">
+          <article class="card failure" data-search="AND Karl Marx 吉本隆明 SearXNG combine fallback"><div class="when">2026-08-14 / 組み合わせ</div><h3>AND検索が無言で崩れた</h3><dl><dt>症状</dt><dd>結果が止まったのか空だったのか説明されず、次提案だけが表示された。</dd><dt>一般化</dt><dd>8秒timeout、同条件Wikipedia退避、条件・source・再試行・次Actionを専用outcome面へ。</dd></dl></article>
+          <article class="card failure" data-search="一文字 分解 非 有機的 肉体 semantic units anatomy"><div class="when">2026-08-14 / 意味分解</div><h3>一文字分解が主表示になった</h3><dl><dt>症状</dt><dd>「非有機的肉体」が非／有／機／的／肉／体へ分解された。</dd><dt>一般化</dt><dd>語全体 → 意味単位「非／有機的／肉体」 → 文字・語源補助層へ階層化。</dd></dl></article>
+          <article class="card failure" data-search="人物 Karl Marx 吉本隆明 translation history person pair"><div class="when">2026-08-20 / 人物研究</div><h3>人物名を一般語の翻訳として扱った</h3><dl><dt>症状</dt><dd>Karl Marxの翻訳・受容史が一般語の語源カードになり、人物としての知的刺激が消えた。</dd><dt>一般化</dt><dd>person / work / conceptを分離。人物間は名前の翻訳対応でなく著作・概念・受容・比較軸へ。</dd></dl></article>
+          <article class="card failure" data-search="台帳 ledger return route state reset"><div class="when">2026-08-20 / 研究台帳</div><h3>保存後に元の画面へ戻れなかった</h3><dl><dt>症状</dt><dd>台帳保存・一覧・詳細・プロジェクト往復で初期化または循環した。</dd><dt>一般化</dt><dd>routeHrefWithReturn、sessionStorage ViewState、originだけ復元、親tokenを上書きしない。</dd></dl></article>
+          <article class="card failure" data-search="mobile fixed context map scroll smartphone"><div class="when">2026-08-22 / mobile</div><h3>スマホでContextが画面を占有した</h3><dl><dt>症状</dt><dd>Mapが見えず、Context内部だけがスクロールし、ページが固定されたように見えた。</dd><dt>一般化</dt><dd>幅640px以下はContextをMap直下の通常フローへ。Surface Managerがresizeでも同じ規則を適用。</dd></dl></article>
+          <article class="card failure" data-search="Menu click pointer toast canvas real click"><div class="when">2026-08-19 / 実クリック</div><h3>通知がCanvasのクリックを遮った</h3><dl><dt>症状</dt><dd>台帳nav追加後、上位層だけ実クリックでき、深い層が前の面を開いた。</dd><dt>一般化</dt><dd>通知は操作対象でないためpointer-events none。実座標・実DOM・実イベント順序で検証。</dd></dl></article>
+          <article class="card failure" data-search="Panorama BFS browser timeout test infrastructure"><div class="when">2026-08-11 / 全景検証</div><h3>全景BFSが完走しなかった</h3><dl><dt>症状</dt><dd>4時間でL3の一部まで。viewport、popup、settled判定、details復元にもテスト側の誤検出があった。</dd><dt>一般化</dt><dd>決定論gate・network統合・全景掃引を別証拠にし、全件PASSと報告しない。</dd></dl></article>
+          <article class="card failure" data-search="sandbox pytest TestClient AnyIO"><div class="when">2026-08 / 検証環境</div><h3>TestClientが停止した</h3><dl><dt>症状</dt><dd>最小FastAPIでも同期TestClientがblocking portalで止まった。</dd><dt>一般化</dt><dd>環境停止と製品停止を分離し、Uvicorn・ASGITransport・実ブラウザ・VPS検証を使い分ける。</dd></dl></article>
+        </div>
+        <div class="filter-empty" id="filterEmpty">一致する項目はありません。検索語を変えてください。</div>
+      </section>
+
+      <section class="section" id="verification">
+        <div class="section-head">
+          <div><span class="section-index">06</span><h2>検証・公開・切り戻し</h2></div>
+          <p>壊れないこと、意味契約が保たれること、公開サービスが到達できること、人間が理解できることを別々に測定する。</p>
+        </div>
+        <div class="verification-grid">
+          <article class="card verify-card">
+            <h3>検証レイヤー</h3>
+            <div class="progress-line"><label>Python contract</label><div class="bar"><i></i></div><span class="pass">103 PASS</span></div>
+            <div class="progress-line"><label>DOM / action</label><div class="bar"><i></i></div><span class="pass">全件 PASS</span></div>
+            <div class="progress-line"><label>実クリック</label><div class="bar"><i></i></div><span class="pass">17/17</span></div>
+            <div class="progress-line"><label>Mobile 390×844</label><div class="bar"><i></i></div><span class="pass">8/8</span></div>
+            <div class="progress-line"><label>公開 healthz</label><div class="bar"><i></i></div><span class="pass">200</span></div>
+            <p class="muted" style="font-size:.72rem;">統合originは外部情報源に依存するため、結果を別枠で表示します。未検証: 実機での主観的な理解効果。</p>
+            <div class="command"><button class="copy-btn" data-copy="cd /home/handa/dialexis\n./verify.sh">コピー</button>cd /home/handa/dialexis
+./verify.sh</div>
+          </article>
+          <article class="card verify-card">
+            <h3>正規デプロイ経路</h3>
+            <div class="deploy-rail">
+              <div class="deploy-step"><span class="num">1</span><div><strong>verify</strong><span>決定論gateと対象E2Eを実行</span></div></div>
+              <div class="deploy-step"><span class="num">2</span><div><strong>verified_sha</strong><span>未検証コード差分をSHA gateで拒否</span></div></div>
+              <div class="deploy-step"><span class="num">3</span><div><strong>git push</strong><span>mainへ意図したcommitだけを反映</span></div></div>
+              <div class="deploy-step"><span class="num">4</span><div><strong>vps_deploy.sh</strong><span>VPS pytest → systemd restart → healthz</span></div></div>
+              <div class="deploy-step"><span class="num">5</span><div><strong>人間検証</strong><span>入口・Map・Menu・台帳・スマホを実操作</span></div></div>
+            </div>
+            <div class="chip-row"><span class="chip ok">rollback = revert</span><span class="chip warn">DB初期化で隠さない</span></div>
+            <div class="command"><button class="copy-btn" data-copy="ssh -i /home/handa/.ssh/dialexis_vps ubuntu@219.94.244.239 /opt/dialexis/deploy/vps_deploy.sh">コピー</button>ssh -i /home/handa/.ssh/dialexis_vps ubuntu@219.94.244.239 /opt/dialexis/deploy/vps_deploy.sh</div>
+          </article>
+        </div>
+        <div class="card" style="padding:1rem; margin-top:.8rem;">
+          <h3>公開面の注意</h3>
+          <p class="muted" style="font-size:.8rem;">公開URLは現在、アカウントなしの共有検証環境です。SQLiteの研究データと台帳は共有面になるため、個人情報・秘密を入力しません。</p>
+          <div class="chip-row"><a class="chip" href="http://219.94.244.239:8000/validation" target="_blank" rel="noreferrer">公開第三者検証入口</a><a class="chip" href="http://219.94.244.239:8000/origin?q=Karl%20Marx&lang=ja" target="_blank" rel="noreferrer">公開意味Map</a><a class="chip" href="https://github.com/hand-shinya/dialexis" target="_blank" rel="noreferrer">GitHub</a></div>
+        </div>
+      </section>
+
+      <section class="section" id="roadmap">
+        <div class="section-head">
+          <div><span class="section-index">07</span><h2>前編・後編と残課題</h2></div>
+          <p>いま完成させるべき核と、構造だけ先に用意して本実装を後ろへ送る領域を切り分ける。</p>
+        </div>
+        <div class="road-tabs" role="tablist">
+          <button class="tab-btn active" data-tab-group="road" data-tab="front-road" type="button">前編：語・翻訳・研究台帳</button>
+          <button class="tab-btn" data-tab-group="road" data-tab="back-road" type="button">後編：長文・本文・整列</button>
+          <button class="tab-btn" data-tab-group="road" data-tab="open-road" type="button">横断的な残課題</button>
+        </div>
+        <div class="road-panel active" id="front-road" data-panel-group="road">
+          <div class="roadmap-grid">
+            <article class="card roadmap-card"><h3>現行の中心</h3><div class="roadmap-list"><div class="roadmap-item"><b>P0</b><span>意味単位の語彙・境界を増やし、文字分解を補助層に保つ。</span></div><div class="roadmap-item"><b>P0</b><span>Menu / Actionの処理中表示と失敗説明を全Actionへ適用する。</span></div><div class="roadmap-item"><b>P1</b><span>原典・版・訳者・標準ロケータを台帳の第一級項目として埋める。</span></div><div class="roadmap-item"><b>P1</b><span>人物・著作・概念・受容者を本文引用と影響関係へ接地する。</span></div></div></article>
+            <article class="card roadmap-card"><h3>前編の受入条件</h3><div class="roadmap-list"><div class="roadmap-item"><b>守る</b><span>候補／証拠／解釈／判断の区別。</span></div><div class="roadmap-item"><b>守る</b><span>台帳とプロジェクトの多対多再利用。</span></div><div class="roadmap-item"><b>守る</b><span>外部源の取得時刻・error・fallback。</span></div><div class="roadmap-item"><b>測る</b><span>人間が「次に何を確認するか」を説明できるか。</span></div></div></article>
+          </div>
+        </div>
+        <div class="road-panel" id="back-road" data-panel-group="road">
+          <div class="roadmap-grid">
+            <article class="card roadmap-card"><h3>長文入口だけ先に設計</h3><p class="muted" style="font-size:.8rem;">入力単位をtermだけに固定せず、将来の文・段落・引用を同じ研究台帳へ接続できる構造にする。</p><div class="db-strip"><span class="db-pill">subject_type = text</span><span class="db-pill">source_text</span><span class="db-pill">anchor_terms[]</span><span class="db-pill">author / work / edition</span><span class="db-pill">locator</span></div></article>
+            <article class="card roadmap-card"><h3>本実装は後編</h3><div class="roadmap-list"><div class="roadmap-item"><b>未実装</b><span>文章からの重要語抽出と前後文脈の構造化。</span></div><div class="roadmap-item"><b>未実装</b><span>原典全文・版比較・用例・翻訳アラインメント。</span></div><div class="roadmap-item"><b>未実装</b><span>論証再構成と、複数語の収束した説明。</span></div><div class="roadmap-item"><b>原則</b><span>自動抽出した語を即座に研究事実へ格上げしない。</span></div></div></article>
+          </div>
+        </div>
+        <div class="road-panel" id="open-road" data-panel-group="road">
+          <div class="roadmap-grid">
+            <article class="card roadmap-card"><h3>情報源と偏り</h3><div class="roadmap-list"><div class="roadmap-item"><b>P2</b><span>TEI / IIIF / PhilPapers、非西洋の中国・インド・イスラーム系情報源。</span></div><div class="roadmap-item"><b>P2</b><span>文化圏・情報源の偏りの測定。</span></div><div class="roadmap-item"><b>P2</b><span>重力代理指標を引用・コーパス・意味関係の出所付き信号へ分解。</span></div></div></article>
+            <article class="card roadmap-card"><h3>公開品質</h3><div class="roadmap-list"><div class="roadmap-item"><b>必要</b><span>ドメイン・HTTPS・HSTS・バックアップ復元検証。</span></div><div class="roadmap-item"><b>必要</b><span>実機ブラウザのタッチ操作と低速回線の人間検証。</span></div><div class="roadmap-item"><b>未検証</b><span>知的好奇心や理解深化の定量的効果。</span></div></div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="inventory">
+        <div class="section-head">
+          <div><span class="section-index">07-A</span><h2>再開時に読むファイル地図</h2></div>
+          <p>このHTMLは入口です。実装・思想・運用の正本へ一クリックで戻れるようにしています。</p>
+        </div>
+        <div class="card inventory">
+          <table>
+            <thead><tr><th>役割</th><th>正本</th><th>読む理由</th></tr></thead>
+            <tbody>
+              <tr><td>憲法</td><td><a href="../GENESIS.md"><code>GENESIS.md</code></a></td><td>七公理、棄却した方向、再構築プロンプト、改版手続。</td></tr>
+              <tr><td>Backend</td><td><a href="../app/main.py"><code>app/main.py</code></a></td><td>ページ、API、外部源のオーケストレーション、台帳・人物契約。</td></tr>
+              <tr><td>DB</td><td><a href="../app/db.py"><code>app/db.py</code></a></td><td>SQLiteスキーマ、台帳・プロジェクトの関係、固定語彙。</td></tr>
+              <tr><td>Frontend</td><td><a href="../app/static/app.js"><code>app/static/app.js</code></a></td><td>Surface Manager、ACTIONS registry、dispatchAction、ViewState。</td></tr>
+              <tr><td>Style</td><td><a href="../app/static/style.css"><code>app/static/style.css</code></a></td><td>Map・Context・Menu・Action・mobile responsiveの表示契約。</td></tr>
+              <tr><td>検証</td><td><a href="../verify.sh"><code>verify.sh</code></a> / <a href="../tests/e2e/"><code>tests/e2e/</code></a></td><td>Python契約、実DOM、実マウス、failure injection、mobile。</td></tr>
+              <tr><td>公開運用</td><td><a href="PUBLIC_RELEASE_PLAN.md"><code>docs/PUBLIC_RELEASE_PLAN.md</code></a> / <a href="../deploy/vps_deploy.sh"><code>deploy/vps_deploy.sh</code></a></td><td>公開前条件、SHA gate、VPS更新、healthz、切戻し。</td></tr>
+              <tr><td>引継ぎ</td><td><code>継続用_Dialexis_現時点包括的プロジェクト引継ぎ_20260819.md</code></td><td>時系列、失敗体験、ユースケース、現在の未検証事項。</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <p><strong>Dialexis Architecture Dashboard</strong> / dashboard generated 2026-08-24 / implementation state verified 2026-08-27 at <code>f7affab8</code>, marker <code>5e94bb77</code>, current HEAD <code>5e94bb77</code>; VPS public activation pending.</p>
+        <p>このHTML自身も撤退可能な文書資産です。外部ライブラリ・CDN・ビルド工程には依存しません。<span class="muted">未検証: この図解が利用者の理解を実際に深める効果。</span></p>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var themeBtn = document.getElementById('themeBtn');
+      var savedTheme = '';
+      try { savedTheme = localStorage.getItem('dialexis-atlas-theme') || ''; } catch (e) {}
+      if (savedTheme === 'night') root.setAttribute('data-theme', 'night');
+      function refreshThemeButton() {
+        if (!themeBtn) return;
+        var night = root.getAttribute('data-theme') === 'night';
+        themeBtn.textContent = night ? '☀' : '☾';
+        themeBtn.setAttribute('aria-label', night ? '明るいテーマへ' : '暗いテーマへ');
+      }
+      refreshThemeButton();
+      if (themeBtn) themeBtn.addEventListener('click', function () {
+        var next = root.getAttribute('data-theme') === 'night' ? 'light' : 'night';
+        root.setAttribute('data-theme', next);
+        try { localStorage.setItem('dialexis-atlas-theme', next); } catch (e) {}
+        refreshThemeButton();
+      });
+      var printBtn = document.getElementById('printBtn');
+      if (printBtn) printBtn.addEventListener('click', function () { window.print(); });
+
+      var navButtons = Array.prototype.slice.call(document.querySelectorAll('[data-scroll]'));
+      navButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          var target = document.getElementById(button.getAttribute('data-scroll'));
+          if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
+      var sections = navButtons.map(function (button) { return document.getElementById(button.getAttribute('data-scroll')); }).filter(Boolean);
+      if ('IntersectionObserver' in window) {
+        var observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting) return;
+            navButtons.forEach(function (button) { button.classList.toggle('active', button.getAttribute('data-scroll') === entry.target.id); });
+          });
+        }, { rootMargin: '-20% 0px -65% 0px', threshold: 0 });
+        sections.forEach(function (section) { observer.observe(section); });
+      }
+
+      var inspectorData = {
+        browser: { title: 'Browser / UI', body: '<p>利用者の操作を、共通Surface Managerと単一Dispatcherへ渡す入口です。</p><ul><li>ビルド工程なし</li><li>Canvas 2Dの意味Map</li><li>LLMキーはsessionStorageのみ</li></ul><span class="tag">app/static/app.js</span>' },
+        fastapi: { title: 'FastAPI', body: '<p>ページとAPI、外部情報源の照会、人物・翻訳受容史・台帳の契約を束ねる境界です。</p><ul><li>失敗を握りつぶさない</li><li>timeout / fallback / queried_at</li><li>空結果でも次Action</li></ul><span class="tag">app/main.py</span>' },
+        connectors: { title: 'Connectors', body: '<p>ライブの無料情報源へ丁寧に接続します。ソースごとの結果とエラーを同じ封筒で返します。</p><ul><li>Wikidata / Wikipedia / SEP</li><li>OpenAlex / Crossref / NDL / CiNii</li><li>cache TTLとUser-Agent</li></ul><span class="tag">app/connectors/</span>' },
+        sqlite: { title: 'SQLite', body: '<p>保存するのは百科事典本体ではなく、研究過程・台帳・来歴・短期キャッシュです。</p><ul><li>projects / nodes / edges</li><li>ledgers / versions / sources</li><li>project↔ledger 多対多</li></ul><span class="tag">app/db.py</span>' },
+        llm: { title: 'LLM adapter', body: '<p>Level 0を壊さず、利用者のBYOキーでLevel 2へ昇格します。キーはサーバーに保存しません。</p><ul><li>GUARDで学説／解釈／思弁を分離</li><li>AI出力はledger + unverified</li><li>Anthropic / OpenAI / Gemini / Ollama</li></ul><span class="tag">app/llm/adapter.py</span>' },
+        harvester: { title: 'Harvester', body: '<p>新着監視の発火点をAIや人間の記憶に置かず、cron / systemd timerへ外部拘束します。</p><ul><li>watchと同じcheck_watch()</li><li>harvester_status.json</li><li>不在・古さ自体を異常扱い</li></ul><span class="tag">app/harvester.py</span>' },
+        export: { title: 'Exit / Export', body: '<p>研究はこのサイトに閉じ込めません。標準形式で別の道具へ持ち出せます。</p><ul><li>Markdown / JSON-LD</li><li>BibTeX / CSL JSON</li><li>AGPL-3.0 / CC-BY-4.0</li></ul><span class="tag">/api/projects/{id}/export.*</span>' }
+      };
+      var inspectorTitle = document.getElementById('inspectorTitle');
+      var inspectorBody = document.getElementById('inspectorBody');
+      function selectArchNode(name) {
+        document.querySelectorAll('.arch-node').forEach(function (node) { node.classList.toggle('active', node.getAttribute('data-node') === name); });
+        var data = inspectorData[name];
+        if (!data) return;
+        inspectorTitle.textContent = data.title;
+        inspectorBody.innerHTML = data.body;
+      }
+      document.querySelectorAll('.arch-node').forEach(function (node) {
+        node.addEventListener('click', function () { selectArchNode(node.getAttribute('data-node')); });
+        node.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectArchNode(node.getAttribute('data-node')); }
+        });
+      });
+
+      function activateTab(group, id) {
+        document.querySelectorAll('[data-tab-group="' + group + '"]').forEach(function (tab) { tab.classList.toggle('active', tab.getAttribute('data-tab') === id); });
+        document.querySelectorAll('[data-panel-group="' + group + '"]').forEach(function (panel) { panel.classList.toggle('active', panel.id === id); });
+      }
+      document.querySelectorAll('[data-tab-group]').forEach(function (tab) {
+        tab.addEventListener('click', function () { activateTab(tab.getAttribute('data-tab-group'), tab.getAttribute('data-tab')); });
+      });
+
+      var flowText = {
+        input: '入力は終点ではありません。語・人物・著作を受け、将来は文・段落・引用をsource_textとして同じ研究過程へ接続します。',
+        resolve: '人物名は人物として、著作はworkとして、概念語はtermとして同定します。Karl Marxを一般語の語源へ落としません。',
+        map: 'Mapは真理の地図ではなく探索レンズです。stable ID、layer、weight、qを持つノードをCanvasへ配置します。',
+        menu: '上部帯・popup・edge・footer・noMiss・本文リンクは、同じAction IDを共通Menuへ渡します。',
+        action: 'dispatchActionがeffect、loading、transaction、rollback、commitを一元管理します。処理中であることを見せます。',
+        outcome: 'successだけでなく、empty・error・fallback・discovery・not_seededを状態として表示します。',
+        continue: 'どの結果も、再試行・出典確認・別の見方・台帳保存・プロジェクト接続のいずれかへ進めます。'
+      };
+      document.querySelectorAll('[data-flow]').forEach(function (step) {
+        step.addEventListener('click', function () {
+          document.querySelectorAll('[data-flow]').forEach(function (other) { other.classList.toggle('active', other === step); });
+          var detail = document.getElementById('flowDetail');
+          if (detail) detail.textContent = flowText[step.getAttribute('data-flow')] || '';
+        });
+      });
+
+      var filter = document.getElementById('filterInput');
+      var filterCount = document.getElementById('filterCount');
+      var filterEmpty = document.getElementById('filterEmpty');
+      var searchItems = Array.prototype.slice.call(document.querySelectorAll('[data-search]'));
+      if (filter) filter.addEventListener('input', function () {
+        var query = filter.value.trim().toLowerCase();
+        var shown = 0;
+        searchItems.forEach(function (item) {
+          var match = !query || (item.getAttribute('data-search') + ' ' + item.textContent).toLowerCase().indexOf(query) >= 0;
+          item.style.display = match ? '' : 'none';
+          if (match) shown += 1;
+        });
+        if (filterCount) filterCount.textContent = query ? shown + '項目' : '全項目';
+        if (filterEmpty) filterEmpty.style.display = shown ? 'none' : 'block';
+      });
+
+      document.querySelectorAll('[data-copy]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          var value = button.getAttribute('data-copy') || '';
+          var done = function () {
+            var old = button.textContent;
+            button.textContent = 'コピー済み';
+            setTimeout(function () { button.textContent = old; }, 1200);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(value).then(done).catch(done);
+          else { window.prompt('以下をコピーしてください', value); }
+        });
+      });
+    }());
+  </script>
+</body>
+</html>
