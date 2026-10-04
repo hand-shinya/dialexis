@@ -10,7 +10,9 @@ of the seven axioms. In particular:
   axiom 7 (exit): full export to Markdown / JSON-LD.
 """
 import asyncio
+import collections
 import copy
+import datetime
 import hashlib
 import hmac
 import json
@@ -2759,6 +2761,60 @@ def _dict_edges(d: dict) -> list:
     return out
 
 
+def _year_of(v) -> int:
+    """CiNiiは "2019-03-01"、OpenAlexは 2021 で来る。先頭4桁を年として読む。"""
+    m = re.match(r"\s*(\d{4})", str(v or ""))
+    y = int(m.group(1)) if m else 0
+    return y if 1800 <= y <= datetime.date.today().year + 1 else 0
+
+
+def modern_tally(cinii_items: list, oa_items: list) -> dict:
+    """現代層の分布。NDLのデジタル化資料は概ね1940年代までで現代が空白になる。
+
+    CiNii（和文）と OpenAlex（国際）を同じ軸に載せ、新しい順に並べる。
+    用例層は古い順、現代層は新しい順。向きを変えて、別の層だと分かるようにする。
+    """
+    dec, people, works = collections.Counter(), collections.Counter(), []
+    unknown = dropped = 0
+    for it in (cinii_items or []):
+        y = _year_of(it.get("year"))
+        names = [n for n in (it.get("creators") or []) if n]
+        if not (it.get("title") or "").strip():
+            dropped += 1
+            continue
+        works.append({"title": (it.get("title") or "").strip(), "year": y,
+                      "people": names[:4], "url": it.get("url") or "",
+                      "source": "CiNii", "note": it.get("publisher") or ""})
+        for n in names:
+            people[n] += 1
+        dec[y // 10 * 10] += 1 if y else 0
+        if not y:
+            unknown += 1
+    for it in (oa_items or []):
+        y = _year_of(it.get("year"))
+        names = [n for n in (it.get("authors") or []) if n]
+        if not (it.get("title") or "").strip():
+            dropped += 1
+            continue
+        works.append({"title": (it.get("title") or "").strip(), "year": y,
+                      "people": names[:4], "url": it.get("url") or "",
+                      "source": "OpenAlex",
+                      "note": ("被引用 " + str(it.get("cited_by_count")))
+                              if it.get("cited_by_count") else ""})
+        for n in names:
+            people[n] += 1
+        dec[y // 10 * 10] += 1 if y else 0
+        if not y:
+            unknown += 1
+    dec.pop(0, None)
+    works.sort(key=lambda w: (-(w["year"] or 0), w["title"]))
+    return {"by_decade": dict(sorted({k: v for k, v in dec.items() if v}.items())),
+            "people": people.most_common(12), "works": works,
+            "unknown_year": unknown, "counted": len(works),
+            "untitled_dropped": dropped,
+            "layer": "現代の研究文献。NDLの全文（概ね1940年代まで）の後を埋める"}
+
+
 @app.get("/api/wordspace")
 async def api_wordspace(q: str, lang: str = "ja", sample: int = 100):
     """1語の関連空間。辞書層の辺と、用例層の分布を別々に返す。
@@ -2768,8 +2824,9 @@ async def api_wordspace(q: str, lang: str = "ja", sample: int = 100):
     """
     if not q.strip():
         raise HTTPException(400, "empty query")
-    d_res, c_res = await asyncio.gather(
+    d_res, c_res, ci_res, oa_res = await asyncio.gather(
         ja_wiktionary.lookup(q), ndl_fulltext.survey(q, sample=sample),
+        cinii.search(q, limit=12), openalex.search_works(q, limit=12),
         return_exceptions=True)
     errors = []
 
@@ -2784,8 +2841,9 @@ async def api_wordspace(q: str, lang: str = "ja", sample: int = 100):
 
     d = _data(d_res, "ja.wiktionary")
     c = _data(c_res, "ndl-fulltext")
+    modern = modern_tally(_data(ci_res, "cinii") or [], _data(oa_res, "openalex") or [])
     return {"query": q, "lang": lang, "queried_at": now(),
-            "dictionary": d, "corpus": c, "edges": _dict_edges(d),
+            "dictionary": d, "corpus": c, "modern": modern, "edges": _dict_edges(d),
             "errors": errors,
             "honesty": "辞書層は一般辞書の関係記述であり哲学術語の定義ではない。"
                        "用例層は全文OCRの標本分布であり全体の分布ではない。",
@@ -2794,7 +2852,11 @@ async def api_wordspace(q: str, lang: str = "ja", sample: int = 100):
                          "evidence": "candidate"},
                         {"id": "ndl-fulltext",
                          "label": "NDL次世代デジタルライブラリー（近代刊行物の全文）",
-                         "url": "https://lab.ndl.go.jp/dl/", "evidence": "primary"}]}
+                         "url": "https://lab.ndl.go.jp/dl/", "evidence": "primary"},
+                        {"id": "cinii", "label": "CiNii Research（和文の研究文献）",
+                         "url": "https://cir.nii.ac.jp/", "evidence": "candidate"},
+                        {"id": "openalex", "label": "OpenAlex（国際の研究文献）",
+                         "url": "https://openalex.org/", "evidence": "candidate"}]}
 
 
 @app.get("/wordspace")

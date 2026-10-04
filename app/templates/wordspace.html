@@ -13,7 +13,8 @@
     上は<b>辞書層</b>です。類義・対義・関連・読みを、既存の辞書から取った関係として
     並べます。どの語もそのまま次の入口になります。下は<b>用例層</b>です。
     その語が、いつ・誰によって・どの分野で使われたかの分布です。
-    辞書層は関係の型を、用例層は事実の分布を与えます。重ねていません。
+    辞書層は関係の型を、用例層は事実の分布を与えます。さらに下は<b>現代層</b>で、
+    1940年代以降から現在までの研究文献です。3つを重ねずに並べています。
   </p>
 
   <div class="ws-form">
@@ -230,6 +231,50 @@
     return h + "</div>";
   }
 
+  function modernSection(mo) {
+    if (!mo || !mo.counted) {
+      return '<div class="ws-sec"><h2>現代層（研究文献）</h2>'
+        + '<p class="why">現代の研究文献に、この語での文献が見つかりませんでした。'
+        + '0件であることと、探し方が足りないことは別です。</p></div>';
+    }
+    var h = '<div class="ws-sec"><h2>現代層（研究文献・新しい順）</h2>'
+      + '<p class="why">全文OCRは著作権の関係で概ね1940年代までです。'
+      + 'その後から現在までを、和文（CiNii）と国際（OpenAlex）の研究文献で埋めます。'
+      + '上の2層とは別の層で、現在この語が誰にどう論じられているかを示します。</p>';
+    if (Object.keys(mo.by_decade || {}).length) {
+      h += '<div class="ws-card"><h3>時代別（10年ごと・' + esc(mo.counted) + ' 件中）</h3>'
+        + bars(mo.by_decade, function (k) { return k + "s"; }) + "</div>";
+    }
+    if ((mo.people || []).length) {
+      h += '<div class="ws-card"><h3>誰の名で出ているか（著者・団体）</h3>'
+        + '<p class="why">団体名も含みます。表記は出所のままです。</p><div class="ws-pills">'
+        + mo.people.slice(0, 10).map(function (p) {
+            return '<button type="button" class="ws-pill" data-term="' + esc(p[0])
+              + '">' + esc(p[0]) + '<span class="sn">' + p[1] + "</span></button>";
+          }).join("")
+        + "</div></div>";
+    }
+    h += '<div class="ws-card"><h3>どの文脈で論じられているか</h3><ul class="ws-works">'
+      + mo.works.slice(0, 14).map(function (w) {
+          return "<li><span class=\"yr\">" + (w.year || "年不明") + "</span>"
+            + (w.url ? '<a class="ext-link" href="' + esc(w.url)
+                + '" target="_blank" rel="noopener">' + esc(w.title) + "</a>"
+                : esc(w.title))
+            + ' <span class="muted">' + esc(w.source)
+            + ((w.people || []).length ? "／" + esc(w.people.join("・")) : "")
+            + (w.note ? "／" + esc(w.note) : "") + "</span></li>";
+        }).join("")
+      + "</ul></div>";
+    if (mo.unknown_year) {
+      h += '<p class="why">年の記録が無い文献が ' + esc(mo.unknown_year) + " 件あります。</p>";
+    }
+    if (mo.untitled_dropped) {
+      h += '<p class="why">書名が空の記録を ' + esc(mo.untitled_dropped)
+        + " 件除きました。出所側の欠落です。</p>";
+    }
+    return h + "</div>";
+  }
+
   var TRAIL = [];
   function renderTrail() {
     var t = el("ws-trail");
@@ -246,6 +291,7 @@
     el("ws-out").innerHTML =
       dictSection(d.dictionary, d.edges || [])
       + corpusSection(d.corpus)
+      + modernSection(d.modern)
       + '<div class="ws-meta"><p>取得時刻 ' + esc(d.queried_at || "") + "</p><ul>"
       + "<li>" + esc(d.honesty || "") + "</li>"
       + ((d.errors || []).length
