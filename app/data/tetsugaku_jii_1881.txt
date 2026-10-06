@@ -1,0 +1,2226 @@
+﻿哲学字彙
+
+----------------------------------------------------------------------------------
+凡例
+1.本文の行移りは原本にしたがった。
+2.頁移りは、その頁の冒頭において、頁数を括弧書きで示した。
+3.漢字は常用漢字新字体によることを原則とした。
+4.傍記・振り仮名は｛　｝で囲んで表現した。　〔例〕弗列冥｛フレミング｝
+5.字下げのある見出し語は、冒頭に＿を付した。
+6.斜体の見出し語は、語末に＊を付した。
+7.割注・角書は［　］で囲んで示した。
+8.原本の行末の読点（、）は省略した。
+9.原本の正誤表による訂正のある項目には＋を付した。
+10.「仝上」とあるものは、該当する語句を〔　〕を添えて補った。
+11.訓読記号（レ点・一二点など）は省略した。
+12.誤植と判断し訂正した箇所は、行末に「＠」を付して注記を加えた。なお、訂正の際に、飛田良文編『哲学字彙訳語総索引（笠間索引叢刊72）』（笠間書院、1979年）を参考にした。
+
+本文の修正
+1.翻字本文を修正した場合には、修正履歴を末尾に示す。
+----------------------------------------------------------------------------------
+
+
+（緒言）
+緒言
+一此書拠英人弗列冥｛フレミング｝氏哲学字典而起
+稿、然該書不多載近世之字、因与文学
+士和田垣謙三、文学士国府寺新作、幷
+有賀長雄等、徧捜索諸書、所増加甚多
+一先輩之訳字中妥当者、尽採而収之、其
+他新下訳字者、佩文韻府淵鑑類函五
+車韻瑞等之外、博参考儒仏諸書而定、
+今不尽引証独其意義艱深者、攙入註
+脚、以便童蒙
+一字義往々従学科而異故附括弧以分
+別、一目瞭然易会者、及哲学之外不用
+者、幷不附括弧其例如左
+（倫）倫理学　（心）心理学
+（論）論法　（世）世態学
+（生）生物学　（数）数学
+（物）物理学　（財）理財学
+（宗）宗教　（法）法理学
+（政）政理学
+明治十四年四月　文学士井上哲次郎識
+
+（１）
+A
+Dictionary of Philosophy.
+A
+Abduction　不明推測式（論）
+Ability　力量
+Abnegation　拒絶
+Abscissio-infiniti＊　殺減法（論）
+Absolute　絶対［按、絶対孤立自得之義、対又作待、義同、絶待之字、出于法華玄義］、純全、専制（政）
+＿Absolute right　純権
+Absolutism　専制政治
+Abstract　抽象、虚形、形而上［按、易繋辞、形而上者謂之道］
+Abstraction　抽象力、虚凝（心）
+Absurd　虚妄、荒唐
+Accident　奇遇、機運、変故、偶有性（論）
+
+（２）
+＿Inseparable accident　不可離偶有性
+＿Separable accident　可離偶有性
+Acosmism　無宇宙論［按、不信宇宙之存在者、古来不為少、瘳燕曰、有我而後有天地、無我而亦無天地也、天地附我以見也］
+Acquisition　得識
+Act　発動、决議書（政）
+＿Immanent act　隠伏発動
+＿Other-regarding act　主他発動
+＿Self-regarding act　主我発動
+＿Transient act　経過発動
+Action　行為、作用（心）
+＿Emotional action　情動作用
+＿Excito-motor action　激動作用
+＿Idio-motor action　念動作用
+＿Reflex action　反動作用
+＿Sensori-motor action　感動作用
+Activity　活動、軽快
+Actuality　現実
+Acumen　鋭利
+Acute　怜悧、頴悟、聰敏、佻巧
+
+（３）
+Adage　箴言
+Adaptation　順応（生）
+Adequate　適当、十全
+Adjustment　修整、調停（生）
+Administration　管理（政）、内政
+Admiration　欽仰、瞻望、賞歎
+Admonition　説諭、警責、儆戒
+Adoration　崇奉、尊敬
+Adulation　奉承、諂諛、佞媚
+Advancement　進歩、前行
+Advantage　利益
+Advice　勧解、忠告、啓迪、教誨
+Aesthetics　美妙学
+Aetiology　推原学
+Affectation　虚飾
+Affection　感染、情欵
+Affinity　異性婚姻（世）
+Affirmation　許可、肯定、然諾
+Affirmative　説正的、正面的
+Afflux　朝宗［按、書禹貢、江漢朝宗干海］
+Agamogenesis　自然産生（生）
+Age　時代、年代
+
+（４）
+＿Bronge age　青銅器時代
+＿Iron age　鉄噐時代
+＿Prehistoric age　先史時代
+＿Stone age　石器時代
+Agent　作因、代理（法）
+Aggregate　集合、叢会
+Agitation　感動、擾乱、激発
+Agnoiology　限知学
+Agnosticism　不可思議論［按、苟究理、則天地万象、皆不可思議、此所以近世不可思議論之大興也］
+Agreement　契合、同意、投合、協和、一致
+Agriculture　農業
+Air　風格、光範、品藻
+Alcoholism　中酒狂
+Allegory　比方
+Alliance　同盟（法）
+All-pervading　遍達
+Almighty　全能
+Altruism　愛他心、利他主義
+Ambiguity　汎意
+
+（５）
+Ambiguous　曖昧、糊塗、滑疑［按、荘子斉物論、滑凝之耀、聖人之所図也、口義、滑凝言不分不暁也］
+Ambition　大望、驕誇、功名心
+Amount　総計
+Amphibology　汎意
+Amphigony　産殖（生）
+Ampliative　拡充的
+Analects　語録
+Analogism　推論（論）
+Analogue　異体同功（生）、異物同名（論）
+Analogy　比論、酌例
+Analysis　分解法
+Anatomy　解剖学
+Anchoret　隠士、仙人
+Angel　天使
+Angelogy　天使論
+Animism　霊魂論
+Annihilation　絶滅、成空、帰無
+Anorgana　無気体
+Anorganology　無気体論
+Anschauung＊　直覚力
+
+（６）
+Antagonism　抵抗、反対論
+Antecedent　前項（論）、前率（数）
+Anthropogeny　人類成来論
+Anthropology　人類学
+Anthropomorphism　神人同形説
+Anticipation　予料力
+Antinomianism　二律背反論
+Antinomy　二律背反
+Antipathy　反情
+Antithesis　対句
+Antitype　対範
+Anxiety　憂慮、焦思、煩悶、渇望
+Apagoge　証明法（論）
+Apathy　無情
+Aphorism　金言
+Apodeictic　分明
+Apology　講和（宗）
+Apophthegm　格言
+Apostate　背教者（宗）
+Apparition　浮幻、妖恠
+Appearance　外見、容観
+Apperception　自覚
+
+（７）
+Application　応用
+Appointment　補任（政）
+Apprehension　領会
+Approbation　褒揚、讚美
+A priori＊　先天［按、易乾、先天而天弗違、後天而奉天時、天旦弗違］
+A posteriori＊　後天［仝上〔按、易乾、先天而天弗違、後天而奉天時、天旦弗違〕］
+Archaeus　体形、護命気
+Archelogy　原理学
+Archeology　古物学
+Archetype　模範、表様、儀型
+Archigony　自然発生
+Architectonick　精巧（宗）
+Aretology　達徳論［按、中庸、智仁勇三者、天下之達徳也、注謂之達徳者、天下古今所同得之理也］
+Argument　弁論
+Argumentation　立論
+Arianism　亜里亜尼教
+Aristocracy　貴族政治
+Aristotelianism　亜里斯度徳学派
+Arrangement　布置、排列
+Art　術、技芸、伎倆
+
+（８）
+Article　款条、品物
+Asceticism　厳粛教
+Aspect　容貌、形状、光景
+Assent　聴従
+Assertion　確言、実説
+Assignat　銀票（財）
+Assimilation　同化（生）
+Association　聯合（心）、投合（世）
+＿Association of ideas　観念聯合
+Assumption　仮設、包摂（論）
+Astonishment　愕眙、驚駭
+Astronomy　星学
+Asymmetry　不均斉体（生）
+Atavism　間歇遺伝（生）
+Atheism　不信神教
+Atom　微分子（物）
+Atomism　分子論
+Attainment　上達、手練、造詣
+Attension　注意
+Attraction　引力（物）
+Attribute　属性、絶対属性（論）
+Attribution　属性類聚（論）
+
+（９）
+Aufklä:rung＊　文華
+Authority　教権、憑拠
+Autocracy　独裁政治
+Automaton　自動子
+Automatism　自動論
+Autonomy　道理総統、自主政権（政）
+Autotheism　真神自存説
+Avarice　貪欲、吝嗇
+Avatar　化身（宗）
+Avenge　復讎
+Aversion　厭棄、嫌悪
+Axiom　単元（数）
+B
+Bad　悪、不善、凶邪
+Balance　衡平
+Baptism　洗礼（宗）
+Barter　換易（財）
+Beautiful　華美、富麗
+
+（１０）
+Becoming　転化［按、淮南原道、転化推移得一之道以少正多］
+Begriff＊　概念
+Beginning　元始、太初［按、列子天瑞、有太易、有太初、有太始、有太素、太易者未見気也、太初者気之始也、太始者形之始也、太素者質之始也］
+Behaviour　舉動、容止、品行、態度
+Being　実在、現体
+＿Absolute being　純全実在
+＿Rational being　霊心生類
+＿Sentient being　有情物
+Belief　信、信仰、憑信
+Beneficence　功徳、善行、恩沢
+Benevolence　仁愛、慈恵
+Bias　偏執
+Bible　経典
+Bigamy　一夫両妻（世）
+Bigotry　固執（宗）
+Biogeny　有機体論
+Biology　生物学
+Blasphemy　謗訕、冐黷（宗）
+Blastema　元体質（生）
+
+（１１）
+Blastogeny　人体啓発論
+Blastophyly　人体化醇論
+Body　身、身体
+Botany　本草学
+Brahma　梵天王
+Brahminism　婆羅門教
+Brain　脳髄
+Brassage　造幣料（財）
+Brocard＋　訓詁
+Buddhism　仏教
+Bullion　元貨（財）
+Bureaucracy　一統政治
+C
+Caenesthesis　普有感覚
+Calvinism　加爾維尼教
+Candidate　候補（政）
+Canon　理法、律例
+Capacity　才量
+Capital　資本（財）
+
+（１２）
+＿Circulating capital　融通資本
+＿Fixed capital　固定資本
+Cartesianism　加爾多教派
+Case　時例、情景、形勢
+Cassation　覆案（法）
+＿Court of cassation　覆案院
+Casual　不図、偶然
+Casuistry　决疑論（論）
+Catalepsy　無物論
+Catallactics　貿易論
+Catastrophe　災害
+Categorematic　自用的（論）
+Categorical　合式的
+Categorical imperative　無上大法
+Category　範疇［按、書洪範、天乃錫禹洪範九疇、範法也、疇類也］
+Catholicism　加特力教
+Cause　原因、縁故、元由、本源
+＿Concomitant cause　副従原因
+＿Efficient cause　期成原因
+＿Final cause　結局原因
+＿First cause　端緒原因
+＿Material cause　材料原因
+
+（１３）
+＿Occasional cause　不定原因
+＿Proximate cause　近因、親近原因
+＿Remote cause　遠因、遙遠原因
+＿Ultimate cause　究竟原因
+Causality　原由、原做力
+Causation　仝上〔原由、原做力〕
+Cell　細包
+Censure　誚譲、譴責、批難、警戒
+Cerebellum　小脳
+Cerebration　起想力
+Cerebrum　大脳
+Ceremony　礼典、儀式
+Certainty　的実、切当、定知、理証
+＿Immediate certainty　直接理証
+＿Mediate certainty　間接理証
+＿Metaphysical certainty　無形理証
+＿Moral certainty　通常理証
+＿Physical certainty　有形理証
+Chagrin　心痛、煩悶、懊悩、鬱陶
+Chance　奇遇、希倖、機運
+Change　変更、万化［按、陰符経、宇宙在乎手、万化生乎身、又荘子大宗師、若人之形者、万化而未始有極也］
+
+（１４）
+Chaos　渾沌、溟涬、鴻荒
+Character　品格、性質、行状
+Characteristic　特質
+Chastity　貞節
+Cheirocracy　舉手政治
+Chemistry　化学
+Choice　撰択
+Chrematistics　貨殖論
+Christianity　基督教
+Circulation　融通（財）
+Circulus in definiendo＊　循環定義（論）
+Circulus in probando＊＋　循環証拠（論）
+Circumstance　境遇
+Civility　礼貌、撙節
+Civilization　開化
+Class　部
+Classification　彙類法
+Clear　著見、明白、瞭然
+Clever　鋭敏、伶俐、聰明
+Coercion　抑制、強圧、催逼、管束
+Coexistence　倶有［按、倶有之字、出干倶舎論、又唐杜甫詩、向窃窺数公、経綸亦倶有、又用共存之字可］
+
+（１５）
+Cogitation　思想力
+Cognition　認識
+＿Adequate cognition　十全認識
+＿Distinct cognition　明晣認識
+＿Clear cognition　著見認識
+＿Confused cognition　不明晣認識
+＿Inadequate cognition　不十全認識
+＿Notative cognition　諦悉認識
+＿Obscure cognition　蒙蔽認識
+＿Symbolical cognition　表号認識
+Coincidence　暗合
+Colligation　合簇、総釈法（論）
+＿Colligation of facts　事実合簇＋
+Coma　昏睡
+Combination　結合
+＿Combination of ideas　観念結合
+Comity　揖譲
+Commodity　品物（財）
+Common　普有、平凡、尋常、普通
+Common sense　常識
+Communism　共産論
+Community　社会、普有性（生）
+
+（１６）
+Compact　約定（法）
+Comparison　比較
+Compassion　憐情、矜恤、憫惻、慈悲
+Compatible　適合
+Competition　争賽（財）
+Compendium　要略、綱領
+Complete　完全
+Complex　錯繆［按、淮南原道、錯繆、相紛、而不可靡散］、繁雑
+Composition　混合、闔釈法（論）
+Comprehension　会得、貫通、包裹
+Compressibility　縮性（物）
+Compunction　懊悩、悔恨、悲歎
+Comtianism　坤度学派
+Concatenation　連続
+Conceit　傲慢、抱負、矜誇
+Concentration　凝聚（心）［按、伝習録、久則自然心中凝聚］
+＿Concentration of mind　心意凝聚
+Concept　概念
+Conception　概念力
+＿Complex conception　錯繆概念
+＿Heuristic conception　幽隠概念
+
+（１７）
+＿Ostensive conception　明顕概念
+＿Positive conception　確実概念
+＿Privative conception　折服概念
+＿Relative conception　相対概念
+Conceptualism　概念論
+Conclusion　断言、帰結、結末、機緘
+＿Irrelevant conclusion　不法断言
+＿Weakened conclusion　微弱断言
+Concrete　具体、実形、形而下［按、易繋辞、形而下者、謂之器］
+Condignity　妥貼、適合
+Condition　状態、情状、形勢、光景、状勢、体裁、模様、約条（法）、章程（政）
+Conditional　設若
+Conduct　行状、挙止、品藻
+Confederation　聯邦主義
+Confidence　信任
+Conflux　会同［按、書禹貢、四海会同］
+Confucianism　孔教
+Confused　不明晣
+Conjunctive　合接的（論）
+
+（１８）
+Connection　連絡
+Connotation　含蓄（論）
+Consanguinity　同姓婚姻（世）
+Conscience　道念、良心
+Consciousness　意識
+Consent　允許（法）
+＿Express consent　明許
+＿Tacit consent　黙許
+Consequence　干係、後件、余波、影響
+Consequent　後項（論）、後率（数）
+Conservation　保存
+＿Conservation of energy　勢力保存
+Conservatism　因循論
+Consideration　工夫、料度、商量
+Consilience　符合
+Consistence　整合
+Consolation　慰籍、撫恤、勧解
+Constituent　成分（生）
+Constitution　憲法（政）
+Construction　造構
+Consumption　消耗（財）
+Contempt　軽侮、凌辱
+
+（１９）
+Contiguity　附近
+Continence　節操
+Contingent　偶然、不虞
+Contract　契約（法）
+Contradiction　乖角、背戻、矛盾、背馳、忤逆、枘鑿、反言対（論）
+Contradictory　真反対（論）
+Contradistinction　相反
+Contraposition　対位
+Contraries　実反対（論）
+Contrariety　背反
+Control　抑制、拘束
+Contumely　凌辱、軽蔑
+Convention　公会（法）
+Converse　換体断定（論）
+Conversion　転換（論）、改宗（宗）
+＿Simple Conversion　単転換
+＿Accidental conversion　偶転換
+Convertend　可転断定（論）
+Convertible　兌換（財）
+Convolution　廻転部（生）
+Cooperation　協合（世）
+
+（２０）
+Copula　連辞（論）
+Cosmogeny　社会啓発論
+Cosmophyly　社会化醇論
+Corollary　系論（数）
+Corporeal　有体
+Correlation　対立
+Correspondence　対合、相通
+Cosmism　宇宙論
+Cosmogony　世界開闢論
+Cosmography　世界現状記
+Cosmology　世界形質論
+Cosmopolitanism　世界一家説
+Cosmos　世界
+Cost　費用
+Craniology　頭蓋論
+Cranioscopy　仝上〔頭蓋論〕
+Creation　創造
+＿Special creation　特別創造
+Creator　造物主
+Creature　万有、動物
+Credit　信約
+Credulity　軽信
+
+（２１）
+Crisis　到頭、極処、危迫
+Criterion　標準
+Criticism　批評
+Culture　修練
+＿Philosophical culture　哲学修練
+＿Scientific culture　科学修練
+Currency　通貨（財）
+Custom　風俗、習慣、関税（財）
+Cynicism　犬儒教
+D
+Daemonism　邪神教
+Damage　損害（法）
+Darwinism　達維尼学派
+Data　下題
+Death　死亡、物故、終焉
+Debasement　降辱、枢低（財）
+Debt　負債（財）
+Decay　凋衰、腐敗、枯槁、零落
+
+（２２）
+Decentralization　地方分権（政）
+Decision　果决、批判
+Decline　萎薾、衰微、凋落、傾倒、荒墜
+Decomposition　溶解（生）
+Deduction　演繹法（論）［按、中庸序、更互演繹、作為此書］
+Defective　未完
+Definite　確定
+Definition　定義
+＿Accidental definition　偶有定義
+＿Nominal definition　名目定義
+Degradation　陸沈、降絀、淪胥、陵夷
+Degree　度位
+Deism　自然神教［按、自然神教、与信神教差異、信神教、拠経典而説理外之理、自然神教、唯信天地之流行、而不信天啓］
+Deliberation　思慮、商量、計較、参酌
+Delight　歓喜
+Delirium　譫語
+Delusion　妄念
+Demagogy　首領政治
+
+（２３）
+Demand　要求、需用（財）
+Demeanor　行為、態度、容止、風格
+Dementia　健忘
+Demiurge　造物主
+Democracy　民政
+Demon　邪神、魔鬼
+Demonstration　指斥、顕示、詮表
+Demoralization　頽綱、敗壊
+Denationalization　除籍（法）
+Denomination　称呼
+Denotation　旨趣（論）
+Deontology　達道論［按、達道之字、出于中庸注、達道者、天下古今所共由之路］
+Dependence　依従、附庸（政）
+Depreciation　下落（財）
+Derangement　錯乱（心）
+Derision　姍笑、愚弄
+Derivation　派生、旁出、来由
+Descent　降来、成来（生）
+＿Descent of man　人類成来
+Description　描写、平叙
+Design　意匠
+
+（２４）
+Despair　失望
+Despondency　落拓、失心、絶望
+Destiny　命数
+Determinant　限定文字（論）
+Determination　决意、限立
+Determinism　定道論
+Development　啓発（生）
+Dialectic　敏弁法（論）
+Dialogue　問答
+Dianoiology　弁証学
+Dianoitic　弁証的
+Dichotomy　両断法（論）
+Diction　説話
+Dictum　定言
+Didactics　教授法
+Difference　差違、支吾、逕庭、齟齬、異点、特異性（論）
+Differentiation　分化（生）
+＿Morphological differentiation　体形分化
+＿Physiological differentiation　体用分化
+
+（２５）
+Difficult　困難、佶倔、艱深、晦渋
+Difficulty　艱難、阻礙、苦楚、辛酸、葛藤
+Diffusion　蔓衍
+＿Low of diffusion　蔓衍法
+Definitum　被釈語（倫）
+Dignity　品位、威儀
+Dilemma　二重体
+Ding en sich＊　実体
+Diplomacy　使節、公使（法）
+Direction　指向
+Diremption　破裂
+Disadvantage　損害
+Disappointment　悵望
+Disbelief　不信
+Discipline　修行
+＿Philosophical discipline　哲学修行
+Discount　減准（財）
+Discouragement　落胆、喪心
+Discourse　弁証
+Discovery　発見、査出
+Discredit　不信、面折
+
+（２６）
+Discretion　謹慎、恭敬、裁量
+Discrimination　弁別力
+Discursive　弁証的
+Discussion　議論
+Disgrace　玷辱、失体
+Dishonor　耻辱、羞愧
+Disintegration　分解（生）
+Disjunctive　離接的（論）
+Disobedience　不順、乖戻、違背
+Disorder　混淆、不法、擾乱、狼藉
+Dispraise　誹謗、非笑
+Disposition　気禀、性癖
+Dissimilarity　不同
+Dissolution　溶化（生）
+Dissuation　諫止
+Distinct　明晣、井然
+Distinction　区別
+Distribution　散布、分配（世）、広衍（論）
+Distrust　疑念、不信
+Ditheism　両神教
+Diverse　陸離、参差、交錯
+Diversity　雑駁
+
+（２７）
+Divisibility　分性（物）
+Division　区分、分釈法（論）
+＿Cross division　縦横分釈法
+＿Exhaustive division　尽悉分釈法
+＿Logical division　論体分釈法
+＿Metaphysical division　無形分釈法
+Divorce　離縁（論）
+Docetism　度設得教 [按、督基教之一派]
+Doctrine　教
+Dogma　独断
+Dogmatism　独断教
+Domestication　養馴
+Doubt　疑念、不信
+Dream　夢
+Dualism　二元論
+Duty　本分、義務
+Dynamics　動勢論（世）、動学（物）
+Dynamism　物力論
+
+（２８）
+E
+Ebionitism　以彼阿尼教［按、基督教之一派］
+Eccentricity　偏僻
+Eclecticism　折衷学派
+Economics　家政、理財学
+Ecstasy　消魂、奪魄、大悦
+Ectype　模型、儀範
+Education　教育
+＿Physical education　身体練習
+＿Systematic education　定法教育
+Effect　結果、応報、効験、果報
+Efficiency　功能、霊験、実効
+Efflux　流出
+Effort　努力、黽勉、拮据、皷励
+Ego　我、自己
+Egoism　主我学派、自利主義
+Egotism　自愛心
+Egoistic altruism　兼愛主義［按、墨子兼愛、欲天下之治、而悪其乱、当兼相愛交相利、此聖王之法、天下之治道也］
+Elect　選民（宗）
+Election　掄撰、選挙（政）、撰択力（心）
+
+（２９）
+Electricity　電気（物）
+Electro-biology　感電生機論
+Element　元素（物）
+Elementology　大本論
+Elenchus　非難法（論）
+Elicit　証明
+Elimination　殺減法（数）
+Eloquence　能弁、口才
+Emanation　分出
+Emancipation　解脱［按、名義集、縦住無礙、塵累不能拘、解脱也］
+Embarrassment　窘迫、困却
+Embryology　胎孕学
+Emotion　情緒
+Empiricism　経験論、経練学
+Emulation　争先
+Encouragement　皷舞、奨励、慫慂
+End　目的、方向、結末
+＿Proximate end　親近目的
+＿Ultimate end　究竟目的
+Endogamy　同族婚姻（世）
+Endowment　資質、禀賦
+Energy　勢力、元気
+
+（３０）
+Enmity　不和、遺恨、確執
+Ennui　困倦、誒詒
+Entelechy　円極
+Enthusiasm　熱心、炎情
+Enthymeme　散乱推測式（論）
+Entity　実体
+Enunciation　演述、講説
+Environment　環象（生）
+Envy　猜忌
+Epicheirema　牽強推測式（論）
+Epicurianism　以彼古羅学派
+Epigenesis　新生論
+Epilepsy　癲癇
+Epistemology　致知学
+Episyllogism　歇前推測式（論）
+Equality　平等
+Equanimity　沈着、清静
+Equilibration　平称力
+＿Direct Equilibration　直接平称
+＿Indirect Equilibration　間接平称
+Equilibrium　平称
+＿Stable equilibrium　安定平称
+
+（３１）
+＿Unstable equilibrium　不安定平称
+Equity　衡平法（法）
+Equivocal　多義
+Equivocation　双関謎語
+Eremite　隠者、逸士
+Error　差錯、過失、謬誤
+Erudite　碩学
+Eschatology　結局論
+Esotericism　秘教
+Essence　元精、心髄、真体、運質（生）
+Eternity　永遠、無始無終
+Ethics　倫理学［按、礼楽記、通于倫理、又近思録、正倫理、篤恩義］
+Ethnology　人種学
+Ethology　品行論
+Eudemonism　主楽教
+Euritic　幽隠
+Evidence　証拠、左券、照憑
+Evil　不善、損害（法）
+＿Derivative evil　派生不善
+＿Evanescent evil　漸消不善
+＿Permanent evil　永存不善
+
+（３２）
+＿Primitive evil　原本不善
+Evolution　化醇［按、易繋辞、天地絪縕、万物化醇、疏、万物変化而精醇也、又淳化之字出于史五帝本紀］、進化、開進
+＿Theory of Evolution　化醇論、進化論
+Examination　考試、査験
+Example　事例、儀範（倫）
+Executive　行法官
+Exemption　除免（法）
+Exchange　交易（財）
+Excitement　感激、聳動、激発、感奮
+Excluded middle　不容間位（論）
+Existence　万有成立［按、現象之外、別有広大無辺不可得而知者、謂之万有成立、成立之字、出于李密陳情表］、存体、存在、生物
+＿Spiritual existence　虚霊
+Exogamy　異族婚姻（世）
+Exorcism　厭勝
+Exotericism　公教
+Expansibility　展性（物）
+Expectant attention　心期（心）
+
+（３３）
+Expediency　便宜法（政）
+Experience　経験、練過
+Experiment　試験法
+Experimentum crucis　精細試験法
+Explanation　解釈、註説
+Explicative　解説的
+Exportation　輸出（財）
+Exposition　叙述
+Expression　文辞、語法、表出、面色
+Extension　延長、広袤、容性（物）、外延（論）
+Externality　外界
+Exterritoriality　治外法権（法）
+Extradition　亡命送還（法）
+Extremist　激論党
+Exultation　喜悦
+F
+Fact　事実
+Factitious　習成
+
+（３４）
+Factor　要素（世）、因数（数）
+＿Derivative factor　派生要素
+＿Original factor　本来要素
+Faculty　能力
+＿Inventive faculty　創造力
+＿Moral faculty　良心
+＿Reasoning faculty　推論力
+Faith　誠信
+Fall　堕落、衰頽、敗壊
+Fallacy　虚偽
+＿Fallacy of accident　偶有虚偽
+＿Logical fallacy　論体虚偽
+＿Material fallacy　資料虚偽
+＿Pure logical fallacy　純粋論体虚偽
+＿Semi-logical fallacy　一半論体虚偽
+Fame　声聞、名誉
+Fanaticism　惑溺（宗）
+Fancy　意象
+Fatalism　宿命論
+Fate　宿命
+Fear　恐怖、畏懼、戦悸
+Feature　容貌、形状
+
+（３５）
+Federalism　聯邦主義（政）
+Feeling　感応
+Fetichism　拝物教
+Feudal system　封建（政）
+Figure　体形、話色、図式（論）
+＿Galenian figure　加連図式
+＿Imperfect figure　不完全図式
+＿Perfect figure　完全図式
+Final　結局、最後
+Finite　有限
+Fitness　允当、妥貼
+Flattery　便侫、諂諛
+Fluctuation　昂低（財）
+Flux　流行
+Force　勢力、元気
+＿Impulsive force　衝動力
+＿Incident force　偶有力
+＿Nerve force　神経力
+＿Persistence of force　勢力保存
+＿Physical force　腕力、物質力
+＿Transformation of force　勢力化成
+
+（３６）
+＿Vital force　活動力
+Form　体形
+Formalism　虚礼
+Fortitude　耐持、亮直
+Foundation　基址、根本
+Fourierism　富氏論
+Freedom　自由
+Free-trade　自由貿易
+Free-will　自由意志
+Friendship　交誼、友道
+Function　作用、官能、函数（数）
+Fund　財本（財）
+Future　未来、前程
+G
+Gamogenesis　合性産生（生）
+General　普通、梗概、一般、大抵
+Generalization　概括
+Generation　時代、産生（生）
+＿Spontaneous generation　生類自生論
+
+（３７）
+Genesis　元始、創世記、産生（生）
+Genius　天性、資質、才能、器量
+Gentile system　氏族割拠（世）
+Gentilism　異教
+Genii　神仙
+Genuine　真正
+Genus　類
+＿Proximate genus　最近類
+＿Summum genus　最上類
+Geology　地質学
+Glory　栄光、名声
+＿Vain glory　虚誉
+Gnosology　知識論
+Gnosticism　諾斯土教［按、基督教之一派、今亡矣］
+Gnome　地祇
+Goal　結局
+God　神、天帝、主宰
+Good　善
+Gospel　福音書
+Government　政治、政府
+＿Constitutional government　立憲政治
+
+（３８）
+＿Despotic government　圧制政治
+＿Patriarchal government　族宗政治
+Grace　恩恵、慈悲、寵愛、厚庥
+Gradation　差等
+Grandeur　宏壮、威儀
+Gratification　喜楽、満意、饜飫
+Gratitude　感謝
+Grave　厳粛、端荘
+Gravitation　重力（物）
+Ground　基址、憑拠、原由、縁故
+Growth　生長、発達
+Gymnosophist　赤脚仙人［按、昔者印度有一種之学派、裸体而漫遊、故時人呼曰赤脚仙人、恐是仏家所謂裸形外道］
+H
+Habeas corpus　保身律（法）
+Habit　気習
+Hallucination　幻想
+Harmony　和合
+＿Pre-established harmony　預定和合
+
+（３９）
+Hartmannism　厚塗曼学派
+Hatred　憎悪、怨恨
+Heart　心胸、衷懐、肺肝
+Heaven　上天、天堂、太虚、彼蒼
+Hedonism　主楽学派
+Hegelism　歇傑爾学派
+Hell　地獄、陰府
+Heredity　形質遺伝（生）、世襲（法）
+Heresy　外道（宗）
+Hermit　逸士
+Heterodox　邪教（宗）、異端、外道
+Heterogeneity　庬雑［按、厖雑也、書周官、不和政厖、厖一作龐］
+Heterogenesis　庬雑発生（生）
+Heuristic　幽隠
+Histogeny　細包啓発論
+Histophyly　細包化醇論
+Hobbism　寉畢学派
+Holiness　霊異、神聖
+Homage　服従、尊敬
+Homogeneity　純一［按、法華経、純一無雑、又朱子語録、純一無偽］
+Homogenesis　純一発生（生）
+
+（４０）
+Homologue　異体同形
+Homonymy　双関謎語
+Homotype　同範
+Honesty　敦厚、実義、正直、質樸、篤信、沕穆、忠誠
+Honor　栄光、名誉、体面
+Hostility　敵対
+Humanity　仁慈、人情
+Humiliation　謙遜、屈従
+Humour　性癖、滑稽、詼諧
+Hylicist　希臘哲学士
+Hylozoism　形神合一論
+Hypnotism　催眠術
+Hypocrite　偽善者
+Hypochondria　依剝昆垤里亜
+Hypostasis　実在
+Hypothesis　臆説、想考、意見、立論
+Hysteria　非斯的里亜
+
+（４１）
+I
+Idea　観念
+Ideal　理想
+＿Ideal world　理想境
+Idealism　唯心論［按、人之於物、止知其形色而已矣、至其実体毫不能窺、故古来有唯心之論、王守仁曰、心即理也、天下又有心外之事心外之理乎］
+Ideation　観念力
+Identity　同一
+＿Personal identity　自己不変
+Ideology　観念学
+Idiocy　痴愚
+Idiosyncrasy　特質
+Idleness　怠惰、踈懶、閑散、安佚
+Idol　偶像
+Idolatry　拝像
+Ignorance　無識、不学、愚昧、顓蒙
+Illation　推講法（論）
+Illumination　文華
+Illusion　幻影
+Imagination　想像力
+
+（４２）
+Imbecility　椎魯
+Imitation　擬似、模倣、蹈襲
+Immanence　含有
+Immaterial　無形
+Immaterialism　唯心論
+Immediate　直接
+Immorality　不正経、不行状
+Immortality　不滅、不朽、不合死
+Immovables　不動産（法）
+Immunity　除免（法）
+Immutability　不動性
+Impartial　公平
+Impatience　短気
+Impeachment　弾劾（法）
+Impenetrability　礙性（物）
+Imperative　大法
+Implanted　天賦
+Import　意義、旨趣
+Important　重大、緊要
+Importation　輸入（財）
+Impotence　虚弱、無能
+Impression　印象
+
+（４３）
+Improvement　修改、進修
+Imprudence　軽卒、粗忽
+Impulse　衝動
+Impurity　汚染、不潔
+Inadequate　不適当、不十全
+Incarnation　降生（宗）
+Inclination　偏向、性癖
+Income　入息（財）
+Incomprehensibility　不可測性
+Inconceivability　不可想性
+Inconsistence　不整合
+Inconvertible　不可転換的（論）、不兌換（財）
+Incorporeal　無体
+Indefinite　不定
+Indemonstrable　不用明証的（論）
+Independence　独立
+Indestructibility　不滅性（物）、無尽性
+Indifference　不偏、無感
+Indifferentism　局外論
+Indiscernibles　不可鑑別的（論）
+Individual　各自、個体
+
+（４４）
+Individualism　自立
+Individuality　孤独
+Individuation　守独、離群、索居
+Induction　帰納法［按、帰還也、納内也、韻書、以佐結字故云帰納、今仮其字而不取其義］
+＿Imperfect induction　不完全帰納法
+＿Perfect induction　完全帰納法
+Industry　工業（財）
+Inequality　不均、不平等
+Inertia　惰性（物）
+In esse＊　実在
+In posse＊　将成
+Inference　推度法（論）
+＿Complex inference　錯繆推度法
+＿Immediate inference　直接推度法
+＿Mediate inference　間接推度法
+＿Simple inference　単純推度法
+Infinite　無限、無辺、無量、無極
+Influence　感化、風動、権威、影響
+Influx　流入
+Ingot　貨錠（財）
+Inherence　固有、附着
+
+（４５）
+Inheritance　相続（法）、形質遺伝（生）
+Innate　本然、天賦
+Innocence　無罪、清浄
+Inquiry　討究
+Insanity　狂癲
+＿Impulsive insanity　衝動狂癲
+Inspection　撿査
+Inspiration　感動
+Instable　不安定
+Instigation　教唆、煽動、鼓舞、慫慂
+Instinct　本能、天性
+Integration　結合（生）
+Intellect　智力
+Intellection　通暁
+Intellectuality　通暁力
+Intelligence　睿智、虚霊［按、伝習録、心之虚霊明覚、即所謂本然之良知也］
+Intension　内包（論）
+Intention　志向
+Interdependence　交互依従
+Interest　興味、利息（財）
+Interference　阻礙、障碍、干渉主義（政）
+
+（４６）
+Internality　内界
+Interpretation　解釈、弁析
+Intricacy　紛乱、混淆、錯雑
+Introduction　破題、小引
+Introspection　内省
+Intuition　直覚力
+Intuitionism　直覚教
+Invention　発明、剏創
+Investigation　究察、稽査、尋繹、鈎深
+Irony　譏誚
+Irregularity　不整全
+Irrelevant　不法
+Issue　発貨（財）
+J
+Jealousy　嫉妬、妬悍、娼嫉
+Judaism　猶太教
+Judgment　断定、裁判（法）
+＿Affirmative judgment　容肯断定
+＿Ampliative judgment　拡充断定
+
+（４７）
+＿Analytic judgment　分解断定
+＿Apodeictical judgment　分明断定
+＿Assertorical judgment　定説断定
+＿Attributive judgment　形容断定
+＿Categorical judgment　合式断定
+＿Disjunctive judgment　離接断定
+＿Explicative judgment　解説断定
+＿Hypothetical judgment　約結断定
+＿Indefinite judgment　不定断定
+＿Negative judgment　拒否断定
+＿Particular judgment　特称断定
+＿Problematical judgment　未決断定
+＿Singular judgment　単称断定
+＿Substitutive judgment　換充断定
+＿Synthetic judgment　総合断定
+＿Tautologous judgment　重複断定
+＿Universal judgment　全称断定
+Jurisdiction　管轄、権域
+Jurisprudence　法理学
+Jury　陪審官（法）
+Justice　正義
+
+（４８）
+K
+Kabala　秘伝学（宗）
+Kantism　韓図学派
+Kin　眷属
+Kingdom　王国
+＿Animal kingdom　動物界
+＿Mineral kingdom　鉱物界
+＿Vegitable kingdom　植物界
+Knowable　可知的
+Knowledge　知識、学植
+＿Absolute knowledge　純全智識
+＿Abstractive knowledge　抽象智識
+＿Adequate knowledge　十全智識
+＿Clear knowledge　著見智識
+＿Concrete knowledge　具体智識
+＿Confused knowledge　不明晣智識
+＿Distinct knowledge　明晣智識
+＿Immediate knowledge　直接智識
+＿Inadequate knowledge　不十全智識
+＿Intuitive knowledge　直覚智識
+＿Mediate knowledge　間接智識
+
+（４９）
+＿Obscure knowledge　蒙蔽智識
+＿Perfect knowledge　完全智識
+＿Presentative knowledge　表現智識
+＿Remote knowledge　遙遠智識
+＿Representative knowledge　再現智識
+L
+Labor　工作（財）
+＿Combination of labor　合業法
+＿Division of labor　分業法
+Lamarckism　剌麻屈学派
+Lamentation　悲歎、痛哭
+Language　言語
+Laughter　笑、嘻笑
+Law　法、法律、規制、条例、理法、格率
+＿Civil law　民法
+＿Common law　慣用法
+＿Criminal law　刑法
+
+（５０）
+＿Ecclesiastical law　教会律令
+＿Emperical law　経練律（論）
+＿Ex post facto law　後擬法
+＿International law　万国公法
+＿Law of criminal procedure　治罪法
+＿Maritime law　海上法
+＿Martial law　軍律
+＿Mental law　心理法
+＿Moral law　倫理法
+＿Municipal law　国法
+＿Natural law　性法、万有法
+＿Physical law　物理法
+＿Political law　政法
+＿Statute law　制定法
+＿Universal law　一統律
+Lawism　牢氏論
+Leader　倡首、率先、嚆矢、先鞭
+＿Leader of philosophical thought　哲学倡首
+Learning　学問
+Legation　公使館（法）
+
+（５１）
+Legislative　立法官（政）
+Lemma　義例（数）
+Lethargy　昏睡病
+Libel　讒謗、誣陥、詆訾、冤枉
+Libertarianism　自由意志論
+Libertinism　放肆
+Liberty　自由
+Lie　詐偽、虚誕、荒唐、仮話
+Life　生命
+Limit　制限、界限、辺際、限度、端倪
+Literature　文学
+Locomotion　移動
+Logic　論法
+＿Formal logic　正式論法
+＿General logic　通式論法
+＿Polar logic　三断論法
+Logomachy　口論、舌戦
+Love　愛情
+Loyalty　忠義
+Lutherism　路惕教
+Luxury　奢侈、放佚
+
+（５２）
+M
+Macrocosm　大世界
+Magianism　邁実教［按、邁実教、行于波斯国］
+Magic　妖術、魔法
+Magnanimity　豁達、豪爽、大度
+Magnetism　鑷気（物）
+Magnificence　華麗、荘厳
+Magnitude　広大（数）
+Majesty　威儀
+Majority　多数、大半
+Mahayana＊　摩訶衍［按、起信論、摩訶衍者、総説有二種、一者法、二者義、所言法者、謂衆生心是、心則摂一切世間出世間法、依於此心、顕示摩訶衍義］
+Malevolence　悪意
+Malignity　怨恨
+Man　人
+Management　処弁、料理
+Mania　狂癲
+Manicheism　麻尼西教
+Manifestation　表像
+
+（５３）
+Manifold　多様
+Mankind　人類
+Manner　態度、儀容
+Marriage　婚姻（世）
+Mass　質量（物）
+Material　材料、有体
+Materialism　唯物論［按、物一而已、以其流行而言、謂之気、以其、凝聚而言、謂之体、以其妙用而言、謂之心、以其変化而言謂之光、謂之熱、謂之鑷、謂之電、其他凡在覆載間者、無一不自物而生、此唯物論所以縁起也］
+Mathematics　数学
+Matter　物、物質
+Maxim　格言
+Meaning　義理、旨趣
+Means　方便、法子、津梁、筌蹄、階梯、手段
+Mechanics　重学
+Mechanism　機制
+Mediate　間接
+Meditation　沈思、冥想
+Medium　媒介、中名辞（論）
+
+（５４）
+Melancholy　鬱憂
+Member　肢体、会員（政）
+Memory　記臆
+Mental philosophy　心理学
+Mental science＋　仝上〔心理学〕
+Merit　勲労、功績
+Mesmerism　伝気術
+Metagenesis　異様産生（生）
+Metamorphosis　変体
+Metaphor　比喩
+Metaphysics　形而上学［按、易繋辞、形而上者、謂之道、形而下者、謂之器］
+Metempsychosis　輪廻［按、円覚経、始終生滅、前後有無、聚散起止、念々相続、循環往復、種々取舎、皆是輪廻］＠原本本行では「輪迥」とあるが「輪廻」に改めた。
+Method　方法
+＿Deductive method　演繹法
+＿Inductive method　帰納法
+Methodism　守法教
+Methodology　方法論
+Metonymy　易名
+Microcosm　小世界
+
+（５５）
+Mind　心、心意
+Mineralogy　鉱物学
+Ministry　執政（政）
+Minority　寡数
+Minute　精微、委瑣
+Miracle　霊恠、神跡
+Misery　苦難、禍患、不運
+Misfortune　災眚
+Misuse　誤用
+Mnemonics　助記法
+Modality　程度、様式
+Mode　方法、作法、容儀
+Modification　変化、化裁［按、易繋辞、化而裁之、謂之変］
+Modus　法式
+＿Modus operandi　運用法
+＿Modus ponens　用式
+＿Modus tollens　廃式
+Mohammedanism　回回教
+Molecule　細分子（物）
+Momentum　動力（物）
+Monad　元子
+Monadology　元子論
+
+（５６）
+Monarchy　君政
+＿Absolute monarchy　君主専治
+＿Constitutional monarchy　君民共治
+Monism　一元論
+Monogamy　一夫一妻（世）
+Monomania　偏狂
+Monopoly　専売（財）
+Monotheism　唯一神教
+Monotony　純音
+Mood　様式
+Morality　行状、道義
+Moral philosophy　道義学
+Moral science　仝上〔道義学〕
+Mormonism　莫爾們教
+Morphogeny　体形啓発論
+Morphology　体形学
+Morphophyly　体形化醇論
+Mortal　合死
+Motion　行動、動議（政）
+Motive　動機
+Movables　動産（法）
+
+（５７）
+Multiplication　蕃殖（財）
+Mundane　世間的
+＿Mundane soul　万有虚霊
+Municipality　市区（政）
+Mystery　玄奥、詭幻、不可思議
+Mysticism　神秘学
+Mythology　鬼神論
+N
+Name　名、名目
+Narrow　褊狭
+Nation　国、国民
+Nationality　民情、国体
+Nationalization　建国
+Natural　合性、自然、天真
+Naturalism　唯理論［按、人心不迷、則天下無復妖恠、唯有斯大道理而存焉耳］
+Naturalization　帰化（法）
+Nature　本性、資質、天理、造化、宇宙、洪鈞、万有
+
+（５８）
+＿Philosophy of nature　天理学
+＿Law of nature　性法、万有法
+＿Human nature　性［按、陳淳曰、荀子便以性為悪、楊子便以性為善悪渾、韓文公又以為性有三品、都只是説得気、近世東坡蘇氏又以為性未有善悪、五峯胡氏又以為性無善悪、都只含糊、就人与天相接処、捉摸説箇性］、人性
+＿Nature of things　万有本性
+Necessary　必要、要須
+Necessitarianism　必至論［按、荘子林注、死生猶夜旦皆必至之理］
+Necessity　必至
+Negation　拒否、否定
+Negative　説不的、反面的
+Negligence　怠慢、等閑、苟且、附和
+Negotiation　商議（法）
+Neologism　新道教
+Neoplatonism　新布拉多学派
+Nerve　神経
+Nescience　無識、不学
+Neurology　神経論
+Neutrality　局外中立（法）
+Nexus　連絡
+
+（５９）
+Nihilism　虚無論
+Nirvana＊　涅槃［按、楞伽経、我所説者、妄想識滅、名為涅槃、大経、涅言不生、槃言不滅、不生不滅、名大涅槃、事詳于名義集］
+Nobleness　高貴
+Noetic　直覚的
+Nominalism　名目論
+Nomination　題名（政）
+Non-ego　物、外物
+Non-existence　無有
+Non-sequitur＊　不応推度格（論）
+Noology　智力論
+Norm　格率、理法、紀律
+Nothing　虚無、烏有
+Notion　総念
+＿Adequate notion　十全総念
+＿Clear notion　著見総念
+＿Confused notion　不明晣総念
+＿Distinct notion　明晣総念
+＿General notion　普通総念
+＿Inadequate notion　不十全総念
+＿Intuitive notion　直覚総念
+＿Notative notion　諦悉総念
+
+（６０）
+＿Obscure notion　蒙蔽総念
+＿Symbolical notion　表号総念
+Noumenon　実体
+Nous　万有睿智
+Novelty　新奇
+Number　数
+O
+Oath　誓
+Obedience　順従、帰服
+Object　物、志向、正鵠、客観
+Objection　抗拒、故障、異論
+Objective　客観的
+Obligation　職分、義務
+Observation　観察
+Obscure　蒙蔽
+Occamism　阿加母教
+Occasion　機会、遭際
+Occult　秘密、隠伏、密勿
+Ochlocracy　平民政治
+
+（６１）
+Offspring　子孫、苗裔、后胄
+Oligarchy　寡頭政治
+Omnipotence　全能
+Omnipresence　遍在
+Omniscience　全知
+One　泰一［按、前漢郊祀志、以大牢祀三一、注、天一地一泰一、泰一者、天地未分元炁也、泰又作太、淮南詮言、洞同天地、渾沌為樸、未造而成物、謂之太一、注、太一元神、総万物者］、一儀、一箇
+Ontogeny　有機体啓発論
+Ontology　実体学
+Operation　運用、手術
+Opinion　説、意見
+Opposite　反対（論）
+Opposition　抗拒、排撃、攘斥、抵排、反対法（論）
+Optimism　楽天教
+Order　秩序、倫次、品級、命令
+Organ　機関
+Organism　有機体
+Organization　体制
+Organogeny　機関啓発論
+
+（６２）
+Organon　機器
+Organophyly　機関化醇論
+Orientalism　東洋学
+Origin　根源、原由、起首、本原、濫觴
+Originality　原造、機軸
+Origination　原造力
+Orthodox　正教（宗）
+Ostensive　明顕
+Ostracism　放逐、流刑（法）
+Oughtness　応当
+Outness　客観、外物
+P
+Pact　約束
+Pain　苦、苦痛
+Paleontology　古生学
+Palilogy　重関、畳鎖
+Palingenesia　再生
+
+（６３）
+Pang　心痛
+Panic　驚慌、商業必迫（財）
+Pantheism　万有神教
+Pantheon　合祭廟
+Papacy　法王政治
+Parable　比方、譬諭
+Paradise　楽園、天堂
+Paradox　逆説
+Paralogism　妄論
+Parseeism　拝火教
+Parsimony　吝嗇、貧鄙、慳倹
+Part　部分
+Partial　偏頗、不公平
+Particle　分子（物）
+Particular　特異、特称（論）
+Partisan　党類
+Partition　剖開法（論）
+Party　徒党
+＿Conservative party　保守党
+＿Moderate party　応時党
+＿Progressive party　進歩党
+＿Radical party　過激党
+
+（６４）
+Passion　欲情
+Passive　受動的
+Past　過去
+Pathology　病理学、感覚学
+Patience　忍耐
+Patriarch　族宗
+Patriarchism　族宗政治
+Patriotism　義気、憂国心
+Patripassianism　巴土里巴斯教
+Pattern　模範、格式、師表
+Pauperism　貧苦（財）
+Payment　償還（財）
+Peace　平安、寧靖、雍和
+Peculiarity　特性
+Pedagoge　牧師
+Pedigree　族譜、家系
+People　人民、蒼生、黎首
+Perception　知覚力
+Perdurability　永続性
+Perfect　純全
+Perfection　全成力
+
+（６５）
+Perfectionism　全成教［按、眚菑禍患、人所自招、若夫終身翼々、順天理而無所違、則或可以達于円満至極之域矣］
+Perfectibility　全成性
+Perfidy　反逆、不義、不忠
+Period　時期、世代
+Peripatetic school　逍遙学派
+Permanence　恒久、永存、終古
+Perpetuation　継続
+Perpetuity　永遠、不朽
+Persecution　害迫（宗）
+Perseverance　堅忍
+Persistence　永存
+Person　人、本身
+Personality　人品
+Perusal　撿閲、揚搉
+Pervasion　遍通
+Pessimism　厭世教
+Petition　歎願（政）
+Petitio principii＊　匿証佯争
+Phantasm　恠像
+Phenakism　寓言
+Phenomenology　現象学
+
+（６６）
+Phenomenon　現象
+＿Residual phenomenon　残余現象
+Philanthropy　汎愛
+Philology　原語学
+Philosopher　哲学士
+Philosophism　詭弁
+Philosophization　究理
+Philosophy　哲学
+＿Critical philosophy　批評理学
+＿Divine philosophy　神理学
+＿Dogmatic philosophy　独断哲学
+＿Economical philosophy　財理学
+＿Emperical philosophy　経練哲学
+＿Ethical philosophy　倫理学
+＿Mental philosophy　心理学
+＿Moral philosophy　道義学
+＿Natural philosophy　物理学
+＿Political philosophy　政理学
+＿Positive philosophy　実験哲学
+＿Practical philosophy　実践理学
+＿Sceptical philosophy　懐疑理学
+
+（６７）
+＿Speculative philosophy　思弁哲学
+＿Synthetic philosophy　総合哲学
+＿Theoretical philosophy　想考哲学
+＿Transcendental philosophy　超絶哲学
+Phrase　句話
+Phrenics　心理学
+Phrenology　骨相論
+Phylogeny　有機体化醇論
+Physico-philosophy　天理学
+Physics　物理学
+Physiogeny　官能啓発論
+Physiognomy　観相学
+Physiology　生理学
+Physiophyly　官能化醇論
+Pietism　祇虔教
+Piety　祇虔
+Pity　憐憫、慈悲
+Platonism　布拉多学派
+Plenum　充実
+Pleasure　楽、快楽
+Plegiarism　剽窃
+
+（６８）
+Point　要点、肯綮
+＿Essential point　枢機、斡旋、要領
+＿Turning point　関捩点
+Pneumatology　霊魂論
+Polar logic　三断論法
+Policy　政法、権道、術数
+Political economy　理財学
+Politics　政治学
+Polity　国政
+Pollicitation　許允
+Polyandry　一妻多夫（世）
+Polygamy　一夫多妻（世）
+Polygarchy　多頭政治
+Polymathy　碩学
+Polytheism　多神教
+Population　人口（財）
+Position　位置
+Positive　説正、正面
+Positivism　実験理学
+Possibility　可能性
+Posterity　苗裔、子孫、後胄、雲仍
+Postulate　公準
+
+（６９）
+＿Universal postulate　一統定則
+Potentiality　将成
+Power　器能、勢力、権威
+＿Absolute power　全権
+＿Creative power　剏造力
+＿Cumulative power　積聚力
+＿Discursive power　弁証力
+＿Intellectual power　智力、通暁力
+＿Imaginative power　想像力
+＿Inventive power　剏製力
+＿Mechanical power　機械力
+＿Presentative power　表現力
+＿Reflective power　反省力
+＿Representative power　再現力
+＿Reproductive power　再生力
+＿Retentive power　把住力
+＿Volitional power　執意力
+Practice　実用、力行、実践
+Praise　讚美、頌揚
+Precedent　先例
+Precision　精密、詳細
+Predestination　定道
+
+（７０）
+Predicate　賓位（論）、命証
+Predicables　賓位語（論）
+Predicament　類叙
+Predisposition　予向
+Prejudice　偏見、邪執
+Premise　前提（論）
+＿Major premise　大前提
+＿Minor premise　小前提
+Premium　増准（財）
+Preparation　準備
+Prepossession　預向、偏見
+Presage　朕兆、先機、前徴
+Prescience　預知
+Prescription　先占（法）
+Present　現在
+Presentation　表現力
+＿Clear presentation　灼著表現
+＿Obscure presentation　蒙蔽表現
+Presentative　表現的
+Presumption　預察
+Pretension　口実
+Pretext　仝上〔口実〕
+
+（７１）
+Price　物価（財）
+Pride　傲慢、夷俟、倨肆、驕倨
+Primary　最先
+Primitive　原本的
+Primitive man　原人
+Principle　道、原理、主義
+＿Fundamental principle　原道、大本
+＿Principle of contradiction　矛盾主義
+＿Principle of identity　同一主義
+＿Principle of sufficient reason　事理充足主義
+＿Universal principle　大道、一統原理
+Pristine　原本的
+Privation　折服法
+Privative　折服
+Privilege　特許（法）
+Probability　盖然性
+Probable　盖然
+Problem　問題
+Problematic　未决
+Product　成果（世）、物産（財）
+
+（７２）
+Profit　利分（財）
+Profound　玄深、奥玅、幽邃
+Progress　進歩
+Promise　応承
+Proof　証拠、左験、照憑
+Propoedeutic　初学
+Propagandism　伝教法
+Propensity　性癖、偏向
+Property　偶性、固有性（論）、所有物（法）
+＿Generic property　通性
+＿Personal property　動産
+＿Real property　不動産
+＿Specific property　特性
+Prophesy　預言
+Proportion　比例
+Proposition　命題（論）
+＿Affirmative proposition　肯定命題
+＿Ampliative proposition　拡充命題
+＿Apodeictical proposition　分明命題
+
+（７３）
+＿Assertorical proposition　定説命題
+＿Categorical proposition　合式命題
+＿Demonstrative proposition　証明命題
+＿Disjunctive proposition　離摂命題
+＿Exceptive proposition　破格命題
+＿Exclusive proposition　充斥命題
+＿Explicative proposition　解説命題
+＿Hypothetical proposition　約結命題
+＿Identical proposition　同一命題
+＿Indefinite proposition　不定命題
+＿Modal proposition　帯様命題
+＿Negative proposition　否定命題
+＿Particular proposition　特称命題
+＿Plurative proposition　複称命題
+＿Problematic proposition　未决命題
+＿Pure proposition　純粋命題
+＿Singular proposition　単称命題
+＿Universal proposition　全称命題
+
+（７４）
+Proselyte　新信者（宗）
+Prosperity　昌盛
+Prosyllogism　断後推測式（論）
+Protection　保護主義（財）
+Protestantism　布勒的斯丹徳教
+Protoplasm　元形質（生）
+Prototype　表様、法子、模範
+Proverb　諺語
+Providence　天命
+Prudence　謹慎、警戒、節制
+Psychism　霊気遍在論
+Psychology　心理学
+Psychopannychism　霊魂睡醒論
+Public　公衆
+Purgatory　浄土
+Puritanism　清浄教
+Purity　清浄、純粋、精醇
+Pyrrhonism　比魯教
+Pythagorism　比太克羅学派
+
+（７５）
+Q
+Quadrivium　四学科
+Qualification　形質観、形容法（論）、適格（法）
+Quality　形質、品位
+Quantification　分量観
+Quantity　分量
+＿Continuous quantity　連続分量
+＿Discrete quantity　集合分量
+＿Extensive quantity　外延分量
+＿Intensive quantity　内包分量
+Question　問題
+Quibble　遁辞
+Quiddity　体質
+Quietism　寂静教
+R
+Race　種属（世）
+Radicalism　過激論
+Rage　忿怒、憤恚
+
+（７６）
+Raisonnement＊　推論
+Rate　価位（財）
+Ratio　比率（数）
+Ratiocination　推断
+Rational　合理的、弁理的
+Rationale　理由
+Rationalism　正理論
+Reaction　反動力
+Readiness　敏捷性
+Real　真実
+Realism　実体論
+Reality　実体、真如［按、起信論、当知一切法不可説、不可念、故名為真如］
+Reason　道理、理性
+Reasoning　推論
+＿Parity of reasoning　推論同帰
+＿Particular reasoning　特異推論
+Rebellion　不軌、反逆、謀叛
+Rebuke　譴責、非難、刺譏
+Reciprocity　相関
+Recognition　認識力
+Recollection　追懐力
+
+（７７）
+Reconciliation　講和、中裁
+Recondite　艱深、隠晦
+Redintegration　復原
+Reductio ad absurdum＊　帰謬法（論）
+Reduction　節約、還元法（論）、化法（数）
+Redundancy　過分、贅言（論）
+Reference　揚搉、憑拠、引証
+Reflection　反省力
+Reformation　改化（宗）
+Refutation　駁撃、弁破
+Regeneration　再生、更張
+Regularity　整全
+Regulation　法度、章程、条例
+Relation　関係、相対属性（論） 、綱紀（倫）、戚畹（世）
+Relativity　相対［按、荘子林注、左与右相対而相反、対又作待、相待之字、出于法華玄義釈籖］
+Religion　宗教
+＿Universal religion　一統宗
+Rememblance　記臆
+Reminiscence　回想
+Remorse　悔恨、於邑、憐憫
+
+（７８）
+Renaissance＊　文学再興
+Rent　地賃（財）
+Repair　修整（生）
+Repentance　悔改
+Repetition　反復
+Representation　再現力
+＿Abstract representation　虚形再現
+＿Concrete representation　実形再現
+Reproach　斥罵、呵責、非議
+Reproduction　再生力
+Republic　共和政治
+Repulsion　拒力（物）
+Reputation　名声、善聞
+Requirement　湏要
+Resemblance　擬似、彷彿
+Resolution　果决、解釈法（論）
+Resistence　抵抗、迕逆、捍禦
+Respect　恭敬、欽奉、尊崇
+Restraint　阻碍、拘束、禁制、約止、攔阻
+Restriction　限制、撙節
+Resurrection　蘇生
+
+（７９）
+Result　成効、菓実、結果
+Retail　分売（財）
+Retaliation　返報
+Retention　把住力
+Retentiveness　把住性
+Retrogression　退歩
+Retrospection　省察力
+Revelation　天啓、現示＋
+Revenge　復讎
+Revenue　入息（財）
+Reverence　恭敬
+Reverie　昏迷（心）
+Revolution　革命、顚覆［按、興国謂之革命、亡国謂之顚覆］
+Rhetoric　修辞
+Riches　豊富（財）
+Right　正経、応当、公平、合理
+Right　権利、公道、通義
+＿Inherent right　固有権
+＿Legal right　法権
+＿Moral right　徳権
+＿Natural right　天権
+＿Personal right　自主権
+
+（８０）
+＿Political right　政権
+Righteousness　儀文、正直、忠実
+Rise　昇進、興起、騰貴（財）
+Ritualism　礼儀
+Rosicrucians　錬金方士［按、昔者独逸有一方士、遊于東洋、経数歳而帰、告郷人曰、吾知錬金之術、徒弟漸集于其門、時人呼此輩、曰魯失屈留士、盖錬金方士之義也］
+Rude　疎狂、鄙野、固陋、獷獰、魯莽
+Rudiment　元形［按、文仲子、天統元炁、地統元形］、基本、起端
+Rule　規則、法式、制度、順序
+Ruler　主宰、元首
+S
+Sabaism　拝星教
+Sabellianism　薩伯里教
+Sacrament　聖礼（宗）
+Sacred　神聖
+Sacrifice　祭祀、犠牲、血食
+
+（８１）
+Sagacity　伶俐、鋭敏、聦慧
+Sage　至人［按、荘子田子方、得至美而遊乎至楽、謂之至人］
+Salutation　敬礼、撙節
+Salvation　救援
+Samadhi＊　三昧［按、名義集、此云調真定、又云正定、亦云正受、故事成語、儒家曰精一、釈家曰三昧、道家曰貞一、総言奥義之無窮］
+Same　一様、同一
+Sarcasm　冷語
+Sarcode　元軟質（生）
+Satan　恠魁
+Satisfaction　満足
+Satire　諷語
+Savage　蕃民
+Savant＊　博士
+Scepticism　懐疑学
+Schema　図形
+Schism　門派（宗）
+Scholasticism　煩瑣理学
+Scholium　分注（数）
+School　学派
+Schopenhauerism　勺辺哈児学派
+
+（８２）
+Science　理学、科学
+＿Ethical science　倫理学
+＿Immaterial science　無形学
+＿Material science　有形学
+＿Mental science　心理学
+＿Moral science　道義学
+＿Physical science　物性学
+＿Political science　政理学
+＿Social science　世態学
+Scientist　学士
+Sciolism　浅学
+Sciolist　浅学士
+Sciomachy　口論、舌戦
+Scope　範囲
+Scorn　侮慢、軽蔑、嘲笑
+Scrutiny　究察、推究
+Seclusion　隠遁、沈冥［按、楊子問明、蜀荘沈冥、呉注、晦迹不仕、故曰沈冥］＋
+Secret　機密、密勿
+Secundum quid＊　第二儀
+Security　保険
+Seduction　誘惑
+
+（８３）
+Segregation　分離
+Self　自己、私我＋
+Self-abasement　謙遜、抑損、卑下
+Self-conceit　自尊
+Self-consciousness　自覚
+Self-conservation　自保
+Self-consistency　前後照応
+Self-contradiction　自家矛盾、前後背反
+Self-control　自制
+Self-defense　自護
+Self-denial　克己
+Self-determination　自决
+Self-diremption　自裂
+Self-esteem　自重
+Self-existence　自存
+Self-interest　私益
+Selfishness　私慾
+Self-love　自愛
+Self-reproach　自責
+Self-respect　自敬
+Selection　撰択、陶汰（生）
+＿Artificial selection　人為陶汰
+
+（８４）
+＿Natural selection　自然陶汰
+Sematology　記号論
+Sensation　感覚
+Sensationalism　感覚教
+Sense　覚性、官能、意旨
+＿Five senses　五官
+＿Moral sense　良心
+＿Muscular sense　筋覚
+＿Reflex sense　反動官
+Sensibility　感性
+Sensible　可覚的
+＿Common sensibles　普有可覚的
+＿Proper sensibles　固有可覚的
+Sensism　唯覚論
+Sensualism　仝上〔唯覚論〕
+Sensuism　仝上〔唯覚論〕
+Sensorium　感受官
+Sensus communis＊　集覚官
+Sentient　有情
+Sentiment　情操
+＿Altruistic sentiment　主他情操
+＿Egoistic sentiment　主我情操
+
+（８５）
+Sequence　干係、次第、結果、収尾、継在
+Series　連鎖
+Severity　厳粛、峭刻
+Shallow　浅近、膚浅
+Shame　忸怩、耻辱、羞慙
+Shape　形象
+Shintoism　神道
+Sight　視覚
+Sign　記号
+Significance　旨趣
+Similarity　類似、像似、彷彿
+Simile　比擬
+Simple　単純、質樸、朴素
+Simultaneousness　同時、共至
+Sin　罪過
+Sincerity　信実、欵誠、敦厚
+Singular　単称
+Size　大小
+Socialism　社会論
+Society　社会
+Sociology　世態学
+
+（８６）
+Socratism　瑣格剌底学派
+Somatology　物体学
+Somnambulism　睡遊
+Sophism　詭弁
+Sorities　渾体（論）
+Sorrow　憂愁
+Soul　霊魂
+Sovereign　主君、元首
+Space　空間
+Special　特別
+Species　種
+Specification　定種法
+Speculation　思弁、工夫、冥想、投機（財）
+Spencerism　士辺撒学派
+Spinozism　斯比諾薩学派
+Spirit　精神、気象
+Spiritualism　降神術、唯神論
+Spontaneity　自発
+Stable　安定
+Stahlism　私打児学派
+Standard　標準、本位（財）
+＿Double standard　両本位
+
+（８７）
+＿Single standard　単本位
+State　国家
+Statics　静状論（世）、静学（物）
+Statistics　統計学
+Stimulus　激因
+Stoicism　士多亜学派
+Struggle　競争
+＿Struggle for existence　生存競争
+Structure　結構（世）
+Subaltern　差等（論）
+Subcontrary　小反対（論）
+Subject　心、主観、題目、主位（論）
+Subjection　服従、雌伏
+Subjective　主観的
+Subjectivism　主観論
+Sublation　除去
+Sublime　宏壮、高大
+Subsistence　実在
+Substance　本質、太極［按、易繫辞易有太極、是生両儀、正義、太極謂天地未分之前、元気混而為一、即太初太一也］
+＿Universal substance　万有本体
+Substitute　換充言（論）
+
+（８８）
+Substratum　実体
+Subsumption　包摂（論）
+Subtlety　煩瑣
+Succession　連続
+Suggestion　点出、暗指、剔醒、提起、張本［按、左伝隠公注、預為後地曰張本］
+Suicide　自殺
+＿Intellectual suicide　自家矛盾
+Sui generis＊　自生的
+Summum bonum＊　円満幸福
+Superstition　謬信
+Supply　供給（財）
+Supposition　推量、忖度
+Supramundane　天外、出世間
+Supranaturalism　超理論［按、天地之元始、邈矣茫矣、非人智之所及、故未可以為無神、仮令窮理之極、至知天地之元始、天地之間、尚有一点之不可知者、則奉之以為神、猶旦可矣、而况於天地之与物皆不可知乎］
+Survival of the fittest　適種生存（生）
+Susceptibility　感受性
+Syllogism　推測式（論）
+
+（８９）
+＿Analytic syllogism　分解推測式
+＿Complete syllogism　完全推測式
+＿Complex syllogism　錯繆推測式
+＿Conditional syllogism　若設推測式
+＿Defective syllogism　未完推測式
+＿Disjunctive syllogism　離接推測式
+＿Hypothetical syllogism　約結推測式
+＿Incomplete syllogism　不完全推測式
+＿Simple syllogism　単純推測式
+＿Synthetic syllogism　総合推測式
+Symbol　表号
+Sympathy　同情
+Symmetry　均斉体（生）
+＿Bilateral symmetry　左右均斉体
+＿Radial symmetry　四面均斉体
+＿Spherical symmetry　球形均斉体
+Syncategorematic　副用的（論）
+Syncretism　混容学派
+Synderesis　悔悟心（倫）
+Syneidesis　指南心（倫）
+Synopsis　要略、綱領
+Synteresis　立法心（倫）
+
+（９０）
+Synthesis　総合法
+System　系、統系、門派、教法、制度、法式、経紀
+＿Bicameral system　二院制
+＿Bimetallic system　二貨法
+＿Distributing system　分配系
+＿Monometallic system　一貨法
+＿Nervous system　神経系
+＿Regulating system　督制系
+＿Sustaining system　供給系
+＿System of cognate genera　親近諸類式
+＿Unicameral system　一院制
+T
+Tabula rasa＊　白匾
+Tact　手練
+Talent　才幹
+Tangibility　触接性
+Taste　風味、雅趣、味覚（心）
+
+（９１）
+Taxation　租税（財）
+Teleology　結局学
+Temperament　性気
+Temperance　廉節
+Temptation　誘惑
+Term　名辞（論）
+＿Absolute term　絶対名辞
+＿Abstract term　虚形名辞
+＿Categorematic term　独用名辞
+＿Collective term　集合名辞
+＿Common term　普有名辞
+＿Compatible term　適理名辞
+＿Complex term　錯繆名辞
+＿Concrete term　実形名辞
+＿Connotative term　含蓄名辞
+＿Contradictory opposition of terms　二名辞背反
+＿Contrary term　実反名辞
+＿Correlative term　対立名辞
+＿Definite term　確定名辞
+＿Distributed term　既衍名辞
+＿General term　普通名辞
+
+（９２）
+＿Indefinite term　不定名辞
+＿Major term　大名辞
+＿Middle term　中名辞
+＿Minor term　小名辞
+＿Negative term　否定名辞
+＿Non-connotative term　不含蓄名辞
+＿Opposite term　反対名辞
+＿Positive term　肯定名辞
+＿Privative term　折服名辞
+＿Relative term　相対名辞
+＿Simple term　単純名辞
+＿Singular term　単称名辞
+＿Syncategorematic term　副用名辞
+＿Undistributed term　未衍名辞
+＿Universal term　全称名辞
+Terminism　名称論
+Terminology　仝上〔名称論〕
+Terror　恐怖
+Tertium quid＊　第三儀
+Test　撿討
+＿Test of truth　真理撿討
+Testimony　証拠、照憑
+
+（９３）
+Thaumaturgy　奇術
+Theism　信神教
+Theocracy　神政
+Theogony　神統記
+Theology　神学
+＿Natural theology　自然神学
+＿Positive theology　確定神学
+＿Rational theology　合理神学
+Theorem　定論（数）
+Theory　理論
+Theosophy　接神術
+Thesis　題目
+Theurgy　妖術
+Thing　事物
+＿Thing in itself　実体
+Think　思惟
+Thought　思想
+Time　時間
+Timocracy　素封政治
+Tissue　組織（生）
+Toleration　許容
+Topology　助記法
+
+（９４）
+Totality　総計
+Touch　触覚
+Trade　貿易（財）
+Traffic　売買（財）
+Transaction　弁理
+Transcendental　超絶的
+Transcendentalism　超絶学
+Transference　運搬
+Transgress　破戒（宗）
+Transformation　化成（生）
+Transition　経過、転移
+Transmigration　輪廻
+Transmission　形質遺伝（生）
+Transposition　換位（論）
+Transubstantiation　化体（宗）［按、加特力教、有以餅与酒為基督之血肉之礼］
+Trichotomy　三断法（論）
+Trilemma　三重体
+Trinity　三位一体［按、基督教徒中、有以天父神子聖霊、為三位一体者、天道溯原、固一而三、三而一者也］
+Trivium　三学科
+Troglodyte＋　穴居人種（世）
+
+（９５）
+Truth　真理、真実
+＿Absolute truth　自然之理
+＿Necessary truth　必然之理
+＿Self-evident truth　自明之理
+＿Universal truth　通理
+Type　儀型、模範、表様
+Tyranny　圧制政治
+U
+Ubiety　占居
+＿Circumspective ubiety　充斥占居
+＿Definitive ubiety　依従占居
+＿Repletive ubiety　塡満占居
+Ubiquity　遍在
+Ultimate＋　究竟
+Ultraism　過激論
+Ultraist　過激党
+Unfortunate　不幸
+Unchangeable　不易、不変
+
+（９６）
+Unconditioned　脱礙、自然、無碍［按、心経、菩提薩埵、依般若波羅密多故、心無罣碍、無罣碍故、無有恐怖］
+Understand　通暁、融会、貫通
+Understanding　理解、悟性
+Unification　冥合［按、冥合謂与天神冥合也、冥合之字、出于柳宗元西山記］
+Uniformity　一様
+Union　一致、連合（政）、情交（世）
+Unique　奇特、無類
+Unit　定位（数）
+Unitarianism　唯一神教
+Unity　唯一
+Universal　一統、普遍、全称（論）
+Universals　通有性（論）
+Universe　宇宙
+Univocal　一義
+Unreasonable　逆理
+Unstable　不安定
+Unsymmetrical　未均斉体（生）
+Untrue　虚妄
+Use　利用
+
+（９７）
+Utilitarianism　功利学
+Utility　功利、利用（財）
+V
+Vacuum　空虚
+Vague　汎濫、散漫、孟浪、浮泛
+Validity　妥当
+Value　価格（財）
+Vanity　虚誇、浮華、盗夸［按、老子、服文綵、帯利剣、厭飲食、財貨有余、是謂盗夸、非道也哉］
+Variation　漸化（生）、改変（論）
+Variety　変化、雑駁、多様、異種
+Veracity　真実
+Verification　徴験法（数）
+Vernunft＊　理性
+Verstand＊　悟性
+Vice　否徳、悪慝
+View　見解
+Vigour　気力
+Virtual　可能
+
+（９８）
+Virtue　徳
+Vision　天眼通
+＿Occasional vision　不定天啓
+＿Infinite vision　無限観［按、荘子大宗師、朝徹而後能見独、見独而後能無古今、無古今而後能人於不死不生］
+Vitalism　活力論
+Vitality　活動
+Vituperation　罵詈
+Void　清空、虚無、冲虚
+Volition　執意
+Voluntary　有意
+Vorstellung＊　観念
+Vote　投票（政）
+W
+Wages　工銀（財）
+Waste　廃老（生）
+Wealth　貨財（財）
+Well-being　福祉
+Whole　全体
+
+（９９）
+Will　意志
+Wisdom　智慧
+Wissenschaflstehre＊　智識論
+Wit　機智、詼諧
+Witch　女巫
+Witchcraft　巫術
+Wonder　驚駭、愕貽
+Word　詞
+World　世界、人間、寰宇、乾坤
+＿External world　外界
+＿Future world　来生
+＿Internal world　内界
+World-soul　万有虚霊
+Worship　礼拝、欽崇、恭敬
+Wrong　不是、不正
+Z
+Zeal　熱心
+Zoology　動物学
+Zoonomia　生命学
+
+
+----------------------------------------------------------------------------------
+底本：国立国語研究所蔵本（W21/I55、1002342366）
+翻字担当者：岡島昭浩、藤本能史、中野直樹
+更新履歴：
+2016年9月23日公開

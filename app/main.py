@@ -33,6 +33,7 @@ from .db import get_conn, init_db, now, rows
 from .connectors import canon  # 哲学典拠への解決（2026-09-28）
 from .connectors import translation_edge  # 訳語辺（2026-10-02）
 from .connectors import ja_wiktionary, ndl_fulltext  # 辞書層と用例層（2026-10-05）
+from .connectors import tetsugaku_jii  # 訳語史層・1881年の訳語対応（2026-10-07）
 from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept, searxng, etymology
 from .connectors.base import cached_get_json, cached_get_text
 from . import citations as cites
@@ -2744,6 +2745,28 @@ async def api_canon(q: str, lang: str = "ja"):
 # 文脈）を与える。同じ語を扱っても観点と構造が違うため、重ねずに2層として返す。
 # ヘルパはdecoratorより上に置く。2026-09-30に decorator と def の間へ関数を挿し、
 # FastAPIが純関数をhandlerに束ねて全endpointが422になった事故があった。
+def _translation_layer(q: str) -> dict:
+    """1881年の訳語対応。局所fileなので外部が落ちても必ず返る。
+
+    返り値が空でも「無い」ことを明示する（公理1: 沈黙する失敗が最悪）。
+    """
+    try:
+        res = tetsugaku_jii.lookup(q)
+    except (OSError, ValueError) as e:            # file欠落・壊れ
+        return {"error": f"{type(e).__name__}: {e}", "missing": True}
+    return res.get("data") or {"missing": True}
+
+
+def _translation_edges(t: dict) -> list:
+    """訳語史層の兄弟訳語を、連鎖できる辺として出す。辞書層の辺とは別の種類である。"""
+    out = []
+    for s in (t.get("sibling_terms") or []):
+        out.append({"term": s.get("term", ""), "kind": "translation", "label": "訳語",
+                    "sense": "{} の訳語（1881年）".format(s.get("via", "")),
+                    "source": "ninjal-tetsugaku-jii-1881"})
+    return [e for e in out if e["term"]]
+
+
 _EDGE_LABEL = {"synonym": "類義", "antonym": "対義", "related": "関連",
                "derived": "派生", "reading": "読み"}
 
@@ -2892,11 +2915,15 @@ async def api_wordspace(q: str, lang: str = "ja", sample: int = 100):
                 c["substituted_for"] = q
                 c["substitutes"] = subs
     modern = modern_tally(_data(ci_res, "cinii") or [], _data(oa_res, "openalex") or [])
+    translation = _translation_layer(q)
     return {"query": q, "lang": lang, "queried_at": now(),
-            "dictionary": d, "corpus": c, "modern": modern, "edges": _dict_edges(d),
+            "dictionary": d, "corpus": c, "modern": modern,
+            "translation": translation,
+            "edges": _dict_edges(d) + _translation_edges(translation),
             "errors": errors,
             "honesty": "辞書層は一般辞書の関係記述であり哲学術語の定義ではない。"
-                       "用例層は全文OCRの標本分布であり全体の分布ではない。",
+                       "用例層は全文OCRの標本分布であり全体の分布ではない。"
+                       "訳語史層は1881年時点の対応であり、現代の語義ではない。",
             "sources": [{"id": "ja-wiktionary", "label": "ja.wiktionary（類義・対義・関連・読み）",
                          "url": d.get("url") or "https://ja.wiktionary.org/",
                          "evidence": "candidate"},
@@ -2906,7 +2933,21 @@ async def api_wordspace(q: str, lang: str = "ja", sample: int = 100):
                         {"id": "cinii", "label": "CiNii Research（和文の研究文献）",
                          "url": "https://cir.nii.ac.jp/", "evidence": "candidate"},
                         {"id": "openalex", "label": "OpenAlex（国際の研究文献）",
-                         "url": "https://openalex.org/", "evidence": "candidate"}]}
+                         "url": "https://openalex.org/", "evidence": "candidate"},
+                        {"id": tetsugaku_jii.SOURCE["id"],
+                         "label": "『哲学字彙』1881年版（国立国語研究所 翻字・CC BY 4.0）",
+                         "url": tetsugaku_jii.SOURCE["url"], "evidence": "primary"}]}
+
+
+@app.get("/api/translation")
+async def api_translation(q: str):
+    """1881年の訳語対応だけを返す。局所fileなので外部の状態に左右されない。
+
+    出典表示は CC BY 4.0 の条件であり、payload から落とさない。
+    """
+    if not q.strip():
+        raise HTTPException(400, "empty query")
+    return {"query": q, "queried_at": now(), "translation": _translation_layer(q)}
 
 
 @app.get("/wordspace")

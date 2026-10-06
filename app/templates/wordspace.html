@@ -47,6 +47,8 @@
 .ws-pill:hover{border-color:currentColor}
 .ws-pill .sn{font-size:.72rem;opacity:.6;margin-left:.3rem}
 .ws-pill.k-antonym{border-style:dashed}
+.ws-pill.is-self{border-color:currentColor;cursor:default;font-weight:600}
+.ws-pill.k-translation{border-style:double}
 .ws-pill.k-reading{opacity:.75}
 .ws-senses{margin:.3rem 0 0;padding-left:1.1rem;font-size:.92rem}
 .ws-senses li{margin:.22rem 0}
@@ -285,6 +287,70 @@
     return h + "</div>";
   }
 
+  function tjCredit(s) {
+    if (!s) { return ""; }
+    return '<p class="why">出所: ' + esc(s.title) + '／底本 ' + esc(s.base_text)
+      + '／翻字 ' + esc(s.transcription) + '／公開 ' + esc(s.publisher) + ' '
+      + esc(s.published) + '／<a class="ext-link" href="' + esc(s.license_url)
+      + '" target="_blank" rel="noopener">' + esc(s.license) + '</a>'
+      + ' <a class="ext-link" href="' + esc(s.url)
+      + '" target="_blank" rel="noopener">資料</a>。' + esc(s.disclaimer) + "</p>";
+  }
+
+  function tjEntry(e, focus) {
+    var terms = (e.translations || []).map(function (t) {
+      var body = esc(t.term)
+        + (t.reading ? '<span class="sn">' + esc(t.reading) + "</span>" : "")
+        + (t.field ? '<span class="sn">' + esc(t.field) + "</span>" : "");
+      return t.term === focus
+        ? '<b class="ws-pill is-self">' + body + "</b>"
+        : '<button type="button" class="ws-pill" data-term="' + esc(t.term) + '">'
+            + body + "</button>";
+    }).join("");
+    return '<div class="ws-card"><h3>' + esc(e.headword)
+      + (e.foreign ? '<span class="sn">英語以外の原語</span>' : "")
+      + "</h3><div class=\"ws-pills\">" + terms + "</div>"
+      + ((e.notes || []).length
+          ? '<p class="why">割注: ' + esc(e.notes.join("／")) + "</p>" : "")
+      + "</div>";
+  }
+
+  function translationSection(t) {
+    var st = (t && t.stats) || {};
+    var head = '<div class="ws-sec"><h2>訳語史層（1881年の訳語対応）</h2>';
+    if (!t || t.missing) {
+      return head + '<p class="why">『哲学字彙』1881年版の収録は '
+        + esc(st.entries || 0) + ' 見出し・訳語 ' + esc(st.translations || 0)
+        + ' 件です。この語の該当は0件でした。収録は当時の学術語に限られるため、'
+        + '0件であることと、語そのものの古さは別の話です。</p>'
+        + tjCredit(t && t.source) + "</div>";
+    }
+    var h = head
+      + '<p class="why">明治14年の時点で、この語がどの西洋語の訳として置かれ、'
+      + '同じ見出しにどの候補が並んでいたかです。並んでいる語は当時の競合であり、'
+      + '現代の語義とは別の層です。</p>';
+    (t.as_translation || []).forEach(function (e) { h += tjEntry(e, t.query); });
+    if ((t.as_headword || []).length) {
+      h += '<div class="ws-card"><h3>この語自身が見出しになっている場合</h3>'
+        + (t.as_headword || []).map(function (e) {
+            return '<p>' + esc(e.headword) + " → "
+              + (e.translations || []).map(function (x) { return esc(x.term); }).join("、")
+              + "</p>";
+          }).join("")
+        + "</div>";
+    }
+    if ((t.sibling_terms || []).length) {
+      h += '<div class="ws-card"><h3>同じ見出しに並んだ訳語（押すと辿れます）</h3>'
+        + '<div class="ws-pills">'
+        + t.sibling_terms.map(function (s) {
+            return '<button type="button" class="ws-pill" data-term="' + esc(s.term)
+              + '">' + esc(s.term) + '<span class="sn">' + esc(s.via) + "</span></button>";
+          }).join("")
+        + "</div></div>";
+    }
+    return h + tjCredit(t.source) + "</div>";
+  }
+
   var TRAIL = [];
   function renderTrail() {
     var t = el("ws-trail");
@@ -300,6 +366,7 @@
   function render(d) {
     el("ws-out").innerHTML =
       dictSection(d.dictionary, d.edges || [])
+      + translationSection(d.translation)
       + corpusSection(d.corpus)
       + modernSection(d.modern)
       + '<div class="ws-meta"><p>取得時刻 ' + esc(d.queried_at || "") + "</p><ul>"
