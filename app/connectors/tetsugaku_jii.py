@@ -160,6 +160,30 @@ def _entry_view(e: dict, focus: str = "") -> dict:
     }
 
 
+MAX_NEAR = 8
+
+
+def _near_headwords(key_ja: str, idx: dict) -> list:
+    """同一ではないが語形が重なる見出し。別語として別枠で出す。
+
+    「愛」で引いたとき 1881年版の Love → 愛情 に届かせるための経路である。
+    愛と愛情は別語なので、同一視せず「近い見出し」として示す（公理3: 宣言は実力を超えない）。
+    """
+    if len(key_ja) < 1:
+        return []
+    out = []
+    for ja, rows in idx["reverse"].items():
+        if ja == key_ja:
+            continue
+        if key_ja in ja or (len(ja) >= 2 and ja in key_ja):
+            for i in rows:
+                e = idx["entries"][i]
+                out.append({"term": ja, "headword": e["headword"],
+                            "translations": [t["term"] for t in e["translations"]]})
+    out.sort(key=lambda x: (len(x["term"]), x["term"]))
+    return out[:MAX_NEAR]
+
+
 def lookup(term: str) -> dict:
     """日本語の語からも西洋語の見出しからも引ける。どちらも空なら missing を立てる。
 
@@ -179,11 +203,24 @@ def lookup(term: str) -> dict:
             if k not in seen:
                 seen.add(k)
                 siblings.append({**t, "via": v["headword"]})
+    # 西洋語の見出しで引かれた場合、その訳語自身が次に辿る先になる。
+    # 2026-10-07 の10人の模擬で、egoism が「主我学派・自利主義」を持つのに
+    # 辺が0本になっていた。日本語から引いた場合しか見ていなかった欠陥である。
+    headword_terms = []
+    for v in as_headword:
+        for t in v["translations"]:
+            k = _normalize(t["term"])
+            if k not in seen:
+                seen.add(k)
+                headword_terms.append({**t, "via": v["headword"]})
     data = {
         "query": term,
         "as_translation": as_translation,
         "as_headword": as_headword,
         "sibling_terms": siblings,
+        "headword_terms": headword_terms,
+        "near_headwords": ([] if (as_translation or as_headword)
+                           else _near_headwords(key_ja, idx)),
         "headwords": [v["headword"] for v in as_translation],
         "missing": not as_translation and not as_headword,
         "layer": LAYER,

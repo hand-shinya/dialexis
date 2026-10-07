@@ -2758,13 +2758,23 @@ def _translation_layer(q: str) -> dict:
 
 
 def _translation_edges(t: dict) -> list:
-    """訳語史層の兄弟訳語を、連鎖できる辺として出す。辞書層の辺とは別の種類である。"""
+    """訳語史層を、連鎖できる辺の列にする。辞書層の辺とは別の種類である。
+
+    2つの向きを両方拾う。日本語で引いた場合の兄弟訳語と、西洋語の見出しで
+    引いた場合のその訳語である。後者を落としていたため、egoism が
+    「主我学派・自利主義」を持つのに辺0本になっていた（2026-10-07 実測）。
+    """
     out = []
-    for s in (t.get("sibling_terms") or []):
+    for s in (t.get("sibling_terms") or []) + (t.get("headword_terms") or []):
         out.append({"term": s.get("term", ""), "kind": "translation", "label": "訳語",
                     "sense": "{} の訳語（1881年）".format(s.get("via", "")),
-                    "source": "ninjal-tetsugaku-jii-1881"})
-    return [e for e in out if e["term"]]
+                    "source": "ninjal-tetsugaku-jii-1881", "chainable": True})
+    seen, uniq = set(), []
+    for e in out:
+        if e["term"] and e["term"] not in seen:
+            seen.add(e["term"])
+            uniq.append(e)
+    return uniq
 
 
 _EDGE_LABEL = {"synonym": "類義", "antonym": "対義", "related": "関連",
@@ -2777,10 +2787,14 @@ def _dict_edges(d: dict) -> list:
     for e in (d.get("relations") or []):
         out.append({"term": e["term"], "kind": e["kind"],
                     "label": _EDGE_LABEL.get(e["kind"], e["kind"]),
-                    "sense": e.get("sense") or "", "source": "ja.wiktionary"})
+                    "sense": e.get("sense") or "", "source": "ja.wiktionary",
+                    "chainable": True})
+    # 読みは情報として出すが、辿る先にはしない。2026-10-07 の10人の模擬で、
+    # 「主張」の唯一の辺が「しゅちょう」で、進むと全層が消えた。かなは行き止まりである。
     for r in (d.get("readings") or []):
         out.append({"term": r["kana"], "kind": "reading", "label": "読み",
-                    "sense": r.get("yomi") or "", "source": "ja.wiktionary"})
+                    "sense": r.get("yomi") or "", "source": "ja.wiktionary",
+                    "chainable": False})
     return out
 
 
@@ -2975,6 +2989,105 @@ async def page_textscan(request: Request):
 
 # 抽出語が多いときの絞り込み案内（2026-10-05・半田様の指摘）。
 # 案内の根拠（語数・閾値・具体策）を payload に持たせ、画面が勝手に言わない形にする。
+_WORD = r"[ぁ-んァ-ヴー一-龥A-Za-z][ぁ-んァ-ヴー一-龥A-Za-zA-Za-z]{0,19}"
+# 本文の問いの形。利用者が何を問題にしているかは、語の希少さではなく文の形に出る。
+# 2026-10-07 の10人の模擬で、先頭に出た語が主題と一致したのは3人だけだった。
+TOPIC_PATTERNS = [
+    re.compile(r"[『「“\"]([^』」”\"]{1,20})[』」”\"]"),
+    re.compile(r"(" + _WORD + r")と(" + _WORD + r")の(?:違い|差|区別|混同)"),
+    re.compile(r"(" + _WORD + r")(?:って|とは|という言葉|という概念|ってなん)"),
+    re.compile(r"(" + _WORD + r")の(?:違い|差|客観性|定義)"),
+]
+TOPIC_MAX = 6
+
+
+def topic_terms(text: str) -> list:
+    """本文が主題として立てている語を、文の形から取る。意味の判断はしない。"""
+    out = []
+    for pat in TOPIC_PATTERNS:
+        for m in pat.finditer(text or ""):
+            for g in m.groups():
+                g = (g or "").strip("　 、。・")
+                if 1 <= len(g) <= 20 and g not in out:
+                    out.append(g)
+    return out[:TOPIC_MAX]
+
+
+_PARTICLE_EDGE = re.compile(r"^(?:や|と|の|を|が|は|も)|(?:や|と|の|を|が|は|も)$")
+SYNTH_MAX_CHARS = 5
+
+
+def synthetic_topics(flagged: list, topics: list) -> list:
+    """本文が問うているのに、字種の走査では挙がらなかった語を候補に足す。
+
+    2026-10-07 の実測で、15歳の「ふつう」はかな書きのため1語も挙がらず、
+    39歳の「愛」は1字のため挙がらなかった。本人が括弧で括って問うている語を
+    落としたままにしない。Wikidataの信号は計算していないので、そう明記する。
+    """
+    have = {(f.get("word") or "") for f in flagged}
+    out = []
+    for t in topics:
+        if "こと" in t:                       # 「働くこと」のような句は語として引けない
+            continue
+        w = _PARTICLE_EDGE.sub("", t).strip()
+        if not w or len(w) > SYNTH_MAX_CHARS:
+            continue
+        if w in have or any(len(h) >= 2 and h in w for h in have):
+            continue
+        have.add(w)
+        out.append({
+            "tier": "主題", "weight": 6, "word": w, "count": 1,
+            "kind": "本文", "topic_match": t,
+            "tier_note": "本文が主題として問うている語。項目の信号は計算していない",
+            "signals": [{
+                "id": "asked_in_text",
+                "label": "本文が主題として問うている語",
+                "detail": "本文の「{}」から取った".format(t),
+                "why": "字種の走査で挙がらない語（かな書き・1字）を落とさないため",
+                "evidence": "primary",
+            }],
+        })
+    return out
+
+
+def promote_topics(flagged: list, topics: list) -> list:
+    """主題に当たる語を先頭へ。順位を変えるだけで、信号の内容は変えない。"""
+    if not topics:
+        return flagged
+    order = {id(x): n for n, x in enumerate(flagged)}
+
+    def rank(item):
+        """本文での出現回数を第一に、次に主題との一致の強さで並べる。
+
+        回数を先に置くのは、『自然環境』のような括弧つきの句より、
+        2回書かれた「自然」の方が問われている語だからである（2026-10-07 実測）。
+        """
+        w = item.get("word") or ""
+        tier, ti = 2, len(topics)
+        for i, t in enumerate(topics):
+            if w == t:
+                tier, ti = 0, i
+                break
+            if len(w) >= 2 and w in t and tier > 1:
+                tier, ti = 1, i
+        return (-(item.get("count") or 0), tier, ti,
+                -(item.get("weight") or 0), order.get(id(item), 0))
+
+    for item in flagged:
+        w = item.get("word") or ""
+        hit = next((t for t in topics if w == t or (len(w) >= 2 and w in t)), "")
+        if hit:
+            item["topic_match"] = hit
+            item.setdefault("signals", []).insert(0, {
+                "id": "asked_in_text",
+                "label": "本文が主題として問うている語",
+                "detail": "本文の「{}」から取った".format(hit),
+                "why": "利用者が何を問題にしているかは、語の希少さではなく文の形に出る",
+                "evidence": "primary",
+            })
+    return sorted(flagged, key=rank)
+
+
 NARROWING_THRESHOLD = 10
 LONG_TEXT_CHARS = 4000
 
@@ -3149,7 +3262,10 @@ async def api_text_scan(request: Request, lang: str = "ja"):
         "text_chars": len(text),
         "candidates_examined": len(cands),
         "items_probed": len(probe_words),
-        "flagged": flagged[:40],
+        "flagged": promote_topics(
+            flagged + synthetic_topics(flagged, topic_terms(text)),
+            topic_terms(text))[:40],
+        "topics": topic_terms(text),
         "narrowing_hint": narrowing_hint(len(flagged), len(text)),
         "glossed_pairs": pair_findings,
         "honesty": ("これは候補の提示であり判定ではない。信号はWikidataの項目構成から"

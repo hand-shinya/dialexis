@@ -100,3 +100,29 @@ def test_old_glyph_does_not_match_by_accident():
     """翻字は新字体に正規化されている。旧字体で引いたときに嘘の一致を作らない。"""
     d = tj.lookup("權利")["data"]
     assert d["missing"] is True
+
+
+def test_headword_query_offers_its_translations():
+    """西洋語の見出しで引いたとき、その訳語が次に辿る先になる。
+
+    2026-10-07 の10人の模擬で、egoism が「主我学派・自利主義」を持つのに
+    辺が0本になっていた。日本語から引いた場合しか見ていなかった。
+    """
+    d = tj.lookup("egoism")["data"]
+    terms = [t["term"] for t in d["headword_terms"]]
+    assert terms == ["主我学派", "自利主義"]
+    assert d["missing"] is False
+
+
+def test_near_headwords_bridge_without_equating():
+    """「愛」自身の見出しは無い。語形が重なる別語を、別語として出す。"""
+    d = tj.lookup("愛")["data"]
+    assert d["missing"] is True
+    near = {(n["term"], n["headword"]) for n in d["near_headwords"]}
+    assert ("愛情", "Love") in near
+    assert all(n["term"] != "愛" for n in d["near_headwords"])
+
+
+def test_near_headwords_are_empty_when_the_word_itself_is_found():
+    d = tj.lookup("権利")["data"]
+    assert d["near_headwords"] == []

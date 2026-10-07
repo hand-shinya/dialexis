@@ -48,6 +48,7 @@
 .ws-pill .sn{font-size:.72rem;opacity:.6;margin-left:.3rem}
 .ws-pill.k-antonym{border-style:dashed}
 .ws-pill.is-self{border-color:currentColor;cursor:default;font-weight:600}
+.ws-pill.is-flat{cursor:default;opacity:.8;border-style:dotted}
 .ws-pill.k-translation{border-style:double}
 .ws-pill.k-reading{opacity:.75}
 .ws-senses{margin:.3rem 0 0;padding-left:1.1rem;font-size:.92rem}
@@ -100,6 +101,11 @@
 
   function pill(e) {
     var sn = e.sense ? '<span class="sn">' + esc(e.sense) + "</span>" : "";
+    // 読みは情報として出すが、押して進む先にはしない。かなへ進むと層が消える。
+    if (e.chainable === false) {
+      return '<span class="ws-pill is-flat k-' + esc(e.kind) + '">'
+        + esc(e.term) + sn + "</span>";
+    }
     return '<button type="button" class="ws-pill k-' + esc(e.kind) + '" data-term="'
       + esc(e.term) + '">' + esc(e.term) + sn + "</button>";
   }
@@ -338,6 +344,19 @@
               + "</p>";
           }).join("")
         + "</div>";
+    }
+    if ((t.near_headwords || []).length) {
+      h += '<div class="ws-card"><h3>近い見出し（別語）</h3>'
+        + '<p class="why">同じ語ではありませんが、語形が重なる見出しです。'
+        + '1881年版にこの語自身の見出しは置かれていないため、近い形を手がかりに出します。</p>'
+        + '<ul class="ws-works">'
+        + t.near_headwords.map(function (n) {
+            return "<li>" + esc(n.headword) + " → "
+              + '<button type="button" class="ws-pill" data-term="' + esc(n.term)
+              + '">' + esc(n.term) + "</button>"
+              + ' <span class="muted">' + esc((n.translations || []).join("、")) + "</span></li>";
+          }).join("")
+        + "</ul></div>";
     }
     if ((t.sibling_terms || []).length) {
       h += '<div class="ws-card"><h3>同じ見出しに並んだ訳語（押すと辿れます）</h3>'
