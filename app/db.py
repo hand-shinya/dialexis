@@ -13,12 +13,45 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.environ.get("DIALEXIS_DB", os.path.join(BASE_DIR, "data", "dialexis.db"))
 
 NODE_TYPES = ("question", "claim", "evidence", "counterclaim", "uncertainty",
-              "interpretation", "decision", "note", "source")
+              "interpretation", "decision", "note", "source",
+              # 2026-10-08 追加。半田様の「非有機的肉体」研究の復元から。
+              # 研究を実際に進めた3つの動きが、systemに1つも無かった。
+              #   provisional 暫定定義と、そこから落ちた契機（自分で却下する段）
+              #   memory      自分の記憶を、出典なしの独立した枝として立てる段
+              #   naming      命名を保留したまま、問いを言い換えて進む段
+              # いずれも人の判断であり、AIが代行すると価値が消える（下記 HUMAN_ONLY_TYPES）。
+              "provisional", "memory", "naming")
+# 人の判断を記録する型。**追記のみ**で、作成後は内容・型・確度・statusを変えられない。
+#
+# 2026-10-08 の敵対的検証で、当初の設計（origin != human を入口で拒否する）が
+# 守れないことが実証された。requestの発信者が人かAIかを判定する機構はこのsystemに
+# 存在せず、`origin` はclientの自己申告である。originを書かなければ既定で human になり、
+# 型を後から付け替えれば確度も status も迂回でき、人が書いた欄も3往復で洗えた。
+# 「AIが書けない」という宣言は実装の実力を超えていた（公理3違反）。
+#
+# よって保証する内容を、守れるものに置き換えた。
+#   保証する : 一度記録した人の判断は、黙って書き換えられない（追記のみ・型変換禁止）
+#   保証しない: 発信者が人であること（`origin` は自己申告である）
+# 訂正は上書きでなく、新しいnodeと `supersedes` 辺で表す。命名の採用も、naming を
+# `adopted` に書き換えるのではなく、別の `decision` node を日付つきで足して表す。
+#
+# 根拠（実測）: 半田様の研究で分岐を作った3つの瞬間の引き金は、すべて人の動きだった
+# （資料0件・AI0件）。AIが暫定定義を書けば、却下が「移動」でなく「修正」になる。
+# AIは正しいものしか書かないため、誤った記憶から枝が生まれる余地も消える。
+# 誤る権利は人の側にある。守るべきはその記録が消えないことである。
+HUMAN_ONLY_TYPES = ("provisional", "memory", "naming")
+# `origin` は自己申告である。この事実をpayloadと画面から落とさない（公理3）。
+ORIGIN_IS_SELF_DECLARED = (
+    "origin はclientの自己申告であり、systemは発信者が人かAIかを判定しない。"
+    "保証されるのは、記録が追記のみで黙って書き換えられないことである。")
 CONFIDENCE = ("confirmed", "high_probability", "unverified",
               "interpretive_hypothesis", "speculation")
 ORIGINS = ("human", "ai", "external")
 STATUSES = ("open", "adopted", "held", "rejected")
+# supersedes は 2026-10-08 追加。追記のみの記録を「訂正」するための唯一の手段で、
+# 409 の文がこの辺を指示している。語彙に無いまま指示していた（公理3違反）。
 RELATIONS = ("supports", "contradicts", "answers", "refines", "derives_from",
+             "supersedes",
              "cites", "about", "responds_to")
 # Argument-reconstruction vocabularies (E1-E5). These are NEW domain vocabularies
 # for the argument layer; they do not touch the confidence classification that

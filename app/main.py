@@ -5046,7 +5046,7 @@ def list_projects(request: Request):
 @app.post("/api/projects")
 async def create_project(request: Request):
     b = await request.json()
-    if not b.get("title", "").strip():
+    if not isinstance(b.get("title"), str) or not b["title"].strip():
         raise HTTPException(400, "title required")
     conn = get_conn()
     cur = conn.execute(
@@ -5066,9 +5066,26 @@ async def create_project(request: Request):
 
 
 @app.delete("/api/projects/{pid}")
-def delete_project(pid: int, request: Request):
+def delete_project(pid: int, request: Request, confirm_human_records: int = -1):
+    """企画を削除する。
+
+    nodes は ON DELETE CASCADE なので、ここを素通りさせると追記のみの記録が
+    黙って消える（2026-10-08 の敵対的検証で実証された）。件数を明示した
+    requestだけを通し、件数が合わなければ件数を返して止める。
+    """
     conn = get_conn()
     _project_or_404(conn, pid, request, write=True)
+    marks = ",".join("?" for _ in db.HUMAN_ONLY_TYPES)
+    n = conn.execute(
+        f"SELECT COUNT(*) c FROM nodes WHERE project_id=? AND type IN ({marks})",
+        (pid, *db.HUMAN_ONLY_TYPES)).fetchone()["c"]
+    if n and confirm_human_records != n:
+        conn.close()
+        raise HTTPException(409, {
+            "human_records": n,
+            "message": "この企画には追記のみの記録が {} 件ある。"
+                       "削除するなら confirm_human_records={} を明示すること".format(n, n),
+        })
     conn.execute("DELETE FROM projects WHERE id=? AND workspace_id=?", (pid, workspace_id(request)))
     conn.commit()
     conn.close()
@@ -5136,19 +5153,47 @@ async def create_node(pid: int, request: Request):
     b = await request.json()
     if b.get("type") not in db.NODE_TYPES:
         raise HTTPException(400, f"type must be one of {db.NODE_TYPES}")
-    if not b.get("title", "").strip():
+    if not isinstance(b.get("title"), str) or not b["title"].strip():
         raise HTTPException(400, "title required")
+    if "body" in b and not isinstance(b["body"], str):
+        raise HTTPException(400, "body must be a string")
     conf = b.get("confidence", "unverified")
     origin = b.get("origin", "human")
     if conf not in db.CONFIDENCE or origin not in db.ORIGINS:
         raise HTTPException(400, "bad confidence/origin")
+    status = b.get("status", "open")
+    if status not in db.STATUSES:
+        raise HTTPException(400, f"status must be one of {db.STATUSES}")
+    if b["type"] in db.HUMAN_ONLY_TYPES:
+        # origin は自己申告である（db.ORIGIN_IS_SELF_DECLARED）。
+        # ここで止められるのは「AIだと名乗った場合」だけで、保証ではない。
+        # 守れる保証は追記のみ（update_node / delete_node 側で強制する）。
+        if origin != "human":
+            raise HTTPException(
+                403, "type={} は人の判断の欄である。origin=human 以外では作れない。"
+                     "ただしこれは自己申告の拒否であり、発信者の判定ではない"
+                     .format(b["type"]))
+        if b["type"] == "memory":
+            # 記憶は出典を持たない。確度を上げられる形にしない。
+            conf = "unverified"
+        if b["type"] == "naming":
+            # 命名は保留で始まる。採用は書き換えでなく、別の decision node で表す。
+            status = "held"
+        elif status != "open":
+            # provisional / memory を最初から adopted で置くと、後から直せない
+            # 記録が生まれる（追記のみのため）。開いた状態で始める。
+            status = "open"
+        if b["type"] == "memory" and b.get("provenance"):
+            raise HTTPException(
+                409, "memory は出典を持たない型である。文献に当てた結果は evidence を"
+                     "別に作り、contradicts か supports の辺で結ぶこと")
     conn = get_conn()
     _project_or_404(conn, pid, request, write=True)
     cur = conn.execute(
         "INSERT INTO nodes(project_id, type, title, body, confidence, origin,"
         " status, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
         (pid, b["type"], b["title"].strip(), b.get("body", ""), conf, origin,
-         b.get("status", "open"), now(), now()))
+         status, now(), now()))
     nid = cur.lastrowid
     for pv in b.get("provenance", []):
         conn.execute(
@@ -5166,6 +5211,16 @@ async def create_node(pid: int, request: Request):
 @app.patch("/api/nodes/{nid}")
 async def update_node(nid: int, request: Request):
     b = await request.json()
+    # 値の検査が無かった（2026-10-08 に発見）。語彙外の値がそのまま入っていた。
+    VOCAB = {"confidence": db.CONFIDENCE, "origin": db.ORIGINS,
+             "status": db.STATUSES, "type": db.NODE_TYPES}
+    for k, allowed in VOCAB.items():
+        if k in b and b[k] not in allowed:
+            raise HTTPException(400, f"{k} must be one of {allowed}")
+    if "title" in b:
+        if not isinstance(b["title"], str) or not b["title"].strip():
+            raise HTTPException(400, "title required")
+        b["title"] = b["title"].strip()
     fields, vals = [], []
     for k in ("title", "body", "confidence", "origin", "status", "type"):
         if k in b:
@@ -5173,14 +5228,30 @@ async def update_node(nid: int, request: Request):
             vals.append(b[k])
     if not fields:
         raise HTTPException(400, "nothing to update")
-    vals += [now(), nid]
     conn = get_conn()
     node = conn.execute(
-        "SELECT project_id FROM nodes WHERE id=?", (nid,)).fetchone()
+        "SELECT project_id, type, origin FROM nodes WHERE id=?", (nid,)).fetchone()
     if not node:
         conn.close()
         raise HTTPException(404, "unknown node")
     _project_or_404(conn, node["project_id"], request, write=True)
+    cur_type = node["type"]
+    new_type = b.get("type", cur_type)
+    # 人の判断の記録は追記のみ。黙って書き換えられないことだけを保証する。
+    # 2026-10-08 の敵対的検証で、型を後から付け替える経路で確度もstatusも
+    # 迂回でき、人が書いた欄も3往復で洗えることが実証された。origin による
+    # 関門は自己申告の上に建っていたため、関門自体を替えた。
+    if cur_type in db.HUMAN_ONLY_TYPES:
+        conn.close()
+        raise HTTPException(
+            409, "type={} は追記のみの記録である。書き換えではなく、新しいnodeと "
+                 "supersedes 辺で訂正を表すこと".format(cur_type))
+    if new_type in db.HUMAN_ONLY_TYPES and new_type != cur_type:
+        conn.close()
+        raise HTTPException(
+            409, "人の判断の欄（{}）は、新しく作る形で記録する。"
+                 "既存のnodeの型を付け替える経路は用いない".format(new_type))
+    vals += [now(), nid]
     conn.execute(f"UPDATE nodes SET {', '.join(fields)}, updated_at=? WHERE id=?", vals)
     conn.commit()
     conn.close()
@@ -5190,11 +5261,18 @@ async def update_node(nid: int, request: Request):
 @app.delete("/api/nodes/{nid}")
 def delete_node(nid: int, request: Request):
     conn = get_conn()
-    node = conn.execute("SELECT project_id FROM nodes WHERE id=?", (nid,)).fetchone()
+    node = conn.execute(
+        "SELECT project_id, type FROM nodes WHERE id=?", (nid,)).fetchone()
     if not node:
         conn.close()
         raise HTTPException(404, "unknown node")
     _project_or_404(conn, node["project_id"], request, write=True)
+    if node["type"] in db.HUMAN_ONLY_TYPES:
+        # 却下した定義も、誤っていた記憶も、研究を動かした記録である。消させない。
+        conn.close()
+        raise HTTPException(
+            409, "type={} は追記のみの記録である。削除せず、rejected の decision を"
+                 "足して表すこと".format(node["type"]))
     conn.execute("DELETE FROM nodes WHERE id=?", (nid,))
     conn.commit()
     conn.close()
@@ -5225,11 +5303,20 @@ async def create_edge(pid: int, request: Request):
 @app.delete("/api/edges/{eid}")
 def delete_edge(eid: int, request: Request):
     conn = get_conn()
-    edge = conn.execute("SELECT project_id FROM edges WHERE id=?", (eid,)).fetchone()
+    edge = conn.execute(
+        "SELECT e.project_id, s.type stype, d.type dtype FROM edges e"
+        " JOIN nodes s ON s.id=e.src JOIN nodes d ON d.id=e.dst"
+        " WHERE e.id=?", (eid,)).fetchone()
     if not edge:
         conn.close()
         raise HTTPException(404, "unknown edge")
     _project_or_404(conn, edge["project_id"], request, write=True)
+    if edge["stype"] in db.HUMAN_ONLY_TYPES or edge["dtype"] in db.HUMAN_ONLY_TYPES:
+        # 辺を消すと、記録は残っても「どの問いに答えていたか」が消える。
+        conn.close()
+        raise HTTPException(
+            409, "追記のみの記録に繋がる辺である。打ち消すなら contradicts か "
+                 "supersedes の辺を足して表すこと")
     conn.execute("DELETE FROM edges WHERE id=?", (eid,))
     conn.commit()
     conn.close()
@@ -5240,11 +5327,18 @@ def delete_edge(eid: int, request: Request):
 async def add_provenance(nid: int, request: Request):
     b = await request.json()
     conn = get_conn()
-    node = conn.execute("SELECT project_id FROM nodes WHERE id=?", (nid,)).fetchone()
+    node = conn.execute(
+        "SELECT project_id, type FROM nodes WHERE id=?", (nid,)).fetchone()
     if not node:
         conn.close()
         raise HTTPException(404, "unknown node")
     _project_or_404(conn, node["project_id"], request, write=True)
+    if node["type"] == "memory":
+        # 記憶は出典を持たない。出典が在るなら evidence として別に立てる。
+        conn.close()
+        raise HTTPException(
+            409, "memory は出典を持たない型である。文献に当てた結果は evidence を"
+                 "別に作り、contradicts か supports の辺で結ぶこと")
     cur = conn.execute(
         "INSERT INTO provenance(node_id, source_name, source_url, retrieved_at,"
         " quote, note, locator) VALUES(?,?,?,?,?,?,?)",
@@ -5476,8 +5570,11 @@ async def suggest_hidden(aid: int, request: Request):
 
 # ---------- export (axiom 7: exit-ability) ----------
 
+# 2026-10-08: provisional / memory / naming を足した。入れ忘れると、人が読む
+# export.md からだけ黙って消える（jsonld と graph には出る）。
 TYPE_ORDER = ("question", "claim", "evidence", "counterclaim", "interpretation",
-              "uncertainty", "decision", "source", "note")
+              "uncertainty", "decision", "source", "note",
+              "provisional", "memory", "naming")
 
 
 @app.get("/api/projects/{pid}/export.md", response_class=PlainTextResponse)
