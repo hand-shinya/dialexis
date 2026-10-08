@@ -2757,6 +2757,70 @@ def _translation_layer(q: str) -> dict:
     return res.get("data") or {"missing": True}
 
 
+def _pivot_edges(dic: dict) -> list:
+    """原語pivot。語義別の訳語節の英語lemmaから、1881年の訳語へ渡す。
+
+    2026-10-08 の実測で、この経路は10語のうち7語に届く。新しい情報源は要らない。
+    鍵は語義つきなので、辺に名が付く（どの語義のどの原語の訳か）。
+    """
+    out, seen = [], {str(dic.get("word") or "")}
+    for row in ((dic.get("translations") or {}).get("rows") or []):
+        label = row.get("sense_label") or ""
+        for en in (row.get("en") or []):
+            try:
+                d = tetsugaku_jii.lookup(en)["data"]
+            except (OSError, ValueError):
+                continue
+            for v in (d.get("as_headword") or []):
+                for term in v.get("translations") or []:
+                    name = term.get("term") or ""
+                    if not name or name in seen:
+                        continue
+                    seen.add(name)
+                    out.append({
+                        "term": name, "kind": "translation", "label": "訳語",
+                        "sense": "〔{}〕{} の訳語（1881年）".format(label, v["headword"]),
+                        "source": "ninjal-tetsugaku-jii-1881",
+                        "evidence": "pivot", "chainable": True,
+                        "why": "{}の{}は英語の {} に当たり、1881年にはこの語が当てられた"
+                               .format(dic.get("word", ""), label, v["headword"]),
+                    })
+    return out
+
+
+def _coverage(dic: dict, tr: dict, pivot: list = None) -> dict:
+    """0件の原因を4つに分けて記録する。同じ空白として出さない（公理1）。
+
+    (a) 未立項 (b) 立項はあるが関係の節が空 (c) 鍵が別言語の側 (d) 語釈の中だけ
+    """
+    sec = (dic or {}).get("sections") or {}
+    rel = (dic or {}).get("relations") or []
+    blanks = []
+    if (dic or {}).get("missing"):
+        blanks.append({"cause": "no_entry",
+                       "note": "辞書にこの見出しが立っていない"})
+    elif not rel:
+        blanks.append({"cause": "entry_but_empty_relations",
+                       "note": "見出しは在るが、関係を書いた節が置かれていない"})
+    has_rows = bool(((dic or {}).get("translations") or {}).get("rows"))
+    if (tr or {}).get("missing") and has_rows:
+        if pivot:
+            blanks.append({"cause": "key_on_other_side",
+                           "note": "日本語の表記では当たらないが、原語の側に鍵が在った"})
+        else:
+            blanks.append({"cause": "key_on_other_side_unmatched",
+                           "note": "原語は取れたが、1881年版にその見出しが無い"})
+    glos = [s for s in ((dic or {}).get("senses") or []) if s]
+    if not rel and glos:
+        blanks.append({"cause": "in_gloss_only",
+                       "note": "関係の節は空だが、語釈の文には関係語が書かれている"})
+    return {"sections_found": sec.get("found") or [],
+            "sections_read": sec.get("read") or [],
+            "sections_unread": sec.get("unread") or [],
+            "blanks": blanks,
+            "note": "在った節と読んだ節の差が、資料の欠落ではなく我々の読み落ちである"}
+
+
 def _translation_edges(t: dict) -> list:
     """訳語史層を、連鎖できる辺の列にする。辞書層の辺とは別の種類である。
 
@@ -2930,10 +2994,27 @@ async def api_wordspace(q: str, lang: str = "ja", sample: int = 100):
                 c["substitutes"] = subs
     modern = modern_tally(_data(ci_res, "cinii") or [], _data(oa_res, "openalex") or [])
     translation = _translation_layer(q)
+    # 訳語節が別pageへ転送されている場合（愛 → 愛情）、1段だけ追う。
+    see = ((d.get("translations") or {}).get("see") or [])
+    if see and not ((d.get("translations") or {}).get("rows")):
+        s_res = await asyncio.gather(
+            *[ja_wiktionary.lookup(x["page"]) for x in see[:2]],
+            return_exceptions=True)
+        rows = []
+        for x, r in zip(see[:2], s_res):
+            sd = _data(r, "ja.wiktionary:" + x["page"])
+            for row in ((sd.get("translations") or {}).get("rows") or []):
+                rows.append({"sense_label": "{}（{} へ転送）".format(
+                    x.get("sense_label") or row.get("sense_label") or "", x["page"]),
+                    "en": row.get("en") or []})
+        if rows:
+            d.setdefault("translations", {})["rows"] = rows
+    pivot = _pivot_edges(d)
     return {"query": q, "lang": lang, "queried_at": now(),
             "dictionary": d, "corpus": c, "modern": modern,
             "translation": translation,
-            "edges": _dict_edges(d) + _translation_edges(translation),
+            "coverage": _coverage(d, translation, pivot),
+            "edges": _dict_edges(d) + _translation_edges(translation) + pivot,
             "errors": errors,
             "honesty": "辞書層は一般辞書の関係記述であり哲学術語の定義ではない。"
                        "用例層は全文OCRの標本分布であり全体の分布ではない。"

@@ -90,12 +90,14 @@
   }
   function el(id) { return document.getElementById(id); }
 
-  var ORDER = ["synonym", "antonym", "related", "derived", "reading"];
+  var ORDER = ["synonym", "antonym", "related", "compound", "derived", "idiom", "reading"];
   var TITLE = {
     synonym: "類義（近い意味に置かれている語）",
     antonym: "対義（反対に置かれている語）",
-    related: "関連（同じ場で使われる語）",
+    related: "関連（同じ場で使われる語。関係の種別は辞書に書かれていない）",
+    compound: "複合（この語を語構成に含む語）",
     derived: "派生（この語から作られた語）",
+    idiom: "成句・熟語（この語を含む言い回し）",
     reading: "読み（音の系統。呉音と漢音の差が意味の層に対応することがある）"
   };
 
@@ -321,7 +323,49 @@
       + "</div>";
   }
 
-  function translationSection(t) {
+  function pivotCard(edges) {
+    if (!edges.length) { return ""; }
+    var by = {};
+    edges.forEach(function (e) { (by[e.sense] = by[e.sense] || []).push(e); });
+    var h = '<div class="ws-card"><h3>原語から渡した訳語（語義つき）</h3>'
+      + '<p class="why">辞書の訳語表に並ぶ原語を手がかりに、1881年の同じ原語の項へ渡しました。'
+      + 'どの語義のどの原語の訳かが辺に書かれています。</p>';
+    Object.keys(by).forEach(function (k) {
+      h += '<div class="ws-group"><h3>' + esc(k) + "（" + by[k].length + "）</h3>"
+        + '<div class="ws-pills">' + by[k].map(pill).join("") + "</div></div>";
+    });
+    return h + "</div>";
+  }
+
+  function coverageSection(c) {
+    if (!c) { return ""; }
+    var NOTE = {
+      no_entry: "辞書にこの見出しが立っていません",
+      entry_but_empty_relations: "見出しは在りますが、関係を書いた節が置かれていません",
+      key_on_other_side: "日本語の表記では当たらず、原語の側に鍵が在りました",
+      key_on_other_side_unmatched: "原語は取れましたが、1881年版にその見出しがありません",
+      in_gloss_only: "関係の節は空ですが、語釈の文には関係語が書かれています"
+    };
+    var b = c.blanks || [];
+    var h = '<div class="ws-sec"><h2>この語で取れた範囲</h2>'
+      + '<p class="why">在った節と、読んだ節を並べます。差があれば、資料の欠落ではなく'
+      + 'こちらの読み落ちです。</p><div class="ws-card">'
+      + "<p>在った節: " + esc((c.sections_found || []).join("、") || "—") + "</p>"
+      + "<p>読んだ節: " + esc((c.sections_read || []).join("、") || "—") + "</p>";
+    if ((c.sections_unread || []).length) {
+      h += "<p>まだ読んでいない節: " + esc(c.sections_unread.join("、")) + "</p>";
+    }
+    if (b.length) {
+      h += "<ul class=\"ws-senses\">"
+        + b.map(function (x) {
+            return "<li>" + esc(NOTE[x.cause] || x.note || x.cause) + "</li>";
+          }).join("")
+        + "</ul>";
+    }
+    return h + "</div></div>";
+  }
+
+  function translationSection(t, pivot) {
     var st = (t && t.stats) || {};
     var head = '<div class="ws-sec"><h2>訳語史層（1881年の訳語対応）</h2>';
     if (!t || t.missing) {
@@ -367,7 +411,7 @@
           }).join("")
         + "</div></div>";
     }
-    return h + tjCredit(t.source) + "</div>";
+    return h + pivotCard(pivot || []) + tjCredit(t.source) + "</div>";
   }
 
   var TRAIL = [];
@@ -385,9 +429,12 @@
   function render(d) {
     el("ws-out").innerHTML =
       dictSection(d.dictionary, d.edges || [])
-      + translationSection(d.translation)
+      + translationSection(d.translation, (d.edges || []).filter(function (e) {
+          return e.evidence === "pivot";
+        }))
       + corpusSection(d.corpus)
       + modernSection(d.modern)
+      + coverageSection(d.coverage)
       + '<div class="ws-meta"><p>取得時刻 ' + esc(d.queried_at || "") + "</p><ul>"
       + "<li>" + esc(d.honesty || "") + "</li>"
       + ((d.errors || []).length
