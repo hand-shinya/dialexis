@@ -202,6 +202,10 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .segment-heading { margin: 0 0 .15rem; font-size: .88rem; font-weight: 650; }
 .segment-note { margin: .15rem 0 .35rem; color: var(--muted); font-size: .76rem; line-height: 1.45; }
 .segment-units { display: flex; flex-wrap: wrap; align-items: stretch; gap: .3rem; }
+/* 字義の列への注記。語義と読み違えないための断りなので、本文より控える。 */
+.anat-compnote { margin: .2rem 0 .3rem; }
+/* その字がどの意味のまとまりの内側にあるか。字義のすぐ後ろに小さく置く。 */
+.anat-inunit { color: var(--muted); font-size: .72rem; margin-left: .15rem; }
 .segment-unit { display: inline-flex; flex-direction: column; gap: .05rem; border: 1px solid var(--line); border-radius: 6px; padding: .28rem .5rem; background: #fffdf8; }
 .segment-unit a { color: var(--accent2); text-decoration: none; font-weight: 600; }
 .segment-unit a:hover { text-decoration: underline; }

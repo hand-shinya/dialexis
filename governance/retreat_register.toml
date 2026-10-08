@@ -1,0 +1,262 @@
+# 撤退台帳 — M0 §7.1 を外部機構にするための足場（2026-10-09・schema 2）
+#
+# 名乗り（公理3）:
+#   これは「M0 §7.1 を外部強制にしたもの」ではない。**外部強制にするための足場**である。
+#   2026-10-09 の敵対的検証で、初版（schema 1）は次のどれでも通ることが実証された。
+#     ・全欄を無意味な文字列で埋める（`retreat = "この機構は削除しない"` が通った）
+#     ・期日を 2099-01-01 に延ばす
+#     ・期日超過の項を、codeを残したまま台帳から1行消す
+#     ・項を [[correction]] に札替えして期日の要求を外す
+#     ・`tests/test_retreat_register.py` そのものを消す（静かに全部通った）
+#   schema 2 はこのうち実装できる分を閉じた。閉じていない分は末尾の「閉じていない穴」に書く。
+#
+# なぜ在るか:
+#   M0 §7.1 は、機構・gate・定期実行を足す提案に 期日／観測点／期日に効果が無ければ削除する
+#   の三つを要求する。2026-07-11〜08-07 に撤退はゼロで、job 28→48・資産 62→103・
+#   gate 約4→14 と増えた。Dialexis でも 2026-10-08 に関門12本と道具1本が増え、
+#   どれにも期日が無かった。仕様書 §12.12 はそれを欠陥として記述したが、
+#   記述は実行ではない（M0 C3）。公理6 により、強制は AI の外部に置く。
+#
+# 書き方:
+#   [[mechanism]] 継続して注意・保守・実行の費用が掛かるもの。期日が必須。
+#   [[correction]] 偽の表示や誤った宣言を直したもの。費用が増えないので期日は不要。
+#                  ただし守る試験（tests/test_*.py で、実際に試験関数を持つもの）が必須。
+#   expected_tests  tests/ に在るべき試験fileの全集合。disk と一致しなければ落ちる。
+#                  試験fileを消して黙らせる経路と、台帳に書かずに機構を足す経路を同時に塞ぐ。
+#
+# 期日が来たら、どちらかしかない:
+#   status = "retired"   その機構を消し、retired_at を書く（行は残す。消さない）
+#   status = "continued" observed に実測値、evidence にその出所、verdict に根拠、
+#                        verdict_date に日付を書く。1語では通らない。
+#   「観察を継続する」「保留」「とりあえず置く」は、どちらでもない。
+
+schema_version = 2
+updated = "2026-10-09"
+# 期日の判定に使う時刻帯を固定する。date.today() は機械のTZを見るので、
+# 同じ commit が UTC の機械では1日ゆるくなる（2026-10-09 に実証した）。
+timezone = "Asia/Tokyo"
+# 期日は追加日から何日先までを許すか。上限が無いと 2099 と書いて永久に逃げられる。
+max_horizon_days = 90
+
+# ---------------------------------------------------------------------------
+# tests/ に在るべき試験fileの全集合（disk と厳密一致を強制する）
+#
+# これが在る理由は二つある。
+#   (1) 期日に落ちたときの最短の逃げ道は tests/test_retreat_register.py を消すことで、
+#       初版ではそれが静かに通った（315 passed・rc=0）。
+#   (2) 機構を足して台帳に書かない経路は、初版では完全に無強制だった。
+#       新しい関門はほぼ必ず新しい試験fileを伴うので、この集合との不一致で検出する。
+# file を足したり消したりしたら、この list も直すこと。直さなければ落ちる。
+# ---------------------------------------------------------------------------
+expected_tests = [
+  "tests/test_action_registry_coverage.py",
+  "tests/test_arguments.py",
+  "tests/test_canon_chain_fixture.py",
+  "tests/test_canon_endpoint_integration.py",
+  "tests/test_canon_override.py",
+  "tests/test_dispatch_single_path.py",
+  "tests/test_etymology_langname_guard.py",
+  "tests/test_explore_routing.py",
+  "tests/test_export_bib.py",
+  "tests/test_human_only_nodes.py",
+  "tests/test_ja_wiktionary.py",
+  "tests/test_kanji_variants.py",
+  "tests/test_known_harms.py",
+  "tests/test_ledgers.py",
+  "tests/test_modern_layer.py",
+  "tests/test_narrowing_hint.py",
+  "tests/test_ndl_fulltext.py",
+  "tests/test_no_negative_ui.py",
+  "tests/test_no_raw_error.py",
+  "tests/test_one_char_corpus.py",
+  "tests/test_orig_cluster.py",
+  "tests/test_origin.py",
+  "tests/test_person_dynamic.py",
+  "tests/test_person_graph.py",
+  "tests/test_poc_adopt_stance.py",
+  "tests/test_question_doors.py",
+  "tests/test_resolution.py",
+  "tests/test_resume_check.py",
+  "tests/test_retreat_register.py",
+  "tests/test_route_health.py",
+  "tests/test_sections_and_pivot.py",
+  "tests/test_semantic_segments.py",
+  "tests/test_sep_original_term.py",
+  "tests/test_smoke.py",
+  "tests/test_tetsugaku_jii.py",
+  "tests/test_topic_ranking.py",
+  "tests/test_translation_edge.py",
+  "tests/test_translation_history.py",
+  "tests/test_wordspace_endpoint.py",
+  "tests/test_workspace_boundary.py",
+]
+
+# ---------------------------------------------------------------------------
+# 機構（期日が必須）
+# ---------------------------------------------------------------------------
+
+[[mechanism]]
+id = "human-only-nodes"
+added = "2026-10-08"
+what = "人の判断の3型（provisional / memory / naming）と、追記のみを守る関門12本"
+cost = "関門12本。origin を書かない client は 403 を受ける。PATCH と DELETE が 409 になる"
+implemented_by = ["app/db.py:HUMAN_ONLY_TYPES", "app/main.py:HUMAN_ONLY_TYPES"]
+deadline = "2026-11-05"
+observation = "3つの欄のいずれかに、本番で1件以上の node が立っていること"
+observation_threshold = "provisional + memory + naming の合計 >= 1 件"
+how_to_measure = "curl -s -c j -b j $BASE/api/projects で企画を列挙し、各 graph の node の type を数える"
+retreat = "4週間で0件の欄だけを NODE_TYPES から除去する。3つを一括で判定しない"
+status = "open"
+observed = ""
+evidence = ""
+verdict = ""
+verdict_date = ""
+retired_at = ""
+retired_commit = ""
+
+[[mechanism]]
+id = "resume-check"
+added = "2026-10-08"
+what = "中断と再開の点検（tools/resume_check.py・298行・状態5値）"
+cost = "半田様または AI が手で走らせる。記録fileを1本持つ"
+implemented_by = ["tools/resume_check.py"]
+deadline = "2026-11-05"
+observation = "実際の論考folderに対して1回以上走り、missing か changed を1件以上検出していること"
+observation_threshold = "走った回数 >= 1 かつ 検出件数 >= 1"
+how_to_measure = "VAULT_ROOT=... python3 tools/resume_check.py <記録file> の要約行（missing n / changed n）"
+retreat = "4週間で一度も走っていなければ tools/resume_check.py と tests/test_resume_check.py を削除する"
+status = "open"
+observed = ""
+evidence = ""
+verdict = ""
+verdict_date = ""
+retired_at = ""
+retired_commit = ""
+
+[[mechanism]]
+id = "retreat-register"
+added = "2026-10-09"
+what = "この台帳そのものと、それを強制する試験（tests/test_retreat_register.py）"
+cost = "機構を足すたび、試験fileを足すたびに台帳を1行直す。期日を過ぎると verify.sh が落ちる"
+implemented_by = ["governance/retreat_register.toml", "tests/test_retreat_register.py", "tools/check_register_files.py", "verify.sh:check_register_files"]
+deadline = "2026-12-01"
+# 自己検証の輪を避けるため、観測点は「判定が書かれたこと」ではなく
+# 「実際に1件以上が撤退したこと」に限る。判定を1語書いて自分を延命する経路を塞ぐ。
+observation = "この台帳によって、実際に1件以上の機構が status=retired になったこと"
+observation_threshold = "status = \"retired\" の mechanism >= 1 件"
+how_to_measure = "この file の status 欄を数える（grep -c 'status = \"retired\"'）"
+retreat = "12-01 までに retired が1件も出なければ、この台帳と tests/test_retreat_register.py を削除する"
+status = "open"
+observed = ""
+evidence = ""
+verdict = ""
+verdict_date = ""
+retired_at = ""
+retired_commit = ""
+
+# ---------------------------------------------------------------------------
+# 訂正（期日は不要。守る試験の実在と、その中身が必須）
+# ---------------------------------------------------------------------------
+
+[[correction]]
+id = "anatomy-char-gloss-not-term-gloss"
+fixed = "2026-10-09"
+what = """/api/anatomy が返す1字ごとの辞書義を、語の意味の構成要素として読める形で出していた。
+「非有機的肉体」で 機=weaving machine・的=bright・体=alternative form of 笨 が並び、
+6字のうち5字は「有機的」「肉体」という意味単位の内側の字だった。"""
+how_fixed = "各字に in_unit と applies_to_term を付け、components_note に何字が語義でないかを書く。字義は削らない"
+guarded_by = "tests/test_known_harms.py"
+
+[[correction]]
+id = "combine-search-hit-is-not-application"
+fixed = "2026-10-09"
+what = """/api/combine が検索一致した語を kind="application"（応用）として返し、
+note が「両方に関わるものだけ」と関連を断定していた。
+肉体×自然(AND) で 肉体の学校・プロレスラー・精霊 が「応用」として出ていた。"""
+how_fixed = "kind を cooccurrence にし、basis を付け、note を「検索で集めたもの・関係は未検証」に替える"
+guarded_by = "tests/test_known_harms.py"
+
+[[correction]]
+id = "deepsearch-retrieved-is-not-established"
+fixed = "2026-10-09"
+what = """DeepSearch の prompt が、自動取得したWikidata要約・別言語label・SEP節見出しを
+「## 0. 既に判明している手がかり」「確認された原語候補」として他のAIへ渡していた。
+受け取った側はそれを前提に推論するので、誤りが下流で増幅する（公理3）。
+さらに例示文が、埋没を「非有機的」側と書いていた（実際は Leib / Körper ＝「肉体」側）。
+材料が無いときも本文が節を参照していた（旧版から在った害）。"""
+how_fixed = "見出しを「機械が取得した手がかり（自動取得・未検証）」に替え、各項の出所を書き、例示を訂正し、参照を節の有無に連動させる"
+guarded_by = "tests/test_known_harms.py"
+
+
+[[correction]]
+id = "anatomy-note-second-round"
+fixed = "2026-10-09"
+what = """1巡目の H-A の修理そのものが、新しい偽を作っていた（敵対的検証が実証）。
+矛盾で「矛=spear・盾=shield は語の意味の構成要素ではない」と画面に出していた。
+同じ応答の summary が「韓非子の故事に由来」と言い、tests/e2e/anatomy.e2e.js は
+矛+盾 を正解として守っている。自分の gate が守る情報を画面で否定していた。
+注記は 84語すべてで出ており、識別力が無かった。
+未解決の残り（越論的・夜城・機的身体）を「意味のまとまり」と断定していた。
+NFKC互換漢字（U+F900-FAFF）では印が全て外れ、害が完全に再開していた。
+注記は日本語固定で、英語UIに未翻訳のまま出ていた。
+注記の「ありません」が aspect_no_recenter.e2e.js の禁止語に当たり deploy gate が落ちた。"""
+how_fixed = """語そのものが1単位なら印も注記も出さない。未解決の残りは「切り分けられていない部分（機械推定・低確度）」と呼ぶ。
+cjk を作る前に NFKC 正規化する。文面は構造（components_note_parts）で返し app.js が LANG で組む。否定表現を使わない。"""
+guarded_by = "tests/test_known_harms.py"
+
+[[correction]]
+id = "gravity-search-hit-is-not-application"
+fixed = "2026-10-09"
+what = """/api/gravity が、H-B で名指しされたのと同じ3語（肉体の学校・プロレスラー・精霊）を
+kind="application"（応用）・basis なし・断り無しで返していた。
+H-B の修理は /api/combine の中だけの事実だった。
+空応答の文も否定的結末（「測れませんでした」）だった。"""
+how_fixed = "Wikidata近縁は related、検索一致は cooccurrence にし basis を付ける。note に断りを足し、空応答の文を次の一手へ替える"
+guarded_by = "tests/test_known_harms.py"
+
+[[correction]]
+id = "ledger-does-not-stamp-confirmed-on-a-guess"
+fixed = "2026-10-09"
+what = """/api/translation-history が、/api/anatomy で付けた印を引き継がず、
+applies_to_term=False の字義を「語源的構成要素」として台帳に入れていた。
+さらに role=unresolved_unit・confidence=low の非語（機的身体）を
+evidence="confirmed" で記録していた。seed の confirmed のラベルは「本文・書誌を確認」、
+説明は「引用された本文か典拠目録が直接支持する」である。"""
+how_fixed = "単位の確度を台帳へ引き継ぐ（high→candidate・low→unverified）。印の付いた字義は「字の辞書義（補助）」として入れ、どの単位の内側かを書く"
+guarded_by = "tests/test_known_harms.py"
+
+[[correction]]
+id = "ui-assertions-are-measured-by-rendering"
+fixed = "2026-10-09"
+what = """画面の検査が app.js / style.css の grep だった。
+敵対的検証で12件の破壊のうち10件が全緑のまま通った。
+とくに「_compNote を return \"\" で潰す」「.anat-compnote { display:none }」
+「印を空の span にする」の3件は、画面に何も出なくなるのに緑だった。
+文字列がsourceに在ることは、画面に出ていることを意味しない（公理7）。"""
+how_fixed = "tests/e2e/anatomy_note.e2e.js を新設（13 assertion・offsetHeight>0 まで測る・ja/en 両方・route で /api/anatomy を差し替えて決定論的）。4件の破壊で落ちることを実測した"
+guarded_by = "tests/test_known_harms.py"
+
+# ---------------------------------------------------------------------------
+# 閉じていない穴（2026-10-09 の敵対的検証が実証したもののうち、まだ塞げていない分）
+#
+#   U1 行の削除は、git に追跡された file の差分としては残るが、
+#      過去版が HEAD に無い初回 commit では比較できない。
+#      対策: schema 2 の試験は `git show HEAD:<台帳>` と id 集合を比べる。
+#      HEAD に台帳が無い間（この commit まで）は比較できないので、そこは未強制である。
+#   U2 observation の実測は自動収集されていない。期日に人か AI が測る。
+#      測った値を observed に書くことは強制できるが、値が正しいことは強制できない（公理7）。
+#   U3 「機構」の定義そのものは機械に無い。関門を1本増やしただけで試験fileを作らなければ、
+#      expected_tests は動かず、台帳も動かない。
+#      なお試験file自身の削除は、2026-10-09 に verify.sh の step 0
+#      （tools/check_register_files.py）へ出して塞いだ。pytest の中に置くと、
+#      検査する試験fileを消したときに検査もろとも消える。
+#   U4 期日の到来は deploy のときにしか見えない。期日より前に知らせる経路は無い。
+#   U5 /api/combine と /api/gravity が返す basis・context_match は、画面のどこにも
+#      出ていない（app.js に1箇所も無いことを grep で確認）。kind は canvas の点の
+#      色を決めるだけで、凡例も無い。利用者に届いているのは note の文だけである。
+#      「basis を付けた」は API の契約についてのみ成立する（公理3）。
+#   U6 無鉄砲 の「無」は否定辞ではないが、_SEMANTIC_PREFIXES が接頭辞として扱うため
+#      applies_to_term=True になる。これは注記の作りではなく分割表の側の限界である。
+#   U7 tests/e2e/*.e2e.js は expected_tests の対象外である。e2e を消しても
+#      台帳は動かない（tests/test_*.py だけを数えている）。
+# ---------------------------------------------------------------------------

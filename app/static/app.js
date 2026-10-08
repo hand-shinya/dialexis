@@ -1737,7 +1737,7 @@ function altFromOrigin(o, word) {
 function altFromAnatomy(a, word) {
   const jp = LANG === "ja"; let h = ""; if (!a || !a.term) return "";
   h += segmentLayersHtml(a.segment_layers, { includeCharacter: false });
-  if ((a.components || []).length) h += `<div class="anat-comp">` + a.components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}</span>`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
+  if ((a.components || []).length) h += _compNote(a) + `<div class="anat-comp">` + a.components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}${_compInUnit(c)}</span>`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
   if ((a.chain || []).length) h += `<div class="chain">` + a.chain.map(c => `<span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span><a href="#" class="ext-term chain-form" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `<span class="anat-gloss">「${esc(c.gloss)}」</span>` : ""}</span>`).join("<span class=\"chain-arrow\">←</span>") + `</div>`;
   if (a.summary) h += `<p class="anat-summary">${esc(a.summary.length > 300 ? a.summary.slice(0, 300) + "…" : a.summary)}</p>`;
   return h;
@@ -2294,7 +2294,9 @@ async function surfaceContextFor(term, node) {
 /* ---------- 言語空間の重力グラフ（canvas force-directed・階層/展開/俯瞰） ---------- */
 const GKIND = { word: "#1d2430", domain: "#2e5c7a", original: "#7a5c2e",
   author: "#b45309", work: "#9a7b52", language: "#4a7fa5",
-  related: "#3a7d44", opposite: "#a03b3b", appdomain: "#5b4b8a", application: "#8a6d3b" };
+  related: "#3a7d44", opposite: "#a03b3b", appdomain: "#5b4b8a", application: "#8a6d3b",
+  // 検索で両語に一致した語。関係を測ってはいないので、related とは別の色にする。
+  cooccurrence: "#6b7280" };
 let G_lenscache = {};   // 遅延レンズ（応用/使用例/時代変遷）の 語+レンズ ごとの取得キャッシュ
 let G = null, DIMS = null, G_raw = null, G_lens = "all";
 
@@ -3289,7 +3291,7 @@ async function gAnatomyPanel(word) {
   h += segmentLayersHtml(d.segment_layers, { includeWhole: true, includeCharacter: false });
   if (components.length) {
     const hasChars = (d.segment_layers || []).some(x => x && x.level === "character");
-    const comp = components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}</span>`).join(`<span class="anat-plus">＋</span>`);
+    const comp = _compNote(d) + components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}${_compInUnit(c)}</span>`).join(`<span class="anat-plus">＋</span>`);
     h += hasChars
       ? `<details class="segment-secondary"><summary>${jp ? "文字辞書義（補助）を開く" : "Open character glosses (secondary)"}</summary><p class="segment-note">${jp ? "意味のまとまりを確認した後に、各文字の辞書義を補助情報として参照できます。" : "Refer to character dictionary glosses after reading the meaningful units."}</p><div class="anat-comp">${comp}</div></details>`
       : `<h4 class="gp-h">${jp ? "語源的な構成要素（クリックで探索）" : "Components"}</h4><div class="anat-comp">${comp}</div>`;
@@ -3324,11 +3326,11 @@ async function gContrastPanel(word) {
   const jaMean = (o.general_meaning || []).map(s => `<li>${esc(s.length > 200 ? s.slice(0, 200) + "…" : s)}</li>`).join("") || `<li class="muted">—</li>`;
   const cw = o.collapse_warning;
   const jaCollapse = cw && cw.lemmas && cw.lemmas.length ? `<p class="srcline">${jp ? "※この一語に埋没した原語（クリックで探索）：" : "collapsed: "}${cw.lemmas.map(l => `<a href="#" class="ext-term" data-w="${esc(l.lemma)}">${esc(l.lemma)}</a>`).join("・")}</p>` : "";
-  const comps = (Array.isArray(a.components) ? a.components : []).map(c => `<li><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}</li>`).join("");
+  const comps = (Array.isArray(a.components) ? a.components : []).map(c => `<li><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}${_compInUnit(c)}</li>`).join("");
   const chain = (Array.isArray(a.chain) ? a.chain : []).map(c => `<li>${esc(c.lang)}：<a href="#" class="ext-term" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `「${esc(c.gloss)}」` : ""}</li>`).join("");
   const semantic = segmentLayersHtml(a.segment_layers, { includeWhole: false, includeCharacter: false });
   const origHtml = (semantic || comps || chain)
-    ? `${semantic}${comps ? `<p class="srcline">${jp ? "文字・語源の構成要素（補助）" : "components"}</p><ul class="ct-ul">${comps}</ul>` : ""}${chain ? `<p class="srcline">${jp ? "変容の連鎖（原語へ）" : "chain"}</p><ul class="ct-ul">${chain}</ul>` : ""}`
+    ? `${semantic}${comps ? `<p class="srcline">${jp ? "文字・語源の構成要素（補助）" : "components"}</p>${_compNote(a)}<ul class="ct-ul">${comps}</ul>` : ""}${chain ? `<p class="srcline">${jp ? "変容の連鎖（原語へ）" : "chain"}</p><ul class="ct-ul">${chain}</ul>` : ""}`
     : `<p class="muted">${jp ? "（原語の意味は下の入り口から辿れます）" : "—"}</p>`;
   p.querySelector(".gp-body").innerHTML = `
     <p class="muted">${jp ? "左の【日本語訳の意味】と右の【原語の意味】を、機械の判定でなく、あなた自身の目で並べて比べてください。字面が何を隠しているか（例：弁証法の「対話性」）が、並べることで見えてきます。" : "Compare the two meaning-spaces yourself."}</p>
@@ -3846,9 +3848,9 @@ function _panoHistory(d) {   // 語の来歴＝日本語漢字表記の語形・
   if (semantic.length) h += `<p class="pano-lbl">意味のまとまり（優先）</p><div class="anat-comp segment-panorama">`
     + semantic.map(u => `${_entLink(u.text, "word", "segment:" + u.text)}${u.gloss ? `<span class="anat-gloss">「${esc(u.gloss)}」</span>` : ""}`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
   // 原語表記は保持し、glossは接地済みの日本語がある時だけ併記（英語訳は原語の意味として主表示しない）
-  if ((a.components || []).length) h += `<p class="pano-lbl">語形・構成要素</p><div class="anat-comp">`
+  if ((a.components || []).length) h += `<p class="pano-lbl">語形・構成要素</p>` + _compNote(a) + `<div class="anat-comp">`
     + a.components.map(c => { const g = _jaGloss(c.meaning);
-      return `<span class="anat-part">${_entLink(c.part, "original", "orig:" + c.part)}${g ? "＝" + esc(g) : ""}</span>`; }).join(`<span class="anat-plus">＋</span>`) + `</div>`;
+      return `<span class="anat-part">${_entLink(c.part, "original", "orig:" + c.part)}${g ? "＝" + esc(g) : ""}${_compInUnit(c)}</span>`; }).join(`<span class="anat-plus">＋</span>`) + `</div>`;
   if ((a.chain || []).length) h += `<p class="pano-lbl">語形変化・借用の経路</p><div class="chain">`
     + a.chain.map(c => { const g = _jaGloss(c.gloss);
       return `<span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span>${_entLink(c.term, "original", "orig:" + c.term)}${g ? `<span class="anat-gloss">「${esc(g)}」</span>` : ""}</span>`; }).join("<span class=\"chain-arrow\">←</span>") + `</div>`;
@@ -3875,7 +3877,40 @@ function _panoOrigSplit(d) {
 //  A=目次(.pano-toc-a) 節内スクロールのみ／B=見出し・区分名・集約・件数（**リンクにしない**）／
 //  C=実在する語・人物・著作(.pano-ent) クリックで既存の標準操作メニュー(gMenu)／D=開閉(summary)・外部出典(a[target=_blank])
 // Cは表示文字列や親見出しから対象を逆算せず、data-term/data-kind/data-eid（stable ID）を保持する。
-const _ENT_KINDS = new Set(["word", "original", "language", "related", "opposite", "author", "work", "application", "concept"]);
+// 字義が語義として読まれる害を閉じる（2026-10-09）。
+// 文面はここで LANG に応じて組む。サーバ側で日本語固定にすると、
+// 英語UIの利用者が読めない段落を受け取り、断りが届かない（実測して直した）。
+// components_note_parts が無い古い応答のときだけ、サーバの文をそのまま出す。
+function _compNote(a) {
+  const p = (a && a.components_note_parts) || null;
+  const jp = LANG === "ja";
+  const lex = (p && p.lexical_units) || [], un = (p && p.unresolved_units) || [];
+  if (lex.length || un.length) {
+    const bits = [];
+    if (lex.length) bits.push(jp
+      ? `うち ${p.inside_count} 字は「${lex.map(esc).join("」「")}」という意味のまとまりの内側にある字です`
+      : `${p.inside_count} of them sit inside the unit${lex.length > 1 ? "s" : ""} “${lex.map(esc).join("”, “")}”`);
+    if (un.length) bits.push(jp
+      ? `「${un.map(esc).join("」「")}」はまだ意味のまとまりへ切り分けられていない部分です（機械推定・低確度）`
+      : `“${un.map(esc).join("”, “")}” is a remainder not yet segmented into units (machine estimate, low confidence)`);
+    const head = jp ? "下は1字ごとの辞書義です。" : "Below are per-character dictionary glosses. ";
+    const tail = jp ? "。語の意味は「意味のまとまり」の層で見てください。"
+                    : ". Read the word's own meaning from the “meaningful units” layer.";
+    return `<p class="segment-note anat-compnote">${head}${bits.join(jp ? "。" : "; ")}${tail}</p>`;
+  }
+  const n = (a && a.components_note) || "";
+  return n ? `<p class="segment-note anat-compnote">${esc(n)}</p>` : "";
+}
+// 未解決の残り（機械推定・低確度）は、意味のまとまりと同じ言い方をしない。
+function _compInUnit(c) {
+  if (!c || c.applies_to_term !== false || !c.in_unit) return "";
+  const jp = LANG === "ja", u = esc(c.in_unit);
+  const txt = c.unit_kind === "unresolved"
+    ? (jp ? `（「${u}」の内側・機械推定）` : `(inside “${u}”, machine estimate)`)
+    : (jp ? `（「${u}」の内側）` : `(inside “${u}”)`);
+  return `<span class="anat-inunit">${txt}</span>`;
+}
+const _ENT_KINDS = new Set(["word", "original", "language", "related", "opposite", "author", "work", "application", "concept", "cooccurrence"]);
 // 実グラフに同じ語の実体ノードがあれば、その **stable ID** を採る（"related:"+w のような合成IDが
 // グラフの id（rel:西洋哲学 等）と食い違い、ラベル一致fallbackで domain ノードへ化けるのを防ぐ）。
 function _gnodeFor(term, kind) {

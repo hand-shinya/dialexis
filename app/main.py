@@ -59,6 +59,9 @@ templates = Jinja2Templates(directory=os.path.join(APP_DIR, "templates"))
 # MUST use HTTPS at the reverse proxy before treating this as a public service.
 WORKSPACE_COOKIE = "dialexis_workspace"
 WORKSPACE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+# /api/combine が返す語は検索一致であって、概念上の関係は測っていない。
+_COMBINE_UNVERIFIED = "概念としての関係は未検証です。"
+
 _PUBLIC_INSTANCE = str(os.environ.get("DIALEXIS_PUBLIC_INSTANCE", "")).lower() in {
     "1", "true", "yes", "on"
 }
@@ -2383,17 +2386,38 @@ def _history_discovery_from_sources(q: str, domain: str, lang: str,
         for unit in (layer.get("units") or [])[:8]:
             text = unit.get("text") if isinstance(unit, dict) else unit
             gloss = unit.get("gloss") if isinstance(unit, dict) else ""
-            add_term(text, "日本語", "意味のまとまり", [text],
-                     gloss or "辞書・語源データが示した構成単位",
-                     "confirmed", [dict_source], "意味のまとまりとして抽出",
+            # 2026-10-09: 単位の確度を台帳へ引き継ぐ。
+            # seed の "confirmed" のラベルは「本文・書誌を確認」であり、説明は
+            # 「引用された本文か典拠目録が直接支持する」である。自前の分割表から
+            # 出した単位はそれに当たらないし、unresolved_unit は語ですらない。
+            unresolved = (isinstance(unit, dict)
+                          and (unit.get("role") == "unresolved_unit"
+                               or unit.get("confidence") == "low"))
+            add_term(text, "日本語",
+                     "切り分けの残り（機械推定）" if unresolved else "意味のまとまり",
+                     [text],
+                     gloss or ("まだ意味のまとまりへ切り分けられていない部分（機械推定・低確度）"
+                               if unresolved else "辞書・語源データが示した構成単位"),
+                     "unverified" if unresolved else "candidate",
+                     [dict_source],
+                     "機械が切り出した残り" if unresolved else "意味のまとまりとして抽出",
                      "文字単位より上位の意味単位", "翻訳史上の対応は未比較")
 
     for comp in (anatomy.get("components") or [])[:8]:
         if not isinstance(comp, dict):
             continue
-        add_term(comp.get("part"), comp.get("lang") or "原語候補", "語源的構成要素",
+        # 2026-10-09: /api/anatomy が付けた印を台帳へ引き継ぐ。
+        # applies_to_term=False の字は、語の語源的構成要素ではなく、
+        # 意味のまとまりの内側の字である。別の kind で入れ、どの単位の内側かを書く。
+        inside = comp.get("applies_to_term") is False
+        in_unit = comp.get("in_unit") or ""
+        add_term(comp.get("part"), comp.get("lang") or "原語候補",
+                 "字の辞書義（補助）" if inside else "語源的構成要素",
                  [q], comp.get("meaning") or "語源データの構成要素",
-                 "candidate", [dict_source], "語形の候補", "概念史上の原点とは別経路", "後世の解釈を混入させない")
+                 "unverified" if inside else "candidate", [dict_source],
+                 ("「{}」という単位の内側の字（語の構成要素として読むものでない）".format(in_unit)
+                  if inside else "語形の候補"),
+                 "概念史上の原点とは別経路", "後世の解釈を混入させない")
 
     for item in (origin.get("concept_origin") or [])[:10]:
         if isinstance(item, dict):
@@ -3931,7 +3955,9 @@ async def api_gravity(q: str, lang: str = "ja"):
     res = await searxng.search(q, lang, n=20, drop_commercial=True)
     if not res:
         return {"query": q, "nodes": [root], "edges": [],
-                "note": "一般ウェブ検索（SearXNG）が利用できないため重力分布を測れませんでした。"}
+                "note": "一般ウェブ検索（SearXNG）からの応答が無い状態です。"
+                        "重力分布は応答が戻ったときに現れます。"
+                        "語の来歴・類語・原語の入り口は、他の見方から辿れます。"}
     # 意味アンカー（Wikidataの思想家・関連概念＝件数でなく"意味"の重み。ハイブリッド重力）
     cn = await concept.node(q, lang)
     cd = cn["data"] if not cn["error"] else {}
@@ -3976,9 +4002,14 @@ async def api_gravity(q: str, lang: str = "ja"):
         edges.append({"from": "root", "to": did, "strength": 0.8 + 0.6 * g / maxg})
         for e in picked:
             eid = f"gent:{d}:{e}"
-            nodes.append({"id": eid, "label": e, "kind": "application", "layer": 3,
-                          "weight": 1.8 if _sem(e) else 1.0, "q": e})   # 意味一致は大きく
-            edges.append({"from": did, "to": eid, "strength": 0.7 if _sem(e) else 0.5})
+            # 2026-10-09: 検索一致を「応用」と名乗らない（/api/combine と同じ理由）。
+            # _sem(e) は Wikidata の近縁に一致したかを既に測っているので、その差は保つ。
+            sem = _sem(e)
+            nodes.append({"id": eid, "label": e,
+                          "kind": "related" if sem else "cooccurrence", "layer": 3,
+                          "weight": 1.8 if sem else 1.0, "q": e,
+                          "basis": "wikidata-anchor" if sem else "search-hit"})
+            edges.append({"from": did, "to": eid, "strength": 0.7 if sem else 0.5})
             used.add(e)
     # 意味的に近い（Wikidata）が、ウェブ結果に現れなかったもの＝意味が拾う分を明示的に追加
     orphan = [a for a in anchors if a not in used and not any(a in u or u in a for u in used)][:5]
@@ -3990,7 +4021,8 @@ async def api_gravity(q: str, lang: str = "ja"):
             eid = f"gsem:{a}"
             nodes.append({"id": eid, "label": a, "kind": "related", "layer": 3, "weight": 1.6, "q": a})
             edges.append({"from": did, "to": eid, "strength": 0.7})
-    note = ("重力分布＝一般ウェブの頻度 × 意味（Wikidataの思想家・関連概念）のハイブリッド。"
+    note = (_COMBINE_UNVERIFIED
+            + "重力分布＝一般ウェブの頻度 × 意味（Wikidataの思想家・関連概念）のハイブリッド。"
             "重い順: " + "・".join(d for d, _ in top) + "。意味一致は大きく・先に。クリックでその語へ。")
     return {"query": q, "queried_at": now(), "nodes": nodes, "edges": edges, "note": note,
             "sources": [{"source": "SearXNG(一般ウェブ) + Wikidata(意味)", "retrieved_at": now(), "error": None}]}
@@ -4063,16 +4095,19 @@ async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
         onlyB = [e for e in eb if e not in set(ea)][:6]
         nodes += [root(a, "rootA", 3.0, 1), root(b, "rootB", 3.0, 1)]
         if shared:
-            nodes.append({"id": "cshared", "label": "共有（両方に関わる）", "kind": "appdomain", "layer": 2, "weight": 2.4})
+            nodes.append({"id": "cshared", "label": "両方の検索結果に現れた語", "kind": "appdomain", "layer": 2, "weight": 2.4})
             edges += [{"from": "rootA", "to": "cshared", "strength": 1.0}, {"from": "rootB", "to": "cshared", "strength": 1.0}]
             for e in shared[:8]:
-                nodes.append({"id": f"cs:{e}", "label": e, "kind": "related", "layer": 3, "weight": 1.4, "q": e})
+                nodes.append({"id": f"cs:{e}", "label": e, "kind": "cooccurrence", "layer": 3,
+                              "weight": 1.4, "q": e, "basis": "both-sides-search-hit"})
                 edges.append({"from": "cshared", "to": f"cs:{e}", "strength": 0.7})
         for side, only, rid in (("A", onlyA, "rootA"), ("B", onlyB, "rootB")):
             for e in only:
-                nodes.append({"id": f"c{side}:{e}", "label": e, "kind": "application", "layer": 2, "weight": 1.0, "q": e})
+                nodes.append({"id": f"c{side}:{e}", "label": e, "kind": "cooccurrence", "layer": 2,
+                              "weight": 1.0, "q": e, "basis": "one-side-search-hit"})
                 edges.append({"from": rid, "to": f"c{side}:{e}", "strength": 0.6})
-        note = f"「{a}」と「{b}」の比較。中央＝両方に関わる概念、左右＝それぞれ固有。クリックでその語へ。"
+        note = (f"「{a}」と「{b}」の比較。中央＝両方の検索結果に現れた語、左右＝一方のみに現れた語。"
+                f"{_COMBINE_UNVERIFIED}クリックでその語へ。")
         source = "・".join(dict.fromkeys(x for x in (sa, sb) if x))
         return {"query": a, "nodes": nodes, "edges": edges, "note": note + f" 出所：{source}。",
                 "has_results": bool(shared or onlyA or onlyB), "queried_at": now()}
@@ -4087,11 +4122,20 @@ async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
         rest = [x for x in dict.fromkeys(anchors) if x and x not in blob][:4]
         nodes.append(root(f"「{a}」を〈{b}〉の意味で"))
         for e in (hit or rest)[:10]:
-            k = "related" if e in hit else "application"
-            nodes.append({"id": f"s:{e}", "label": e, "kind": k, "layer": 2, "weight": 1.8 if e in hit else 1.0, "q": e})
+            # どちらも Wikidata の意味的近縁である。違いは b の文脈に現れたかだけで、
+            # 現れなかったものを「応用」と名乗らない（実測されたのは文脈一致の有無のみ）。
+            nodes.append({"id": f"s:{e}", "label": e, "kind": "related", "layer": 2,
+                          "weight": 1.8 if e in hit else 1.0, "q": e,
+                          "basis": "wikidata-neighbour",
+                          "context_match": e in hit})
             edges.append({"from": "root", "to": f"s:{e}", "strength": 0.7})
-        note = (f"「{a}」の意味的な近縁（Wikidata）のうち、〈{b}〉の文脈に現れるものを大きく。件数でなく意味で絞る。"
-                if hit else f"〈{b}〉の意味文脈に一致する近縁は少なめ。近い候補を薄く示します。")
+        # 実測したのは「b入りの検索結果を連結した文字列に、その語が部分文字列として
+        # 含まれるか」だけである。意味の一致を測ったわけではないので、そう書く。
+        note = (f"「{a}」の意味的な近縁（Wikidata）のうち、〈{b}〉入りの検索結果の本文に"
+                f"文字列として現れたものを大きく。{_COMBINE_UNVERIFIED}"
+                if hit else
+                f"〈{b}〉入りの検索結果の本文に現れた近縁は少なめです。近い候補を薄く示します。"
+                f"{_COMBINE_UNVERIFIED}")
         return {"query": a, "nodes": nodes, "edges": edges,
                 "note": note + f" 出所：{source}。", "has_results": bool(hit or rest), "queried_at": now()}
 
@@ -4102,9 +4146,11 @@ async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
         nodes += [root(a, "rootA", 3.0, 1), root(b, "rootB", 3.0, 1)]
         for side, res, rid in (("A", ra, "rootA"), ("B", rb, "rootB")):
             for e in _web_entities(res, [a, b], 8):
-                nodes.append({"id": f"o{side}:{e}", "label": e, "kind": "application", "layer": 2, "weight": 1.0, "q": e})
+                nodes.append({"id": f"o{side}:{e}", "label": e, "kind": "cooccurrence", "layer": 2,
+                              "weight": 1.0, "q": e, "basis": "one-side-search-hit"})
                 edges.append({"from": rid, "to": f"o{side}:{e}", "strength": 0.6})
-        note = f"「{a}」と「{b}」を合わせて（OR）。両方の周辺を一度に。クリックでその語へ。"
+        note = (f"「{a}」と「{b}」を合わせて（OR）。各語の検索結果を並べたものです。"
+                f"{_COMBINE_UNVERIFIED}クリックでその語へ。")
         source = "・".join(dict.fromkeys(x for x in (sa, sb) if x))
         return {"query": a, "nodes": nodes, "edges": edges, "note": note + f" 出所：{source}。",
                 "has_results": bool(_web_entities(ra, [a, b], 8) or _web_entities(rb, [a, b], 8)),
@@ -4119,10 +4165,13 @@ async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
                 "has_results": False,
                 "note": f"「{a}」と「{b}」に一致する結果は、SearXNGとWikipedia全文検索の双方で得られませんでした。出所：{source}。"}
     for e in _web_entities(res, [a, b], 12):
-        nodes.append({"id": f"c:{e}", "label": e, "kind": "application", "layer": 2, "weight": 1.0, "q": e})
+        nodes.append({"id": f"c:{e}", "label": e, "kind": "cooccurrence", "layer": 2,
+                      "weight": 1.0, "q": e, "basis": "search-hit"})
         edges.append({"from": "root", "to": f"c:{e}", "strength": 0.6})
-    note = (f"「{a}」を「{b}」で絞り込み（AND）。両方に関わるものだけ。" if op == "and"
-            else f"「{a}」から「{b}」を除外（NOT）。" if op == "not" else f"「{a}」の一般ウェブ。")
+    note = (f"「{a}」を「{b}」で絞り込み（AND）。両語を含む記事を検索で集めたものです。{_COMBINE_UNVERIFIED}"
+            if op == "and"
+            else f"「{a}」から「{b}」を除外（NOT）。{_COMBINE_UNVERIFIED}" if op == "not"
+            else f"「{a}」の一般ウェブ。{_COMBINE_UNVERIFIED}")
     return {"query": a, "nodes": nodes, "edges": edges,
             "note": note + f" 出所：{source}。クリックでその語へ。",
             "has_results": True, "queried_at": now()}

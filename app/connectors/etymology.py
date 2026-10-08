@@ -224,21 +224,83 @@ def _etym_prose(text):
 async def _cjk_anatomy(word):
     """CJK 語の解剖: 意味単位を先に確定し、文字の義は補助層として添える。
     旧来の文字分解は保持するが、表示優先順位は
-    語全体 → 意味のまとまり → 文字構成、で固定する。"""
+    語全体 → 意味のまとまり → 文字構成、で固定する。
+
+    2026-10-09: 字義が語義として読まれる害を閉じる。
+      「非有機的肉体」で 機=weaving machine・的=bright・体=alternative form of 笨
+      が返るが、この3字はいずれも「有機的」「肉体」という意味単位の内側の字で
+      あって、語の意味の構成要素ではない。字義をそのまま並べると、語の由来を
+      説明しているように読める。各字に、どの意味単位の内側に居るか（in_unit）と、
+      語そのものに適用できるか（applies_to_term）を持たせ、
+      何字が語義として読めないかを components_note に書く。
+      字義そのものは削らない（削ると沈黙する欠落になる・公理1）。"""
+    word = unicodedata.normalize("NFKC", word or "")   # F3: 互換漢字で印が外れるのを防ぐ
     cjk = re.sub(r"[^㐀-鿿豈-﫿]", "", word)
     if len(cjk) < 2:
         return None
+    semantic = _semantic_cjk_units(word)
+    # F1: 語そのものが1つの単位なら、その字は「内側」ではない。
+    #     矛盾 は 1 単位（矛盾）なので、矛=spear・盾=shield は語の由来そのものである
+    #     （同じ応答の summary が「韓非子の故事に由来」と言い、
+    #      tests/e2e/anatomy.e2e.js は矛+盾を正解として守っている）。
+    #     ここに印を付けると、この repository 自身の gate が守る情報を画面で否定する。
+    whole_is_one_unit = (len(semantic) == 1
+                         and (semantic[0].get("text") or "") == word)
+    # F2: 未解決の残り（role=unresolved_unit・confidence=low）は語ではない。
+    #     「越論的」「夜城」「機的身体」のような機械推定を「意味のまとまり」と呼ばない。
+    unit_of, unit_kind = {}, {}
+    if not whole_is_one_unit:
+        for u in semantic:
+            t = u.get("text") or ""
+            if len(t) < 2 or t == word:
+                continue
+            for ch in t:
+                unit_of.setdefault(ch, t)
+                unit_kind.setdefault(t, "unresolved"
+                                     if u.get("role") == "unresolved_unit"
+                                     or u.get("confidence") == "low" else "lexical")
     comps = []
     char_units = []
     for ch in list(dict.fromkeys(cjk))[:6]:          # 重複字は1回・最大6字
         g = await _han_gloss(ch)
+        inside = unit_of.get(ch, "")
+        kind = unit_kind.get(inside, "")
         char_units.append({"text": ch, "role": "character", "gloss": g,
-                           "children": [], "source": "Wiktionary", "confidence": "grounded" if g else "unverified"})
+                           "children": [], "source": "Wiktionary",
+                           "in_unit": inside, "unit_kind": kind,
+                           "applies_to_term": not inside,
+                           "confidence": "grounded" if g else "unverified"})
         if g:
-            comps.append({"part": ch, "meaning": g})
+            comps.append({"part": ch, "meaning": g,
+                          "in_unit": inside, "unit_kind": kind,
+                          "applies_to_term": not inside})
+    # F4: 文面はUI側が LANG で組めるよう、構造でも返す。
+    lex = list(dict.fromkeys(c["in_unit"] for c in comps
+                             if c["in_unit"] and c["unit_kind"] == "lexical"))
+    unres = list(dict.fromkeys(c["in_unit"] for c in comps
+                               if c["in_unit"] and c["unit_kind"] == "unresolved"))
+    parts = {
+        "inside_count": sum(1 for c in comps if not c["applies_to_term"]),
+        "lexical_units": lex,
+        "unresolved_units": unres,
+        "whole_is_one_unit": whole_is_one_unit,
+    }
+    # F5: 画面に出る文に否定表現を使わない（「ありません」は
+    #     tests/e2e/aspect_no_recenter.e2e.js の禁止語で、deploy gate が落ちた）。
+    bits = []
+    if lex:
+        bits.append("うち {n} 字は「{u}」という意味のまとまりの内側にある字です".format(
+            n=sum(1 for c in comps if c["unit_kind"] == "lexical"),
+            u="」「".join(lex)))
+    if unres:
+        bits.append("「{u}」はまだ意味のまとまりへ切り分けられていない部分です（機械推定・低確度）".format(
+            u="」「".join(unres)))
+    note = ""
+    if bits:
+        note = "下は1字ごとの辞書義です。" + "。".join(bits) + "。語の意味は「意味のまとまり」の層で見てください。"
     summary = _etym_prose(await _extract(word))
-    semantic = _semantic_cjk_units(word)
     return {"term": word, "chain": [], "components": comps, "summary": summary,
+            "components_note": note, "components_note_parts": parts,
             "semantic_segments": semantic,
             "segment_layers": _semantic_layers(word, char_units=char_units),
             "wiktionary_url": f"https://en.wiktionary.org/wiki/{word}"}
@@ -342,9 +404,12 @@ async def anatomy(word, orig_terms, lang="ja"):
                 r["wiktionary_url"] = f"https://en.wiktionary.org/wiki/{term}"
                 await _deepen_chain(r)   # 連鎖を最古層まで辿り、根の構成要素まで到達＝どの言語形から入っても同じ深さ（統一）
                 r["segment_layers"] = _semantic_layers(term, components=r.get("components"))
+                r.setdefault("components_note", "")   # 契約: どの経路でもキーが在る
+                r.setdefault("components_note_parts", {})
                 return r
     cjk = await _cjk_anatomy(word)                    # CJK 語の構成文字分解（矛盾→矛＋盾）
     if cjk:
         return cjk
     return {"term": None, "chain": [], "components": [], "summary": "",
+            "components_note": "", "components_note_parts": {},
             "segment_layers": _semantic_layers(word)}

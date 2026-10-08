@@ -16,6 +16,12 @@ export NODE_PATH="${NODE_PATH:-/home/handa/.npm/_npx/e41f203b7505f1fb/node_modul
 fail=0
 [ -d .venv ] && source .venv/bin/activate 2>/dev/null
 
+# 2026-10-09: 撤退台帳の最小検査は pytest の外に置く。
+# 試験fileの実在を検査する試験を、その試験file自身の中に置くと、
+# file を消したときに検査もろとも消えて静かに通る（315 passed・rc=0 で実証）。
+echo "══ 0) 撤退台帳（試験fileの実在と追跡）══"
+python tools/check_register_files.py || fail=1
+
 echo "══ 1) Python tests（静的gate含む）══"
 python -m pytest -q || fail=1
 
