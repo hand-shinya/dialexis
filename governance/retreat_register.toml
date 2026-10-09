@@ -336,8 +336,15 @@ guarded_by = "tests/test_roles.py"
 #      server 側で取り直して照合していないので、画面と文がずれる余地が在る。
 #  U14 名前を剥がしても残る経路（2026-10-09 の指示に対して、直せなかった分）。
 #      (a) git の履歴とcommitの文に名前が残る。消すには履歴の改変（force push）が要る。
-#      (b) 公開repoのURLに所有者のaccount名が含まれ、画面のfooterから辿れる。
-#      (c) AGPL-3.0 は利用者へ source の提示を要求する。提示先が (b) である。
+#      (b) ~~公開repoのURLに所有者のaccount名が含まれ、画面のfooterから辿れる~~
+#          → 2026-10-09 に footer の link を外し、`/source` から配る形へ替えた。
+#          UIからの1clickの到達は閉じた。ただし repo が公開である限り、
+#          別経路で見つけた者は履歴から名前に到達できる。
+#          repo を非公開にする・accountを変える・履歴を書き換えるのは所有者の決裁である。
+#      (c) ~~AGPL-3.0 は利用者へ source の提示を要求する。提示先が (b) である~~
+#          → `/source/dialexis-source.tar.gz` が `git archive HEAD` の snapshot を配る。
+#          履歴・commitの文・著者情報を含まない。提示そのものは外していない。
+#          これが licence の条件を満たすかの法的な確認は所有者の決裁である。
 #      (d) 運用の連絡先（DIALEXIS_CONTACT）は環境変数に在る。現在は描画していないが、
 #          将来どこかに出すと名前が出る。
 #      どれも所有者の決裁が要るので、実装側では触らない。

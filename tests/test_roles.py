@@ -52,7 +52,7 @@ SERVED = ["/static/app.js", "/static/style.css", "/static/favicon.svg",
 
 PAGES = ["/", "/origin", "/explore", "/desk", "/deepsearch", "/word", "/wordspace",
          "/textscan", "/inquiry", "/validation", "/settings", "/donate", "/levels",
-         "/about", "/watches"]
+         "/about", "/watches", "/source"]
 
 # 名前が docstring 経由で openapi へ漏れる。source も検査の対象に入れる。
 SOURCE_DIRS = ["app", "tools", "tests", "governance", "deploy", "docs"]
@@ -176,6 +176,63 @@ def test_the_repository_root_files_do_not_contain_the_name():
 # ===========================================================================
 # 役割の区別そのもの（名前を消しても、区別が消えてはいけない）
 # ===========================================================================
+
+# ===========================================================================
+# UIから名前へ到達する経路（配信される中身に名前が無いだけでは足りない）
+# ===========================================================================
+
+@pytest.mark.parametrize("path", PAGES)
+def test_no_page_links_to_the_public_repository(client, path):
+    """公開repoのURLには所有者のaccount名が含まれ、辿れば履歴から名前に着く。
+
+    2026-10-09 の実測で、footer が repo へ link しており、account名に
+    名の romaji 表記が入っていた。1click で名前に到達できた。
+    """
+    r = client.get(path)
+    if r.status_code != 200:
+        pytest.skip("%s は %d を返す" % (path, r.status_code))
+    for host in ("github.com", "gitlab.com", "bitbucket.org"):
+        assert host not in r.text, "%s が %s へ link している" % (path, host)
+
+
+def test_the_source_is_still_offered(client):
+    """AGPL-3.0 は network 越しの利用者へ source の提示を要求する。
+
+    link を外した代わりに、ここから配る。提示そのものを外してはならない。
+    """
+    assert client.get("/source").status_code == 200
+    r = client.get("/source/dialexis-source.tar.gz")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/gzip"
+    assert len(r.content) > 100_000
+
+
+def test_the_archive_carries_no_name_and_no_history(client):
+    """配る snapshot に名前も履歴も入っていないことを、中身を開いて確かめる。"""
+    import io
+    import tarfile
+    r = client.get("/source/dialexis-source.tar.gz")
+    assert r.status_code == 200
+    tf = tarfile.open(fileobj=io.BytesIO(r.content))
+    names = tf.getnames()
+    assert names
+    assert not any("/.git/" in n for n in names), "履歴が入っている"
+    assert any(n.endswith("LICENSE") or "COPYING" in n for n in names), "licence が無い"
+    bad = []
+    for m in tf.getmembers():
+        if not m.isfile() or m.size > 2_000_000:
+            continue
+        f = tf.extractfile(m)
+        if f is None:
+            continue
+        try:
+            t = f.read().decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        if hits(t):
+            bad.append(m.name)
+    assert not bad, "配る snapshot に名前が残っている: " + ", ".join(sorted(bad)[:5])
+
 
 def test_the_responsibility_is_addressed_to_the_reader():
     d = handoff.build(term="x", text="y")

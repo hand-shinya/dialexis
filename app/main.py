@@ -19,7 +19,9 @@ import json
 import math
 import os
 import re
+import pathlib
 import secrets
+import subprocess
 import unicodedata
 import urllib.parse
 
@@ -3140,6 +3142,37 @@ async def api_handoff(request: Request):
         records=records,
         lang=lang, purpose=str(b.get("purpose") or ""))
     return data
+
+
+@app.get("/source")
+async def page_source(request: Request):
+    """AGPL-3.0 が要求する source の提示（2026-10-09）。
+
+    以前は画面のfooterから公開repoへlinkしていた。しかしそのURLには
+    所有者のaccount名が含まれ、辿れば git の履歴から名前に到達できた。
+    利用者に所有者の名が見えてはならないという指示があるので、linkを外し、
+    ここから source を配る形に替えた。
+    `git archive` は作業treeの snapshot だけを出し、commitの文も著者情報も含まない。
+    """
+    return render(request, "source.html")
+
+
+@app.get("/source/dialexis-source.tar.gz")
+async def api_source_archive():
+    """作業treeの snapshot を返す。履歴・commitの文・著者情報は含まない。"""
+    root = pathlib.Path(__file__).resolve().parents[1]
+    try:
+        out = subprocess.run(
+            ["git", "archive", "--format=tar.gz", "--prefix=dialexis/", "HEAD"],
+            cwd=root, capture_output=True, timeout=120)
+    except Exception as e:
+        raise HTTPException(503, "source の書き出しが整うまで時間がかかっています: "
+                                 "{}".format(type(e).__name__))
+    if out.returncode != 0 or not out.stdout:
+        raise HTTPException(503, "source の書き出しが整うまで時間がかかっています")
+    return Response(content=out.stdout, media_type="application/gzip",
+                    headers={"Content-Disposition":
+                             'attachment; filename="dialexis-source.tar.gz"'})
 
 
 @app.get("/inquiry")

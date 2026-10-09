@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{% if lang == 'ja' %}source の提示{% else %}Source{% endif %}{% endblock %}
+{% block content %}
+{#
+  AGPL-3.0 が要求する source の提示（2026-10-09）。
+  以前は画面のfooterから公開repoへlinkしていたが、そのURLには所有者のaccount名が
+  含まれ、辿れば git の履歴から名前に到達できた。linkを外し、ここから配る形に替えた。
+  配るのは作業treeの snapshot で、履歴・commitの文・著者情報は含まない。
+#}
+<section class="src-wrap">
+{% if lang == 'ja' %}
+  <h1>source の提示</h1>
+  <p>Dialexis は <b>AGPL-3.0</b> で配布されています。
+     network 越しに使う人も source を受け取れます。</p>
+  <p><a class="src-dl" href="/source/dialexis-source.tar.gz">source をdownloadする（tar.gz）</a></p>
+  <h2>何が入っているか</h2>
+  <ul>
+    <li>application の source 一式（Python・JavaScript・template・style・試験）</li>
+    <li>licence 全文（AGPL-3.0）</li>
+    <li>配備の手順と検証の script</li>
+  </ul>
+  <h2>何が入っていないか</h2>
+  <ul>
+    <li>version 管理の履歴（commitの文・著者情報・日付）</li>
+    <li>運用の秘密（鍵・token・接続先・環境変数の値）</li>
+    <li>稼働中のdata（利用者が作った企画・node・出典）</li>
+    <li>外部情報源の実data（各情報源の利用条件に従って各所で取得してください）</li>
+  </ul>
+  <p class="src-note">履歴を含めないのは、履歴が source ではないからです。
+     AGPL-3.0 が求めるのは、この版を動かすための source です。</p>
+{% else %}
+  <h1>Source</h1>
+  <p>Dialexis is distributed under <b>AGPL-3.0</b>. Anyone using it over a network
+     can obtain the source.</p>
+  <p><a class="src-dl" href="/source/dialexis-source.tar.gz">Download the source (tar.gz)</a></p>
+  <h2>Included</h2>
+  <ul>
+    <li>The application source (Python, JavaScript, templates, styles, tests)</li>
+    <li>The full licence text (AGPL-3.0)</li>
+    <li>Deployment steps and the verification script</li>
+  </ul>
+  <h2>Not included</h2>
+  <ul>
+    <li>Version-control history (commit messages, authorship, dates)</li>
+    <li>Operational secrets (keys, tokens, endpoints, environment values)</li>
+    <li>Live data (projects, nodes and provenance created by users)</li>
+    <li>External source data (fetch it from each source under its own terms)</li>
+  </ul>
+  <p class="src-note">History is not source. AGPL-3.0 asks for the source needed to
+     run this version.</p>
+{% endif %}
+</section>
+
+<style>
+.src-wrap{max-width:760px}
+.src-wrap h2{font-size:1.02rem;margin:1.3rem 0 .3rem}
+.src-wrap ul{margin:.2rem 0 .6rem 1.2rem;line-height:1.7}
+.src-dl{display:inline-block;padding:.55rem 1.1rem;border-radius:8px;
+  border:1px solid var(--accent2,#8a6d3b);text-decoration:none}
+.src-note{font-size:.86rem;opacity:.8;line-height:1.6;margin-top:1rem}
+</style>
+{% endblock %}
