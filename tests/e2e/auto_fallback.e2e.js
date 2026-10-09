@@ -1,4 +1,4 @@
-// A3 自動代替の「別源」規律検証（半田様2026-07-30の是正）:
+// A3 自動代替の「別源」規律検証（所有者2026-07-30の是正）:
 //   ①anatomy(主=/api/anatomy)が空→代替は未試行の /api/origin を実走行し実データ＋実提供元(Wikidata/Wiktionary)＋時刻を表示（維持）
 //   ②meaning(主=/api/origin)が空→代替は /api/origin を再利用せず未試行の /api/anatomy を使い、出所は実提供元(Wiktionary)
 //   ③contrast(/api/origin＋/api/anatomy を両方試済)が空→未試行の第三経路が無い＝虚偽の切替文言を出さず続行操作を即表示

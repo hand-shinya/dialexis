@@ -1,6 +1,6 @@
 // 普遍性の掃引: 多様な入力語 × 階層(2/3/4) × 各menuパネル に、行き止まり(dead-end)が無いこと=
 // どのパネルにも「この語で続ける」普遍フッターが在り、どの階層でも同じ共通メニューが出ることを機械検査。
-// 半田様の問い「全ワード・全階層・全menu展開に普遍化したか」への実証。
+// 所有者の問い「全ワード・全階層・全menu展開に普遍化したか」への実証。
 const { chromium } = require("playwright-core");
 const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8015";

@@ -1,4 +1,4 @@
-// 表示面（surface）契約の決定論gate（fixture・実マウスのみ）。半田様2026-08-02。
+// 表示面（surface）契約の決定論gate（fixture・実マウスのみ）。所有者2026-08-02。
 //   面は3種に固定: Context(#dx-context・右側・永続) / Menu(#graph-menu) / Action(#graph-panel)
 // 検証する契約:
 //   A. 中央管理    — Menu/Action は排他で合計1個まで／同種を積層しない／後から開いた面が背後に出ない
@@ -595,7 +595,7 @@ async function openExtTerm(p, w) {
     /* ══ D+C 追補2: applyLens は「G.rootQ===W」の文字列完全一致でなく正典transactionの成功可否で適用 ══
        中心語と大文字小文字/正規化が異なる語（例: Dialectic→dialectic）でクリックしても、正典transaction
        （originRecenter→originExplore→_termVariants）が構築に成功していれば見方は必ず適用される
-       （無作用にしない・半田様2026-08-07既知不具合の是正）。ルートoverrideで「Dialectic」単体は構築不可・
+       （無作用にしない・所有者2026-08-07既知不具合の是正）。ルートoverrideで「Dialectic」単体は構築不可・
        正規化後の「dialectic」のみ構築可能な状況を作り、実マウス操作のみで検証する（関数直呼び・force click禁止）。 */
     await p.unroute("**/api/origin/graph**");
     await p.route("**/api/origin/graph**", r => {
@@ -647,7 +647,7 @@ async function openExtTerm(p, w) {
               normBad.push(`geom ${ggN.intersect}|${ggN.outside[0] || ""}|${ggN.notTopmost[0] || ""}`);
             // 戻る: 実DOMボタン(#nav-back)を実マウスで押し、正規化適用前（見方は開いたまま・root=弁証法）へ
             // 確実に復元することを確認する。進む(#nav-fwd)は、見方Action面（fixed・max-height:80vh）が
-            // 実測でnav-back/nav-fwd自身を覆う（半田様2026-08-07実測確認・全Action系共通の別事象・
+            // 実測でnav-back/nav-fwd自身を覆う（所有者2026-08-07実測確認・全Action系共通の別事象・
             // 本fixの対象外＝ここでは検証しない。既存D+C追補のlensBadも戻る/進むは検証していない）。
             const rBackN = await navClick(p, "nav-back"); await sleep(1200);
             const backN = await state(p);

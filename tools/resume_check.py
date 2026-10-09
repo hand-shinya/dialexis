@@ -2,7 +2,7 @@
 """中断から壊れずに再開するための点検。
 
 なぜ必要か（2026-10-08 に実地で確認した事実）:
-  半田様の「非有機的肉体」研究の再開guide（2026-05-03 作成）は
+  所有者の「非有機的肉体」研究の再開guide（2026-05-03 作成）は
   `/mnt/g/マイドライブ/MyKnowledgeBase/...` を絶対pathで指していた。
   Vaultが `/mnt/i/GoogleDriveMirror/MyKnowledgeBase/...` へ移った時点で、
   **再開の手段ごと壊れた**。4か月後の第2世代はWSL pathとWindows pathを併記したが、

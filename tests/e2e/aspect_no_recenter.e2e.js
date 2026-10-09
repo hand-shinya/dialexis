@@ -1,4 +1,4 @@
-// 第2階層ノードのmenu(埋没/多言語/意味)は中心を変えずパネルで見せる（半田様指摘）＋gColloc否定ゼロ。
+// 第2階層ノードのmenu(埋没/多言語/意味)は中心を変えずパネルで見せる（所有者指摘）＋gColloc否定ゼロ。
 const { chromium } = require("playwright-core");
 const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const B = process.argv[2] || "http://127.0.0.1:8017";

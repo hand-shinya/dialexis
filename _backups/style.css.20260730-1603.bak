@@ -232,7 +232,7 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .gp-x { background: none; color: var(--muted); font-size: 1.3rem; padding: 0 .3rem; }
 .gp-body { padding: .8rem .9rem 1.1rem; }
 
-/* 概念全景ドロワー（半田様2026-07-30）: デスクトップ=右側の広いdrawer（グラフの一部を残す）／狭い画面=全画面 */
+/* 概念全景ドロワー（所有者2026-07-30）: デスクトップ=右側の広いdrawer（グラフの一部を残す）／狭い画面=全画面 */
 #graph-panel.gp-wide { left: auto; right: 0; top: 0; transform: none;
   width: min(560px, 46vw); max-height: 100vh; height: 100vh; border-radius: 0;
   border-left: 2px solid var(--ink); box-shadow: -10px 0 40px rgba(0,0,0,.22); }

@@ -1,9 +1,9 @@
 """持ち出す文の試験（2026-10-09）。
 
-なぜ在るか（半田様の設計）:
-  半田様が自分の環境で ChatGPT や Google 検索を使うのは自由である。
+なぜ在るか（所有者の設計）:
+  所有者が自分の環境で ChatGPT や Google 検索を使うのは自由である。
   この system がそれを提供できないなら、両者を繋ぐのは
-  「半田様の環境と責任で実行するための文」を出すことである。送信はこの system がしない。
+  「所有者の環境と責任で実行するための文」を出すことである。送信はこの system がしない。
 
 既に在ったもの（実測して確かめた・重複を作らないため）:
   `/deepsearch` の prompt 生成と `deepsearch` action（視点・目的・難易度を選ぶ面）。
@@ -57,13 +57,13 @@ def build(**kw):
 
 
 # ===========================================================================
-# 責任の分担（半田様の設計の中心）
+# 責任の分担（所有者の設計の中心）
 # ===========================================================================
 
 def test_the_text_says_who_executes_it():
     d = build(text="「理性」と「感性」の違いが気になっています。")
     assert "あなたの環境と責任" in d["responsibility"]
-    assert "半田様" not in d["responsibility"], "所有者と利用者を同一視している"
+    assert "所有者" not in d["responsibility"], "所有者と利用者を同一視している"
     assert "送信しません" in d["responsibility"]
     assert "実行はあなたの環境で行ってください" in d["prompt"]
 
@@ -162,7 +162,7 @@ def test_the_licence_gate_decides_per_tier(lic, quotable):
 
 
 # ===========================================================================
-# 人の判断の欄（半田様自身が書いたもの）
+# 人の判断の欄（所有者自身が書いたもの）
 # ===========================================================================
 
 def test_human_records_are_passed_as_the_users_own():
@@ -175,7 +175,7 @@ def test_human_records_are_passed_as_the_users_own():
     assert "私自身が書いた判断" in p
     assert "暫定定義" in p and "記憶" in p and "命名" in p
     assert "この system が生成したものではない" in p
-    assert "半田様" not in p, "持ち出す文に所有者の名が入っている"
+    assert "所有者" not in p, "持ち出す文に所有者の名が入っている"
 
 
 def test_the_endpoint_includes_human_records_of_a_project(client):
@@ -190,7 +190,7 @@ def test_the_endpoint_includes_human_records_of_a_project(client):
     for title in ("暫定の定義", "記憶している", "こう呼ぶ"):
         assert title in d["prompt"], title
     assert any("人の判断の欄 3 件" in x for x in d["contains"]), d["contains"]
-    assert "半田様" not in d["prompt"]
+    assert "所有者" not in d["prompt"]
 
 
 def test_without_a_project_the_absence_is_declared(client):
@@ -227,7 +227,7 @@ def test_an_unknown_project_is_refused_not_silently_dropped(client):
 
 
 # ===========================================================================
-# どの場面からでも出せること（半田様の「どんな時でも」）
+# どの場面からでも出せること（所有者の「どんな時でも」）
 # ===========================================================================
 
 def _block(start, end):

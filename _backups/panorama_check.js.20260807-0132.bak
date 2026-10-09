@@ -1,4 +1,4 @@
-// 表示面（surface）契約の決定論gate（fixture・実マウスのみ）。半田様2026-08-02。
+// 表示面（surface）契約の決定論gate（fixture・実マウスのみ）。所有者2026-08-02。
 //   面は3種に固定: Context(#dx-context・右側・永続) / Menu(#graph-menu) / Action(#graph-panel)
 // 検証する契約:
 //   A. 中央管理    — Menu/Action は排他で合計1個まで／同種を積層しない／後から開いた面が背後に出ない

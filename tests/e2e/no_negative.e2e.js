@@ -1,4 +1,4 @@
-// 逆側logic（半田様2026-07-29）: 「〜できません/見つかりません/失敗」等の否定表示を絶対に出さない。
+// 逆側logic（所有者2026-07-29）: 「〜できません/見つかりません/失敗」等の否定表示を絶対に出さない。
 // 空/失敗の検出点をtriggerに、建設的な代替（続行フッター or nomiss）へ差し替わることを機械検査。
 const { chromium } = require("playwright-core");
 const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";

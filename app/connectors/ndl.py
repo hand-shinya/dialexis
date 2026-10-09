@@ -1,6 +1,6 @@
 """国立国会図書館サーチ (NDL Search) connector — Japanese editions & translations.
 
-Field requirement (半田様, 2026-07-07): when a Japanese user searches, works
+Field requirement (所有者, 2026-07-07): when a Japanese user searches, works
 originally in French/German/English are read as JAPANESE TRANSLATIONS (邦訳),
 and WHICH TRANSLATOR matters as much as the original text — Kant's 純粋理性批判
 in 天野貞祐 vs 中山元 renders Verstand/Vorstellung differently, changing the

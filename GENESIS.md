@@ -141,4 +141,4 @@ technology (no build steps, minimal dependencies) over fashionable stacks.
 
 ### 改版履歴
 
-- v1.0 (2026-07-07) 初版。源流思想の提示者：半田晋也。起草：Claude Fable 5。三螺旋（生存問題→使用即貢献／保存から参照へ→レンズ原理／機能階梯→退化階梯）を経て制定。
+- v1.0 (2026-07-07) 初版。源流思想の提示者：所有者晋也。起草：Claude Fable 5。三螺旋（生存問題→使用即貢献／保存から参照へ→レンズ原理／機能階梯→退化階梯）を経て制定。

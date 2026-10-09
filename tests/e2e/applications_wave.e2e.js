@@ -1,5 +1,5 @@
 // 応用・波及レンズ: 作品への応用に加え、社会体制・思想・運動への波及（資本論→共産主義/
-// マルクス主義…）が出ること。半田様指摘「社会体制のきっかけが表現されていない」の是正。
+// マルクス主義…）が出ること。所有者指摘「社会体制のきっかけが表現されていない」の是正。
 const { chromium } = require("playwright-core");
 const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
 const BASE = process.argv[2] || "http://127.0.0.1:8012";
@@ -25,7 +25,7 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
   }));
   ok("応用・波及に『思想・体制・運動への波及』の枝が出る",
      info.doms.some(d => /波及/.test(d)), `doms=${JSON.stringify(info.doms)}`);
-  ok("資本論→共産主義/マルクス主義など社会体制への波及が出る（半田様指摘の是正）",
+  ok("資本論→共産主義/マルクス主義など社会体制への波及が出る（所有者指摘の是正）",
      info.labels.some(l => /共産主義|マルクス主義|マルクス経済学/.test(l)),
      `labels=${JSON.stringify(info.labels.filter(l => /主義|経済学|学派/.test(l)).slice(0,5))}`);
   ok("作品への応用も併存する（P921・分野別）",

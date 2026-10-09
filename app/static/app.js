@@ -805,7 +805,7 @@ async function projectUnlinkLedger(pid, lid) {
 
 // Structure-bearing view of the research process — replaces the decorative
 // force-graph (a "hairball that carries no priority/status/freshness", per the
-// tool-UX research and 半田様's critique). Nodes are grouped by type in a reading
+// tool-UX research and 所有者's critique). Nodes are grouped by type in a reading
 // order; each shows confidence, provenance count and outgoing relations. Decisions
 // (reading-stance choices) and counterclaims (objections) are first-class rows,
 // not dots. Click/Enter opens the node detail.
@@ -1548,7 +1548,7 @@ function gActionBusy(on, text) {
   }
 }
 
-/* ═══════════ 正典 term exploration transaction（半田様2026-08-02）═══════════
+/* ═══════════ 正典 term exploration transaction（所有者2026-08-02）═══════════
    SEARCH（初回ロード）・center（中心に据える）・本文の語リンク（原語による探求）は、すべて
    この1本の transaction を通る。順序を固定する:
      ① target のデータを取得（大小文字などの正規化候補も含めて「構築可能か」を判定する）
@@ -1658,7 +1658,7 @@ function originLinkAttr() {
     ? ' target="_blank" rel="noopener"' : "";
 }
 
-// ── 逆側logic（半田様2026-07-29）: 「〜できません/見つかりません」の否定表示を絶対に出さない ──
+// ── 逆側logic（所有者2026-07-29）: 「〜できません/見つかりません」の否定表示を絶対に出さない ──
 // 予防で塞ぐのは抜け道が残る。そこで、否定を出す条件(＝コードが既に検出している点)をtriggerに、
 // 否定文の"代わりに"建設的な代替（この語で今できる探索）を差し込む。全場面・全menuで単一ハンドラに集約。
 // これは捏造でない（P6）: 機能の成功を偽らず、実在する別経路へ誘導するだけ。否定語は一切使わない。
@@ -1713,7 +1713,7 @@ function bindNoMiss() {
 /* ═══════════ A3 自動代替（否定条件→同一操作内で別源を実走行）═══════════
    API系Actionが空/エラー（否定Outcome）になったとき、同じユーザー操作の中で、その作用に適した
    代替源を「実際に取得」して出所+取得時刻つきで示す。softLine（入口リンク表示）だけでは代替の
-   「実行」にならない（半田様A3）。履歴は増やさない（dispatchActionが操作末で1回commitするだけ）。 */
+   「実行」にならない（所有者A3）。履歴は増やさない（dispatchActionが操作末で1回commitするだけ）。 */
 let FALLBACK_LOG = [];   // 自動代替の発火ログ（E2E/最終報告が実発火を確認できる外部証跡）
 function logFallback(word, kind, altSource, outcome) {
   const rec = { word, kind, alt: altSource, outcome, at: new Date().toISOString() };
@@ -1742,7 +1742,7 @@ function altFromAnatomy(a, word) {
   if (a.summary) h += `<p class="anat-summary">${esc(a.summary.length > 300 ? a.summary.slice(0, 300) + "…" : a.summary)}</p>`;
   return h;
 }
-// kind ごとの代替経路＝「その操作で既に試したendpointは使わない」（虚偽の切替を出さないための鍵・半田様2026-07-30）。
+// kind ごとの代替経路＝「その操作で既に試したendpointは使わない」（虚偽の切替を出さないための鍵・所有者2026-07-30）。
 //   meaning/breadth/collapse は gWordAspect が最初に /api/origin を使う → 代替は未試行の /api/anatomy。
 //   anatomy は最初に /api/anatomy → 代替は未試行の /api/origin（維持）。
 //   colloc は /api/origin(独語解決)＋/api/collocations を試す → 代替は未試行の /api/anatomy。
@@ -1789,7 +1789,7 @@ async function autoFallback(word, kind, body) {
   }
   logFallback(word, kind, ep ? ("/api/" + ep) : "(none)", outcome);
   if (html && body) {   // 実データが取れた時だけ「切替えた」と言う（切替文言は実取得に接地する）
-    // 出所・取得時刻は応答から確定できたものだけを出す（推測・既定値は出さない＝捏造禁止・P6・半田様2026-07-30）
+    // 出所・取得時刻は応答から確定できたものだけを出す（推測・既定値は出さない＝捏造禁止・P6・所有者2026-07-30）
     const parts = [];
     if (provider) parts.push((jp ? "出所：" : "source: ") + esc(provider));
     if (retrieved) parts.push((jp ? "取得時刻：" : "retrieved: ") + esc(retrieved));
@@ -1805,7 +1805,7 @@ async function autoFallback(word, kind, body) {
   return outcome;
 }
 
-/* ═══════════ 共通操作基盤（半田様2026-07-29: 操作/状態遷移/失敗継続の単一基盤）═══════════
+/* ═══════════ 共通操作基盤（所有者2026-07-29: 操作/状態遷移/失敗継続の単一基盤）═══════════
    全ての選択可能項目を ExplorationTarget へ正規化し、全ての普遍操作を ACTIONS registry に集約し、
    全ての表示面（上部帯・ノードpopup・パネルフッター・noMiss・本文語リンク）を dispatchAction の
    単一経路に通す。表示面ごとに作用を再実装しない。状態変更関数の直接呼び出しは ACTIONS.run に閉じる。 */
@@ -1829,7 +1829,7 @@ let COMBINE_CTX = null;  // { a, b, op }
 let _lastDispatch = null; // 最後に dispatch した {actionId, target, surface, effect, seq, outcome}（操作同値性テスト用）
 let _dispatchSeq = 0;     // dispatch の単調増加連番（同じ操作の反復も外部から区別できる）
 
-/* ═══════════ 表示面の中央管理（Surface Manager・半田様2026-08-02）═══════════
+/* ═══════════ 表示面の中央管理（Surface Manager・所有者2026-08-02）═══════════
    面は3種に固定する:
      Context (#dx-context)  右側の概念全景。×で閉じるか別全景へ置換するまで残る（永続）。
      Menu    (#graph-menu)  選択語の標準操作メニュー。
@@ -2097,8 +2097,8 @@ const ACTIONS = {
   external:     { label: "外部で調べる", effect: "action", newPage: true, transient: true, commits: false, run: (t) => gExtPanel(t.term) },
   shelf:        { label: "棚に追加", effect: "store", commits: false, run: (t) => shelfAdd(t.term) },
   deepsearch:   { label: "深掘り", effect: "action", run: (t) => gPerspectivePanel(t.term) },
-  // 2026-10-09 半田様の設計: この system が AI や検索を提供できないなら、
-  // 両者を繋ぐのは「半田様の環境と責任で実行するための文」を出すことである。
+  // 2026-10-09 所有者の設計: この system が AI や検索を提供できないなら、
+  // 両者を繋ぐのは「所有者の環境と責任で実行するための文」を出すことである。
   // deepsearch（視点を選ぶ面）とは別に、いま画面に在るものをそのまま持ち出す。
   // transient/commits:false ＝ 地図の状態を変えない（持ち出しは探索ではない）。
   handoff:      { label: "持ち出す", effect: "action", transient: true, commits: false,
@@ -2306,7 +2306,7 @@ const GKIND = { word: "#1d2430", domain: "#2e5c7a", original: "#7a5c2e",
 let G_lenscache = {};   // 遅延レンズ（応用/使用例/時代変遷）の 語+レンズ ごとの取得キャッシュ
 let G = null, DIMS = null, G_raw = null, G_lens = "all";
 
-// ── レンズ（複数の地図）: 同じ言葉・同じ取得データを、いくつもの見方で見せる（半田様提案
+// ── レンズ（複数の地図）: 同じ言葉・同じ取得データを、いくつもの見方で見せる（所有者の提案
 // 2026-07-26）。追加取得ゼロ——グラフの型付きノード(word/original/author/work/language/
 // domain)を型で絞り、その語を中心に再投影するだけ。「専門/一般の1分岐」を最初に見せる代わりに、
 // ユーザーが見方を選べる＝知的好奇心の間口を広げる（老若男女・並ぶことの喜び・セレンディピティ）。
@@ -2406,7 +2406,7 @@ function renderTopMenu(d) {
   updateViewBadge(G_lens);   // 現在の見方を表示（初期は俯瞰）
 }
 
-// 「今この地図が何の見方（menu）で描かれているか」を常時表示（半田様指摘: 生成元が画面に無い）。
+// 「今この地図が何の見方（menu）で描かれているか」を常時表示（所有者指摘: 生成元が画面に無い）。
 function updateViewBadge(key) {
   const Lz = LENSES.find(x => x.key === key) || LENSES[0];
   const vb = $("tm-view"); if (!vb) return;
@@ -2430,7 +2430,7 @@ async function applyLensBuild(key) {
   const vlabel = (jp ? "見方：" : "view: ") + (jp ? L.label : L.en);   // アクティブな見方を常に明示（旧レンズchipのon表示の代替）
   const setNote = t => { if (note) note.textContent = vlabel + (t ? " — " + t : ""); };
   const mode = L.mode || "filter";
-  // filter/region も lazy-graph と同じ「空になったら行き止まりにしない」規律を適用する（半田様2026-08-08）。
+  // filter/region も lazy-graph と同じ「空になったら行き止まりにしない」規律を適用する（所有者2026-08-08）。
   // その語に該当kindのノードが無い見方（例: 著者ノードの無い語で「思想家と著作」）を選ぶと、
   // applyLens/applyRegion は root 1個だけを返し、そのまま gBuild すると**空canvas＝行き止まり**になる。
   // 従来この防御は lazy-graph mode にしか無く、filter/region に無いのが非対称＝欠落だった
@@ -2513,7 +2513,7 @@ function drawTimeline(cv, series, cols) {
 }
 
 // ── 探索の単一真実源（root-A: 状態一貫性・要求ID・古い応答の破棄・再中心完了条件） ──
-// 半田様の「他の語のデータが流用される／動いたり動かなかったり」の機構は意味ドリフトでなく
+// 所有者の「他の語のデータが流用される／動いたり動かなかったり」の機構は意味ドリフトでなく
 // 非同期の状態管理だった。現在の主語(q)と単調増加トークンを唯一の真実源とし、主語を変える
 // 操作は originClaim(q) でトークンを取得、各非同期処理は await の後 originStale(tok) を確認
 // してから DOM/グラフ(G)/パネルを書く。これにより、遅れて届いた古い語の応答が新しい語の画面を
@@ -2534,13 +2534,13 @@ function originCurrent(q) { return OZ.q === q; }
 // dispatch a dimension-of-inquiry entry to its data path (or 整備中 note).
 // 非同期の実データ経路は必ず return して呼び元 dispatchAction に await させる（settle後に1回だけcommit＝
 // 一操作一commitを守る。returnしないと取得完了前に先行commitし、gCombineRun等の完了時に再commitして履歴が
-// 2件になる回帰＝Codex対審E2・半田様2026-07-30の保持指示に違反する）。
+// 2件になる回帰＝Codex対審E2・所有者2026-07-30の保持指示に違反する）。
 function gDimAct(dm) {
   if (!dm) return false;
   const act = dm.act || "";
   const w = (G && G.rootQ) || (($("origin-results") || {}).dataset || {}).q || "";   // この探索の中心語
   // soon次元＝説明だけで止めない。現在語と次元名を既存の組合せ探索(実データ)へ渡し、同一操作内で実行する
-  // （新機構を作らず既存Action/APIを再利用・取得できなければ組合せ側が続行操作を出す・半田様2026-07-30）。
+  // （新機構を作らず既存Action/APIを再利用・取得できなければ組合せ側が続行操作を出す・所有者2026-07-30）。
   if (dm.status === "soon") { return gCombineRun(w, dm.label, "and"); }
   if (act.startsWith("scroll:")) {
     const el = $(act.slice(7));
@@ -2948,7 +2948,7 @@ function extResourcesHtml(term, V) {
   }
   return h;
 }
-// 語の側面（意味／多言語／埋没原語）を、地図の中心を変えずにパネルで個別に見せる（半田様指摘2026-07-29:
+// 語の側面（意味／多言語／埋没原語）を、地図の中心を変えずにパネルで個別に見せる（所有者指摘2026-07-29:
 // 第2階層のノードのmenuで無断に再中心すると、元の中心語の意識と乖離する。中心変更は「中心に据え直す」に限る）。
 async function gWordAspect(word, aspect) {
   const jp = LANG === "ja";
@@ -3281,7 +3281,7 @@ async function gPairTranslationHistoryPanel(a, b) {
   runButton.addEventListener("click", run); await run(); return true;
 }
 
-// 普遍的な語源解剖（半田様指摘の弁証法ケース＝dia-対話性の復元）。原語へ辿り構成要素と
+// 普遍的な語源解剖（所有者指摘の弁証法ケース＝dia-対話性の復元）。原語へ辿り構成要素と
 // 意味の連鎖をWiktionaryの実文書から。どんな語にも普遍適用（seed不要）。
 async function gAnatomyPanel(word) {
   const jp = LANG === "ja";
@@ -3314,7 +3314,7 @@ async function gAnatomyPanel(word) {
   body.innerHTML = h;
 }
 
-// 並置比較カード（第三者提案・半田様承認の方向）: 訳語の意味と原語の意味を左右に並べ、機械が
+// 並置比較カード（第三者提案・所有者の承認の方向）: 訳語の意味と原語の意味を左右に並べ、機械が
 // 差分を断定せず、人が自分の目で「字面が隠しているもの（対話性など）」を発見する（並ぶことの喜び）。
 // 既存の /api/origin(日本語語義) と /api/anatomy(原語の構成要素・連鎖) を合成。RAM/新API不要。
 async function gContrastPanel(word) {
@@ -3580,7 +3580,7 @@ function gActions(n) {
     const relationInfo = _relationInfo(n);
     const CORE_HEAD = [
       ...(relationInfo ? [{ s: "🧭 中心命題との関係", t: `🧭 「${n.label}」と中心命題との関係を展開する（著作・思想・歴史・受容）`, action: "relationship", ctx: { relation: relationInfo, node: relationInfo.node } }] : []),
-      // 第一候補＝この語の全体像（概念全景）。派生ノードからも全景へ進める（半田様2026-08-01）
+      // 第一候補＝この語の全体像（概念全景）。派生ノードからも全景へ進める（所有者2026-08-01）
       { s: "🖼 全体像を見る", t: "🖼 この語の全体像を見る（概念全景）", action: "panorama", ctx: { node: n } },
       { s: "🎯 中心に据える", t: "🎯 これを地図の中心に据え直す（グラフを再構成）", action: "center" },
       { s: "🔗 組み合わせ", t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", action: "combine" },
@@ -3652,7 +3652,7 @@ async function applyLensFor(W, key) {
   // 同一性の判定は文字列完全一致（G.rootQ===W）でなく、正典transaction（originRecenter→originExplore）
   // 自身の成功シグナルで行う。大文字小文字・NFKC正規化・原語探索でrootの表記がWと変わっても
   // （例: Dialectic→dialectic）、transactionが構築に成功していればlensは必ず適用する（無作用にしない・
-  // 半田様2026-08-07既知不具合の是正）。transactionが失敗（stale/構築不可）した場合はlensを適用しない
+  // 所有者2026-08-07既知不具合の是正）。transactionが失敗（stale/構築不可）した場合はlensを適用しない
   // ＝別語や存在しない状態への誤適用を防ぐ。
   const ok = await originRecenter(W);
   if (!ok || !G || !G_raw) return false;
@@ -3786,7 +3786,7 @@ function gPanel(title, bodyHtml, term) {
   return p;
 }
 
-/* ═══════════ 概念全景（Concept Panorama）＝語ノード選択時の広い詳細ドロワー（半田様2026-07-30）═══════════
+/* ═══════════ 概念全景（Concept Panorama）＝語ノード選択時の広い詳細ドロワー（所有者2026-07-30）═══════════
    個別menu選択型→概念全景型。選択語に文脈(rootQ/parentTerm/edge/lens/nodeKind/layer)を渡し、意味契約ごとに
    分けた区画を出す。【意味契約】anatomy=語形成・借用・語彙史のみ／contrast(焦点)=意味・用法・概念作用の差
    （構成要素の再掲でない）／collapse=複数原語が一訳語へ統合された根拠がある時だけ／colloc=実コーパスの共起
@@ -3808,7 +3808,7 @@ function _panoSection(id, heading, inner) {   // 実在する時だけ節を返�
   return { id, heading, html: `<section class="pano-sec" id="pano-${id}"><h4 class="pano-h">${esc(heading)}</h4><div class="pano-in">${inner}</div></section>` };
 }
 // 日本語UIでは、接地済みの**日本語**glossだけを併記する。英語gloss（spear/shield 等＝原語でなく英語訳）は
-// 出さない（原語表記・言語名・出典だけを示す）。機械翻訳層・手書き辞書は追加しない（半田様2026-07-31）。
+// 出さない（原語表記・言語名・出典だけを示す）。機械翻訳層・手書き辞書は追加しない（所有者2026-07-31）。
 function _jaGloss(s) {
   s = (s || "").trim(); if (!s) return "";
   return /[ぁ-んァ-ヶ一-龥]/.test(s) ? s : "";   // 日本語文字を含む時だけ採る
@@ -3822,7 +3822,7 @@ function _panoLead(d, cx) {
   return `<div class="pano-lead"><p class="pano-eyebrow">この場所での意味</p>${ctxLine}`
     + `<p class="pano-lead-body">${esc((gm[0] || "").slice(0, 200))}</p></div>`;
 }
-// 「この語で見落としやすいこと」＝取得データに**両側の焦点が明示**されている時だけ出す（半田様2026-07-31）。
+// 「この語で見落としやすいこと」＝取得データに**両側の焦点が明示**されている時だけ出す（所有者2026-07-31）。
 // 必要条件（すべて取得データから確認）: ①日本語側＝同一の訳語へ統合されたことが collapses_to に明示され、
 // ②原語側＝その訳語へ統合される2つ以上の別語がそれぞれ日本語glossで別の焦点を持つ。
 // general_meaning と単一の英語gloss から対比文を生成することは禁止（推論・翻訳層は追加しない）。
@@ -3868,9 +3868,9 @@ function _panoHistory(d) {   // 語の来歴＝日本語漢字表記の語形・
 }
 // concept_origin（記事LEADの併記表記）は原語と訳語が混在する。語自身の語源データ（word_origin の言語／
 // anatomy の語形）に接地するものだけを「原語」とし、それ以外は翻訳対応語として各言語での表記側へ回す
-// （矛盾の contradiction（英語）を原語欄に置かない・半田様2026-08-01）。推測で振り分けない。
+// （矛盾の contradiction（英語）を原語欄に置かない・所有者2026-08-01）。推測で振り分けない。
 // 由来関係が実源で確認できるものだけを「原語・語源」とし、確認できないものは訳語（各言語での表記）とする。
-// サイト内の全レンダラ（概念全景・旧カード）が同じ規則を使う（半田様2026-08-02）。
+// サイト内の全レンダラ（概念全景・旧カード）が同じ規則を使う（所有者2026-08-02）。
 function _groundedOrigSplit(co, wordOrigin, forms) {
   const woName = (wordOrigin && wordOrigin.name) || "";
   const F = new Set((forms || []).filter(Boolean));
@@ -3882,7 +3882,7 @@ function _panoOrigSplit(d) {
   return _groundedOrigSplit(o.concept_origin || [], o.word_origin,
     [...(a.components || []).map(c => c.part), ...(a.chain || []).map(c => c.term), a.term]);
 }
-// ── 全景パネル内のクリック契約（半田様2026-08-02）──
+// ── 全景パネル内のクリック契約（所有者2026-08-02）──
 //  A=目次(.pano-toc-a) 節内スクロールのみ／B=見出し・区分名・集約・件数（**リンクにしない**）／
 //  C=実在する語・人物・著作(.pano-ent) クリックで既存の標準操作メニュー(gMenu)／D=開閉(summary)・外部出典(a[target=_blank])
 // Cは表示文字列や親見出しから対象を逆算せず、data-term/data-kind/data-eid（stable ID）を保持する。
@@ -3979,7 +3979,7 @@ function _panoRelations(d, cx) {   // 関係・対立・運動
   return h || "";   // 実データが無ければ節を出さない
 }
 // 意味・焦点・用法の差が出典に接地している場合だけ「言語間の意味変化」と呼ぶ。表記しか無ければ
-// 見出しも目次も「各言語での表記」にする（表記一覧を意味変化と偽らない・半田様2026-08-01）。
+// 見出しも目次も「各言語での表記」にする（表記一覧を意味変化と偽らない・所有者2026-08-01）。
 function _panoLangHasSense(d) {
   return ((d.origin || {}).breadth || []).some(b => b && (_jaGloss(b.gloss) || _jaGloss(b.sense) || _jaGloss(b.note)));
 }
@@ -4020,7 +4020,7 @@ function _panoDropSection(id) {
 }
 // 次にたどれる言葉＝**実体を持つ語・人物・著作だけ**。root/domain/language-hub/section/group/count/metadata
 // のような構造ノード、自分自身、term空、言語名だけ、stable IDの無い構造ラベル、正規化termの重複は除外する
-// （「一般の意味」「専門・思想の意味」「世界の言語 127」を探索対象にしない・半田様2026-08-02）。
+// （「一般の意味」「専門・思想の意味」「世界の言語 127」を探索対象にしない・所有者2026-08-02）。
 function _panoBranches(d, cx) {
   const out = [], seen = new Set();
   const norm = (s) => String(s || "").normalize("NFKC").trim().toLowerCase();
@@ -4051,7 +4051,7 @@ function _panoBranches(d, cx) {
     + `<p class="pano-branch">${chips.join("　")}</p>`;
 }
 // Context面（右側の概念全景）。Action(#graph-panel)とは**別のDOM id**にする＝Action系Actionが
-// Contextを破壊しない（id衝突の根治・半田様2026-08-02）。生成・置換・破棄は surface manager 経由。
+// Contextを破壊しない（id衝突の根治・所有者2026-08-02）。生成・置換・破棄は surface manager 経由。
 function _panoShell(title, term) {   // ヘッダは title＋閉じる、下部には常時使える次アクションを置く。
   const jp = LANG === "ja";
   const p = document.createElement("div"); p.className = "gp-wide";
@@ -4081,7 +4081,7 @@ function _panoBindLazy(bodyEl) {
   });
 }
 // 「この語の見どころ」＝パネル内目次（実在する節だけから自動生成・本文と同名・クリックでスクロール・読了節を強調）
-// 目次の選択状態（半田様2026-08-01の回帰是正）:
+// 目次の選択状態（所有者2026-08-01の回帰是正）:
 //  旧実装は判定に offsetTop（コンテンツ座標）＋scrollTop を使い、スクロール/表示位置は rect（client座標）
 //  という**異なる座標系の混在**だった。パネル下端まで来ると対象節の先頭を上端まで運べず、
 //  「判定線を跨いだ最後の節」が常に選ばれて別項目（原語・思想家・著作）へ誤反転していた。
@@ -4118,7 +4118,7 @@ function _panoBindToc(panel) {
     const id = "pano-" + a.dataset.sec, s = panel.querySelector("#" + id);
     locked = id; paint(id);                                        // 押した項目を即active（短いパネルでも変わる）
     if (s) s.scrollIntoView({ behavior: "smooth", block: "start" });
-    // 明示クリックのactiveは**ユーザー自身が動かすまで**維持する（半田様2026-08-02）。
+    // 明示クリックのactiveは**ユーザー自身が動かすまで**維持する（所有者2026-08-02）。
     // 旧実装はスクロール完了後に visibleId() で再判定していたが、smooth scroll の残りイベントや
     // 下端到達（atBottom分岐）で「表示中の最後の節」へ誤反転しうる（bearers→branches の実測回帰）。
     // ロック解除は下の wheel/touchmove/keydown（＝ユーザー操作）だけが行う。
@@ -4136,7 +4136,7 @@ async function gPanorama(ctx) {
   // 文脈（タイトルの「〜の中の」）は、実グラフの到達経路を上へ辿って求める。ただし
   //  ・同種ノード間の親（思想家→思想家の影響線。例: マルクスの親がレーニン）は文脈にしない
   //  ・domain（分類の箱）も飛ばし、その上の「語」を文脈にする
-  // ＝直前に開いたPANEL_CTXや選択順序には一切依存しない（順序を入れ替えても同じタイトル・半田様2026-08-01）
+  // ＝直前に開いたPANEL_CTXや選択順序には一切依存しない（順序を入れ替えても同じタイトル・所有者2026-08-01）
   let parent = null;
   if (idx >= 0 && G && G.parent) {
     let pi = G.parent[idx];
@@ -4239,7 +4239,7 @@ function gCombineOutcomePanel(a, b, op, data, status) {
   return p;
 }
 
-// A: ユーザー主導の組み合わせ探索（半田様のAND案）。語を入れて操作を選ぶ。
+// A: ユーザー主導の組み合わせ探索（所有者のAND案）。語を入れて操作を選ぶ。
 function gCombinePanel(a, initialB = "", initialOp = "and") {
   const jp = LANG === "ja";
   const ops = [["and", "絞り込み（AND）"], ["semand", "意味で絞る"], ["not", "除外（NOT）"],
@@ -4405,9 +4405,9 @@ function gShelfPanel() {
   p.querySelectorAll(".lens-x").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const ls = _lsGet("dx_lenses", []); ls.splice(+a.dataset.i, 1); _lsSet("dx_lenses", ls); refresh(); }));
 }
 
-// 持ち出す文（2026-10-09 半田様の設計）。
+// 持ち出す文（2026-10-09 所有者の設計）。
 // この system が AI や検索を提供できないなら、両者を繋ぐのは
-// 「半田様の環境と責任で実行するための文」を出すことである。送信はしない。
+// 「所有者の環境と責任で実行するための文」を出すことである。送信はしない。
 // ctx.receipts / ctx.sources / ctx.project_id を渡せば、その場面で測ったものを文に含める。
 async function gHandoffPanel(word, ctx) {
   const jp = LANG === "ja";
@@ -4593,11 +4593,11 @@ function gBind() {
   cv.onpointerup = (e) => {
     const p = G.press; G.drag = null; G.press = null;
     if (p && !p.moved) {
-      // 語ノード選択＝個別menuでなく「概念全景」を開く（単一Dispatcher経由・文脈nodeを渡す・半田様2026-07-30）。
+      // 語ノード選択＝個別menuでなく「概念全景」を開く（単一Dispatcher経由・文脈nodeを渡す・所有者2026-07-30）。
       // domainノード（一般の意味/世界の言語/語源の連鎖 等＝カテゴリ・q無し）は、その文字列でなく親(root語)の
       // 全景を開き、対応する見どころへ寄せる（関心のある箇所へ進む導線）。エッジ選択は従来どおり関係メニュー。
       if (p.n) {
-        // CLICK_ENTITY（半田様2026-08-02・「rootだけ全景直行」の特例は廃止）:
+        // CLICK_ENTITY（所有者2026-08-02・「rootだけ全景直行」の特例は廃止）:
         //  ・実体ノード（中心語ノードも含め階層・kindに関係なく）→ 旧Menu/Action破棄・Context保持・Menu(target)を前面
         //  ・構造ノード（domain/区分名/件数＝q無し）は entity ではない → Contextを中心語の全景（該当節）へ
         const n = p.n;
@@ -4843,7 +4843,7 @@ async function originRun(q, tok) {
   }
   // (2) 語形の由来（語源）＋翻訳原点の候補 — 思想家がいる場合は"語源"として明確に降格し警告
   // 由来関係が実源で確認できるものだけを原語・語源として扱い、確認できない併記は「各言語での表記（訳語）」へ
-  // 分離する（英訳 contradiction を日本語「矛盾」の原語候補として扱わない・全レンダラ共通・半田様2026-08-02）。
+  // 分離する（英訳 contradiction を日本語「矛盾」の原語候補として扱わない・全レンダラ共通・所有者2026-08-02）。
   const _cosp = _groundedOrigSplit(co, o, (d.chain || []).map(c => c.form));
   const coG = _cosp.origs, coT = _cosp.trans;
   if (coG.length || na.length) {
@@ -4884,7 +4884,7 @@ async function originRun(q, tok) {
     html += `<p class="chain-label">${jp ? "変容の連鎖（訳語をさかのぼる）" : "The chain of transformation (back through translation)"}</p>
       <div class="chain">${steps.join(`<span class="chain-arrow">←</span>`)}</div>`;
   }
-  // 原語での語義: 英語の生glossを主表示しない。日本語の根拠ある語義がある時だけ示す（半田様2026-08-02）
+  // 原語での語義: 英語の生glossを主表示しない。日本語の根拠ある語義がある時だけ示す（所有者2026-08-02）
   if (d.senses && d.senses.length) {
     const jaSenses = d.senses.slice(0, 3).map(s => _jaGloss(cleanWikt(s))).filter(Boolean);
     if (jaSenses.length) html += `<p class="muted">${jp ? "原語での語義" : "senses in the original"}: ${esc(jaSenses.join(" / "))}</p>`;

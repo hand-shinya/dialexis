@@ -1,4 +1,4 @@
-/* 表示面（surface）契約の実ブラウザ・実API・実マウスによる BFS gate（半田様2026-08-02）。
+/* 表示面（surface）契約の実ブラウザ・実API・実マウスによる BFS gate（所有者2026-08-02）。
    面は3種に固定: Context(#dx-context・右側・永続) / Menu(#graph-menu) / Action(#graph-panel)
    BFS:
      L1 = canvas全ノード／全edge／Context内の全entity／目次／開閉／出典／グラフ上部の全操作

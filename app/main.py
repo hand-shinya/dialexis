@@ -2766,7 +2766,7 @@ async def api_canon(q: str, lang: str = "ja"):
                          "url": "https://en.wiktionary.org/", "evidence": "candidate"}]}
 
 
-# ── 関連空間（2026-10-05・半田様の設計） ──
+# ── 関連空間（2026-10-05・所有者の設計） ──
 # 辞書層は関係の型（類義・対義・関連・読み）を、用例層は分布（時代・著者・分野・
 # 文脈）を与える。同じ語を扱っても観点と構造が違うため、重ねずに2層として返す。
 # ヘルパはdecoratorより上に置く。2026-09-30に decorator と def の間へ関数を挿し、
@@ -3096,14 +3096,14 @@ async def page_textscan(request: Request):
 
 @app.post("/api/handoff")
 async def api_handoff(request: Request):
-    """利用者の環境と責任で実行するための依頼文を組む（2026-10-09・半田様の設計）。
+    """利用者の環境と責任で実行するための依頼文を組む（2026-10-09・所有者の設計）。
 
     この system は送信しない。文を返すだけである。鍵も料金も使わない。
     渡すのは、この system が実際に測ったものと、利用者自身が書いたものだけである。
-    利用者は半田様とは別の人である（公開instanceでは workspace ごとに別人・§2.6）。
+    利用者は所有者とは別の人である（公開instanceでは workspace ごとに別人・§2.6）。
 
     `project_id` を渡せば、その企画の人の判断の欄（provisional/memory/naming）を
-    文に含める。半田様自身が書いたものなので、そのまま渡す。
+    文に含める。所有者自身が書いたものなので、そのまま渡す。
     """
     try:
         b = await request.json()
@@ -3150,13 +3150,13 @@ async def page_inquiry(request: Request):
 
 @app.post("/api/inquiry")
 async def api_inquiry(request: Request):
-    """書いた文を受け、鍵の要らない取得先へ照会する（2026-10-09・半田様の設計）。
+    """書いた文を受け、鍵の要らない取得先へ照会する（2026-10-09・所有者の設計）。
 
-    入り口が概念語1つである限り、半田様が実際に書いた文が system に入らない。
-    非有機的肉体の研究で分岐を作った3つの瞬間は、すべて半田様の発話だった
+    入り口が概念語1つである限り、所有者が実際に書いた文が system に入らない。
+    非有機的肉体の研究で分岐を作った3つの瞬間は、すべて所有者の発話だった
     （資料0件・AI0件）。
 
-    半田様の決裁（2026-10-09）:
+    所有者の決裁（2026-10-09）:
       鍵つきの外部AI検索（Gemini の検索接地など）は使わない。P5 を崩さない。
       外へ投げるのは押したときだけ。`web` が真のときだけ外部へ出る。
 
@@ -3191,7 +3191,7 @@ async def api_inquiry(request: Request):
     return data
 
 
-# 抽出語が多いときの絞り込み案内（2026-10-05・半田様の指摘）。
+# 抽出語が多いときの絞り込み案内（2026-10-05・所有者の指摘）。
 # 案内の根拠（語数・閾値・具体策）を payload に持たせ、画面が勝手に言わない形にする。
 _WORD = r"[ぁ-んァ-ヴー一-龥A-Za-z][ぁ-んァ-ヴー一-龥A-Za-zA-Za-z]{0,19}"
 # 本文の問いの形。利用者が何を問題にしているかは、語の希少さではなく文の形に出る。
@@ -4048,7 +4048,7 @@ def _wiki_title_from_url(url):
 @app.get("/api/gravity")
 async def api_gravity(q: str, lang: str = "ja"):
     """重力探索: 一般ウェブ検索で「意味の重力分布」を測り、重い領域を語とAND検索して次階層へ
-    連続展開する（半田様設計）。リゾーム→哲学/植物が重い→『リゾーム 哲学』のAND検索で
+    連続展開する（所有者の設計）。リゾーム→哲学/植物が重い→『リゾーム 哲学』のAND検索で
     ドゥルーズ等を次階層に。頻度＝重力に従い、重い枝ほど大きく深く掘る。SearXNG依存・鍵不要。"""
     root = {"id": "root", "label": q, "kind": "word", "layer": 1, "weight": 3.0, "q": q}
     res = await searxng.search(q, lang, n=20, drop_commercial=True)
@@ -4168,7 +4168,7 @@ async def _combine_web_search(q: str, lang: str, extra: str = "", n: int = 20):
 
 @app.get("/api/combine")
 async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
-    """ユーザー主導の組み合わせ探索（半田様のAND案）。op= and(絞り込み)/not(除外)/or(合わせる)/
+    """ユーザー主導の組み合わせ探索（所有者のAND案）。op= and(絞り込み)/not(除外)/or(合わせる)/
     compare(比較)/semand(意味で絞る)。一般ウェブ(SearXNG)＋Wikidata意味で、選んだ語に条件を
     足して重力場を絞る/広げる/比べる。鍵不要・出所つき・fail-safe。"""
     def root(label, wid="root", w=3.0, layer=1, q=None):

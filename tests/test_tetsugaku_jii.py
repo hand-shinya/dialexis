@@ -2,7 +2,7 @@
 
 この層は局所fileなので、外部の状態に左右されず決定論的に試験できる。
 守りたいのは3つ。
-  1. 半田様が指摘した「権利／通義／公道」の競合が、資料どおりに出ること
+  1. 所有者が指摘した「権利／通義／公道」の競合が、資料どおりに出ること
   2. 凡例の記法（割注・振り仮名・分野・斜体）を本文から分離すること
   3. 収録が無い語を、黙って空にせず missing と宣言すること
 """
@@ -27,7 +27,7 @@ def test_scale_is_what_we_measured():
 
 
 def test_right_carries_the_competing_translations():
-    """半田様の指摘の核。1881年の Right に 権利・公道・通義 が並ぶ。"""
+    """所有者の指摘の核。1881年の Right に 権利・公道・通義 が並ぶ。"""
     d = tj.lookup("権利")["data"]
     assert d["headwords"] == ["Right"]
     sib = [s["term"] for s in d["sibling_terms"]]

@@ -10,7 +10,7 @@
 set -euo pipefail
 cd /opt/dialexis
 git pull --ff-only origin main
-# ── 全検証gate（半田様 Step6）: ブラウザE2EはVPSのRAMで実行できないため、対象コードのSHAで
+# ── 全検証gate（所有者 Step6）: ブラウザE2EはVPSのRAMで実行できないため、対象コードのSHAで
 #    verify.sh（pytest＋全E2E＋failure injection＋履歴）が通った証跡を必須にする。verify.sh が
 #    deploy/verified_sha.txt にHEADを記録する。検証SHAがHEADの祖先で、それ以降の差分がマーカー
 #    のみ（＝未検証のコード変更が無い）でなければデプロイを止める。

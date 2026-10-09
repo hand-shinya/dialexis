@@ -400,7 +400,7 @@ async function projRefresh() {
 
 // Structure-bearing view of the research process — replaces the decorative
 // force-graph (a "hairball that carries no priority/status/freshness", per the
-// tool-UX research and 半田様's critique). Nodes are grouped by type in a reading
+// tool-UX research and 所有者's critique). Nodes are grouped by type in a reading
 // order; each shows confidence, provenance count and outgoing relations. Decisions
 // (reading-stance choices) and counterclaims (objections) are first-class rows,
 // not dots. Click/Enter opens the node detail.
@@ -1047,7 +1047,7 @@ function originLinkAttr() {
     ? ' target="_blank" rel="noopener"' : "";
 }
 
-// ── 逆側logic（半田様2026-07-29）: 「〜できません/見つかりません」の否定表示を絶対に出さない ──
+// ── 逆側logic（所有者2026-07-29）: 「〜できません/見つかりません」の否定表示を絶対に出さない ──
 // 予防で塞ぐのは抜け道が残る。そこで、否定を出す条件(＝コードが既に検出している点)をtriggerに、
 // 否定文の"代わりに"建設的な代替（この語で今できる探索）を差し込む。全場面・全menuで単一ハンドラに集約。
 // これは捏造でない（P6）: 機能の成功を偽らず、実在する別経路へ誘導するだけ。否定語は一切使わない。
@@ -1092,7 +1092,7 @@ function bindNoMiss() {
 /* ═══════════ A3 自動代替（否定条件→同一操作内で別源を実走行）═══════════
    API系Actionが空/エラー（否定Outcome）になったとき、同じユーザー操作の中で、その作用に適した
    代替源を「実際に取得」して出所+取得時刻つきで示す。softLine（入口リンク表示）だけでは代替の
-   「実行」にならない（半田様A3）。履歴は増やさない（dispatchActionが操作末で1回commitするだけ）。 */
+   「実行」にならない（所有者A3）。履歴は増やさない（dispatchActionが操作末で1回commitするだけ）。 */
 let FALLBACK_LOG = [];   // 自動代替の発火ログ（E2E/最終報告が実発火を確認できる外部証跡）
 function logFallback(word, kind, altSource, outcome) {
   const rec = { word, kind, alt: altSource, outcome, at: new Date().toISOString() };
@@ -1119,7 +1119,7 @@ function altFromAnatomy(a, word) {
   if (a.summary) h += `<p class="anat-summary">${esc(a.summary.length > 300 ? a.summary.slice(0, 300) + "…" : a.summary)}</p>`;
   return h;
 }
-// kind ごとの代替経路＝「その操作で既に試したendpointは使わない」（虚偽の切替を出さないための鍵・半田様2026-07-30）。
+// kind ごとの代替経路＝「その操作で既に試したendpointは使わない」（虚偽の切替を出さないための鍵・所有者2026-07-30）。
 //   meaning/breadth/collapse は gWordAspect が最初に /api/origin を使う → 代替は未試行の /api/anatomy。
 //   anatomy は最初に /api/anatomy → 代替は未試行の /api/origin（維持）。
 //   colloc は /api/origin(独語解決)＋/api/collocations を試す → 代替は未試行の /api/anatomy。
@@ -1166,7 +1166,7 @@ async function autoFallback(word, kind, body) {
   }
   logFallback(word, kind, ep ? ("/api/" + ep) : "(none)", outcome);
   if (html && body) {   // 実データが取れた時だけ「切替えた」と言う（切替文言は実取得に接地する）
-    // 出所・取得時刻は応答から確定できたものだけを出す（推測・既定値は出さない＝捏造禁止・P6・半田様2026-07-30）
+    // 出所・取得時刻は応答から確定できたものだけを出す（推測・既定値は出さない＝捏造禁止・P6・所有者2026-07-30）
     const parts = [];
     if (provider) parts.push((jp ? "出所：" : "source: ") + esc(provider));
     if (retrieved) parts.push((jp ? "取得時刻：" : "retrieved: ") + esc(retrieved));
@@ -1181,7 +1181,7 @@ async function autoFallback(word, kind, body) {
   return outcome;
 }
 
-/* ═══════════ 共通操作基盤（半田様2026-07-29: 操作/状態遷移/失敗継続の単一基盤）═══════════
+/* ═══════════ 共通操作基盤（所有者2026-07-29: 操作/状態遷移/失敗継続の単一基盤）═══════════
    全ての選択可能項目を ExplorationTarget へ正規化し、全ての普遍操作を ACTIONS registry に集約し、
    全ての表示面（上部帯・ノードpopup・パネルフッター・noMiss・本文語リンク）を dispatchAction の
    単一経路に通す。表示面ごとに作用を再実装しない。状態変更関数の直接呼び出しは ACTIONS.run に閉じる。 */
@@ -1268,7 +1268,7 @@ const GKIND = { word: "#1d2430", domain: "#2e5c7a", original: "#7a5c2e",
 let G_lenscache = {};   // 遅延レンズ（応用/使用例/時代変遷）の 語+レンズ ごとの取得キャッシュ
 let G = null, DIMS = null, G_raw = null, G_lens = "all";
 
-// ── レンズ（複数の地図）: 同じ言葉・同じ取得データを、いくつもの見方で見せる（半田様提案
+// ── レンズ（複数の地図）: 同じ言葉・同じ取得データを、いくつもの見方で見せる（所有者の提案
 // 2026-07-26）。追加取得ゼロ——グラフの型付きノード(word/original/author/work/language/
 // domain)を型で絞り、その語を中心に再投影するだけ。「専門/一般の1分岐」を最初に見せる代わりに、
 // ユーザーが見方を選べる＝知的好奇心の間口を広げる（老若男女・並ぶことの喜び・セレンディピティ）。
@@ -1363,7 +1363,7 @@ function renderTopMenu(d) {
   updateViewBadge(G_lens);   // 現在の見方を表示（初期は俯瞰）
 }
 
-// 「今この地図が何の見方（menu）で描かれているか」を常時表示（半田様指摘: 生成元が画面に無い）。
+// 「今この地図が何の見方（menu）で描かれているか」を常時表示（所有者指摘: 生成元が画面に無い）。
 function updateViewBadge(key) {
   const Lz = LENSES.find(x => x.key === key) || LENSES[0];
   const vb = $("tm-view"); if (!vb) return;
@@ -1455,7 +1455,7 @@ function drawTimeline(cv, series, cols) {
 }
 
 // ── 探索の単一真実源（root-A: 状態一貫性・要求ID・古い応答の破棄・再中心完了条件） ──
-// 半田様の「他の語のデータが流用される／動いたり動かなかったり」の機構は意味ドリフトでなく
+// 所有者の「他の語のデータが流用される／動いたり動かなかったり」の機構は意味ドリフトでなく
 // 非同期の状態管理だった。現在の主語(q)と単調増加トークンを唯一の真実源とし、主語を変える
 // 操作は originClaim(q) でトークンを取得、各非同期処理は await の後 originStale(tok) を確認
 // してから DOM/グラフ(G)/パネルを書く。これにより、遅れて届いた古い語の応答が新しい語の画面を
@@ -1468,13 +1468,13 @@ function originCurrent(q) { return OZ.q === q; }
 // dispatch a dimension-of-inquiry entry to its data path (or 整備中 note).
 // 非同期の実データ経路は必ず return して呼び元 dispatchAction に await させる（settle後に1回だけcommit＝
 // 一操作一commitを守る。returnしないと取得完了前に先行commitし、gCombineRun等の完了時に再commitして履歴が
-// 2件になる回帰＝Codex対審E2・半田様2026-07-30の保持指示に違反する）。
+// 2件になる回帰＝Codex対審E2・所有者2026-07-30の保持指示に違反する）。
 function gDimAct(dm) {
   if (!dm) return;
   const act = dm.act || "";
   const w = (G && G.rootQ) || (($("origin-results") || {}).dataset || {}).q || "";   // この探索の中心語
   // soon次元＝説明だけで止めない。現在語と次元名を既存の組合せ探索(実データ)へ渡し、同一操作内で実行する
-  // （新機構を作らず既存Action/APIを再利用・取得できなければ組合せ側が続行操作を出す・半田様2026-07-30）。
+  // （新機構を作らず既存Action/APIを再利用・取得できなければ組合せ側が続行操作を出す・所有者2026-07-30）。
   if (dm.status === "soon") { return gCombineRun(w, dm.label, "and"); }
   if (act.startsWith("scroll:")) {
     const el = $(act.slice(7));
@@ -1802,7 +1802,7 @@ function extResourcesHtml(term, V) {
   }
   return h;
 }
-// 語の側面（意味／多言語／埋没原語）を、地図の中心を変えずにパネルで個別に見せる（半田様指摘2026-07-29:
+// 語の側面（意味／多言語／埋没原語）を、地図の中心を変えずにパネルで個別に見せる（所有者指摘2026-07-29:
 // 第2階層のノードのmenuで無断に再中心すると、元の中心語の意識と乖離する。中心変更は「中心に据え直す」に限る）。
 async function gWordAspect(word, aspect) {
   const jp = LANG === "ja";
@@ -1830,7 +1830,7 @@ async function gWordAspect(word, aspect) {
   if (h) body.innerHTML = h; else await autoFallback(word, aspect, body);   // A3: 空なら別源を実走行（softLine単独でない）
 }
 
-// 普遍的な語源解剖（半田様指摘の弁証法ケース＝dia-対話性の復元）。原語へ辿り構成要素と
+// 普遍的な語源解剖（所有者指摘の弁証法ケース＝dia-対話性の復元）。原語へ辿り構成要素と
 // 意味の連鎖をWiktionaryの実文書から。どんな語にも普遍適用（seed不要）。
 async function gAnatomyPanel(word) {
   const jp = LANG === "ja";
@@ -1855,7 +1855,7 @@ async function gAnatomyPanel(word) {
   body.innerHTML = h;
 }
 
-// 並置比較カード（第三者提案・半田様承認の方向）: 訳語の意味と原語の意味を左右に並べ、機械が
+// 並置比較カード（第三者提案・所有者の承認の方向）: 訳語の意味と原語の意味を左右に並べ、機械が
 // 差分を断定せず、人が自分の目で「字面が隠しているもの（対話性など）」を発見する（並ぶことの喜び）。
 // 既存の /api/origin(日本語語義) と /api/anatomy(原語の構成要素・連鎖) を合成。RAM/新API不要。
 async function gContrastPanel(word) {
@@ -2097,7 +2097,7 @@ function gPanel(title, bodyHtml, term) {
   return p;
 }
 
-// A: ユーザー主導の組み合わせ探索（半田様のAND案）。語を入れて操作を選ぶ。
+// A: ユーザー主導の組み合わせ探索（所有者のAND案）。語を入れて操作を選ぶ。
 function gCombinePanel(a) {
   const jp = LANG === "ja";
   const ops = [["and", "絞り込み（AND）"], ["semand", "意味で絞る"], ["not", "除外（NOT）"],

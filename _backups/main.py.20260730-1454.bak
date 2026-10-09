@@ -1091,7 +1091,7 @@ def _wiki_title_from_url(url):
 @app.get("/api/gravity")
 async def api_gravity(q: str, lang: str = "ja"):
     """重力探索: 一般ウェブ検索で「意味の重力分布」を測り、重い領域を語とAND検索して次階層へ
-    連続展開する（半田様設計）。リゾーム→哲学/植物が重い→『リゾーム 哲学』のAND検索で
+    連続展開する（所有者の設計）。リゾーム→哲学/植物が重い→『リゾーム 哲学』のAND検索で
     ドゥルーズ等を次階層に。頻度＝重力に従い、重い枝ほど大きく深く掘る。SearXNG依存・鍵不要。"""
     root = {"id": "root", "label": q, "kind": "word", "layer": 1, "weight": 3.0, "q": q}
     res = await searxng.search(q, lang, n=20, drop_commercial=True)
@@ -1180,7 +1180,7 @@ def _web_entities(results, exclude, limit=10):
 
 @app.get("/api/combine")
 async def api_combine(a: str, b: str = "", op: str = "and", lang: str = "ja"):
-    """ユーザー主導の組み合わせ探索（半田様のAND案）。op= and(絞り込み)/not(除外)/or(合わせる)/
+    """ユーザー主導の組み合わせ探索（所有者のAND案）。op= and(絞り込み)/not(除外)/or(合わせる)/
     compare(比較)/semand(意味で絞る)。一般ウェブ(SearXNG)＋Wikidata意味で、選んだ語に条件を
     足して重力場を絞る/広げる/比べる。鍵不要・出所つき・fail-safe。"""
     def root(label, wid="root", w=3.0, layer=1, q=None):

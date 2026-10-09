@@ -1,6 +1,6 @@
 """CiNii Research connector — Japanese scholarship (articles, books, theses).
 
-Field reality (半田様, 2026-07-08): the SEP-centric orientation is Anglophone
+Field reality (所有者, 2026-07-08): the SEP-centric orientation is Anglophone
 and returns nothing — worse, a misleading fallback — for a Japanese subject
 like 吉本隆明's 共同幻想論. But the specialist system already exists: CiNii
 Research (NII) indexes Japanese academic articles, books and theses. Standing on

@@ -14,7 +14,7 @@ DB_PATH = os.environ.get("DIALEXIS_DB", os.path.join(BASE_DIR, "data", "dialexis
 
 NODE_TYPES = ("question", "claim", "evidence", "counterclaim", "uncertainty",
               "interpretation", "decision", "note", "source",
-              # 2026-10-08 追加。半田様の「非有機的肉体」研究の復元から。
+              # 2026-10-08 追加。所有者の「非有機的肉体」研究の復元から。
               # 研究を実際に進めた3つの動きが、systemに1つも無かった。
               #   provisional 暫定定義と、そこから落ちた契機（自分で却下する段）
               #   memory      自分の記憶を、出典なしの独立した枝として立てる段
@@ -35,7 +35,7 @@ NODE_TYPES = ("question", "claim", "evidence", "counterclaim", "uncertainty",
 # 訂正は上書きでなく、新しいnodeと `supersedes` 辺で表す。命名の採用も、naming を
 # `adopted` に書き換えるのではなく、別の `decision` node を日付つきで足して表す。
 #
-# 根拠（実測）: 半田様の研究で分岐を作った3つの瞬間の引き金は、すべて人の動きだった
+# 根拠（実測）: 所有者の研究で分岐を作った3つの瞬間の引き金は、すべて人の動きだった
 # （資料0件・AI0件）。AIが暫定定義を書けば、却下が「移動」でなく「修正」になる。
 # AIは正しいものしか書かないため、誤った記憶から枝が生まれる余地も消える。
 # 誤る権利は人の側にある。守るべきはその記録が消えないことである。

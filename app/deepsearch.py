@@ -1,6 +1,6 @@
 """Deep-search prompt generator.
 
-半田様の設計 (2026-07-07): Dialexis need not do all the deep/wide searching
+所有者の設計 (2026-07-07): Dialexis need not do all the deep/wide searching
 itself. Instead it should generate an excellent "deep research" prompt that the
 user pastes into whatever powerful service they have (ChatGPT Deep Research,
 Gemini, Perplexity, Claude, Elicit…). Crucially, the generated prompt must

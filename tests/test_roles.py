@@ -1,28 +1,33 @@
-"""所有者と利用者を取り違えないための関門（2026-10-09）。
+"""所有者の名前が利用者に届かないことの関門（2026-10-09）。
 
-半田様の指摘（逐語の要点）:
-  半田様がこの system を構築し開発しているのは事実だが、最終的には cloud 上の
-  実装を半田様以外の人間が利用者として使う。
-  したがって「半田様」という名前と利用者を同一視してはいけない。
-  半田様も利用者の1人として使い、試験し、開発をその立場で見ることはするが、
-  それと「半田様以外の人間が単なる利用者として利用する」立場は別のものである。
+所有者の指示（逐語の要点）:
+  最も重要なのは、実装されたときに所有者の名が一切出ないこと。
+  利用者から見て所有者の名が見えてはいけない。知ってはいけない。
+  将来許可した場合に出す可能性はあるが、現時点では一切ない。
+
+なぜ「コメントだから無害」が誤りだったか:
+  `app/static/app.js` は StaticFiles で browser へ**そのまま配信される**。
+  利用者が `/static/app.js` を開けば、JSのコメントを全部読める（実測40箇所）。
+  `app/static/style.css` も同じ（2箇所）。
+  さらに endpoint の docstring は FastAPI が `/openapi.json` と `/docs` に出す
+  （`app/main.py` に11箇所）。
+  2026-10-09 に「40件は全てコメントなので描画されない」と報告したのは誤りだった。
+  基準は描画の有無ではなく**配信の有無**である。
+
+この試験が名前そのものを持たない理由:
+  「名前が無いこと」を検査する試験が名前を literal で持つと、
+  その試験fileが名前を repository へ持ち込む（この file も公開repoに入る）。
+  したがって符号位置から組み立て、source に読める形で置かない。
 
 分けるべき3つの役割:
-  所有者・開発者（半田様）  設計を決める。採否を決める。撤退を決める。運用の費用を負う
-  利用者（誰でも）          自分の文を書く。押す。自分の環境で実行する。自分の判断を記録する
-  この system                文を組む。取得する。記録する。送信はしない
-
-この関門が守ること:
-  利用者に届く出力（描画されたHTMLと、API が返す本文）に「半田様」が入らないこと。
+  所有者・開発者  設計を決める。採否を決める。撤退を決める。運用の費用を負う
+  利用者（誰でも） 自分の文を書く。押す。自分の環境で実行する。自分の判断を記録する
+  この system      文を組む。取得する。記録する。送信はしない
 
 この関門が守らないこと（公理3）:
-  code のコメントや docstring の「半田様の設計」「半田様の決裁」は**帰属の記録**であり、
-  利用者と混同していないので、ここでは検査しない。消すと誰が決めたか分からなくなる。
-  また、利用者の目的・負担・権利を記した文書がまだ無いことは直せない（台帳 U13）。
-
-なぜ grep ではなく描画と payload を見るか:
-  template の Jinja コメント（{# … #}）は描画されない。source を grep すると、
-  帰属の記録まで違反として挙がる。**利用者に届くかどうかが基準**である。
+  git の履歴とcommitの文には名前が残っている。書き換えには履歴の改変が要る。
+  公開repoのURL（owner名を含む）と、AGPL-3.0 が要求する source の提示も残る。
+  いずれも所有者の決裁が要るので、ここでは検査しない（台帳 U14）。
 
 外部取得なし。
 """
@@ -35,12 +40,22 @@ from app import handoff
 from app.main import app
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-OWNER = "半田"
 
-# 利用者が開く画面。描画後の本文を見る。
+# 符号位置から組む。source に読める形で名前を置かない。
+NAME = chr(0x534A) + chr(0x7530)                       # 姓
+GIVEN = chr(0x4FE1) + chr(0x5F25)                      # 名の表記候補
+FORBIDDEN = (NAME, NAME + chr(0x6A23), GIVEN)
+
+# 利用者が browser で取得できるもの。配信されるなら中身は全部読める。
+SERVED = ["/static/app.js", "/static/style.css", "/static/favicon.svg",
+          "/openapi.json", "/docs"]
+
 PAGES = ["/", "/origin", "/explore", "/desk", "/deepsearch", "/word", "/wordspace",
          "/textscan", "/inquiry", "/validation", "/settings", "/donate", "/levels",
-         "/about", "/watches", "/ledger"]
+         "/about", "/watches"]
+
+# 名前が docstring 経由で openapi へ漏れる。source も検査の対象に入れる。
+SOURCE_DIRS = ["app", "tools", "tests", "governance", "deploy", "docs"]
 
 
 @pytest.fixture()
@@ -48,17 +63,44 @@ def client():
     return TestClient(app)
 
 
-@pytest.mark.parametrize("path", PAGES)
-def test_no_page_shows_the_owner_name(client, path):
-    """利用者が開く画面に所有者の名を出さない。"""
+def hits(text):
+    return [f for f in FORBIDDEN if f in text]
+
+
+# ===========================================================================
+# 配信されるもの
+# ===========================================================================
+
+@pytest.mark.parametrize("path", SERVED)
+def test_nothing_served_to_the_browser_contains_the_name(client, path):
+    """配信されるなら、コメントも含めて利用者が読める。"""
     r = client.get(path)
     if r.status_code != 200:
-        pytest.skip("%s は %d を返す（この試験の対象外）" % (path, r.status_code))
-    assert OWNER not in r.text, "%s に所有者の名が描画されている" % path
+        pytest.skip("%s は %d を返す" % (path, r.status_code))
+    assert not hits(r.text), "%s に名前が入っている" % path
 
 
-def test_the_handoff_text_never_carries_the_owner_name():
-    """持ち出す文は利用者が外部へ貼るものなので、最も害が大きい。"""
+@pytest.mark.parametrize("path", PAGES)
+def test_no_page_contains_the_name(client, path):
+    r = client.get(path)
+    if r.status_code != 200:
+        pytest.skip("%s は %d を返す" % (path, r.status_code))
+    assert not hits(r.text), "%s に名前が入っている" % path
+
+
+def test_the_openapi_description_does_not_leak_docstrings_with_the_name(client):
+    """endpoint の docstring は /openapi.json の description に出る。"""
+    r = client.get("/openapi.json")
+    assert r.status_code == 200
+    assert not hits(r.text)
+
+
+# ===========================================================================
+# API が返す本文
+# ===========================================================================
+
+def test_the_handoff_text_never_carries_the_name():
+    """持ち出す文は利用者が外部のAIへ貼るものなので、最も害が大きい。"""
     shapes = [
         {"term": "理性"},
         {"term": "理性", "text": "「理性」と「感性」の違いが気になっています。"},
@@ -72,50 +114,95 @@ def test_the_handoff_text_never_carries_the_owner_name():
     ]
     for kw in shapes:
         d = handoff.build(**kw)
-        assert OWNER not in d["prompt"], kw
-        assert OWNER not in d["responsibility"], kw
-        assert OWNER not in " ".join(d["contains"]), kw
-        assert OWNER not in " ".join(d["omitted"]), kw
-        assert OWNER not in d["licence_note"], kw
+        for field in ("prompt", "responsibility", "licence_note"):
+            assert not hits(d[field]), (field, kw)
+        assert not hits(" ".join(d["contains"])), kw
+        assert not hits(" ".join(d["omitted"])), kw
 
 
-def test_the_handoff_endpoint_output_carries_no_owner_name(client):
-    r = client.post("/api/handoff", json={"term": "理性", "text": "「感性」とは何か。"})
+@pytest.mark.parametrize("path,body", [
+    ("/api/handoff", {"term": "理性", "text": "「感性」とは何か。"}),
+    ("/api/inquiry", {"text": "「理性」と「感性」の違い。"}),
+])
+def test_api_responses_do_not_carry_the_name(client, path, body):
+    r = client.post(path, json=body)
     assert r.status_code == 200
-    assert OWNER not in r.text
+    assert not hits(r.text)
 
 
-def test_the_inquiry_output_carries_no_owner_name(client):
-    r = client.post("/api/inquiry", json={"text": "「理性」と「感性」の違い。"})
-    assert r.status_code == 200
-    assert OWNER not in r.text
+def test_error_messages_do_not_carry_the_name(client):
+    for path, body in (("/api/handoff", {}), ("/api/inquiry", {"text": " "})):
+        r = client.post(path, json=body)
+        assert r.status_code == 400
+        assert not hits(r.text)
 
 
-def test_the_human_record_block_is_attributed_to_whoever_wrote_it():
-    """人の判断の欄は、その workspace の利用者のものである（半田様のものではない）。"""
-    d = handoff.build(term="x", records=[{"type": "memory", "title": "記憶している"}])
-    assert "私自身が書いた判断" in d["prompt"]
-    assert "これは私の判断であり" in d["prompt"]
-    assert OWNER not in d["prompt"]
+# ===========================================================================
+# source（docstring が openapi へ出るので、ここも対象にする）
+# ===========================================================================
 
+@pytest.mark.parametrize("d", SOURCE_DIRS)
+def test_no_source_file_contains_the_name(d):
+    base = ROOT / d
+    if not base.exists():
+        pytest.skip("%s が無い" % d)
+    bad = []
+    for p in base.rglob("*"):
+        if not p.is_file() or "__pycache__" in p.parts:
+            continue
+        try:
+            t = p.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if hits(t):
+            bad.append(str(p.relative_to(ROOT)))
+    assert not bad, "名前が残っている: " + ", ".join(sorted(bad))
+
+
+def test_the_repository_root_files_do_not_contain_the_name():
+    bad = []
+    for p in ROOT.glob("*"):
+        if not p.is_file() or p.name.startswith("ans"):
+            continue        # ans*.md は所有者への報告で、git 未追跡である
+        try:
+            t = p.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if hits(t):
+            bad.append(p.name)
+    assert not bad, "名前が残っている: " + ", ".join(sorted(bad))
+
+
+# ===========================================================================
+# 役割の区別そのもの（名前を消しても、区別が消えてはいけない）
+# ===========================================================================
 
 def test_the_responsibility_is_addressed_to_the_reader():
     d = handoff.build(term="x", text="y")
     assert "あなたの環境と責任" in d["responsibility"]
     assert "あなたが確かめてください" in d["responsibility"]
+    assert "送信しません" in d["responsibility"]
 
 
-def test_the_role_distinction_is_written_down_where_it_is_decided():
-    """消えると、次に触る者が同じ取り違えをする。"""
+def test_the_human_record_block_is_attributed_to_whoever_wrote_it():
+    """人の判断の欄は、その workspace の利用者のものである。"""
+    d = handoff.build(term="x", records=[{"type": "memory", "title": "記憶している"}])
+    assert "私自身が書いた判断" in d["prompt"]
+    assert "これは私の判断であり" in d["prompt"]
+
+
+def test_the_role_distinction_survives_the_name_removal():
+    """名前を消した結果、誰と誰を分けるのかが読めなくなっては意味が無い。"""
     src = (ROOT / "app" / "handoff.py").read_text(encoding="utf-8")
     assert "役割の区別" in src
-    assert "利用者は半田様とは別の人である" in src
+    assert "利用者は所有者とは別の人である" in src
     reg = (ROOT / "governance" / "retreat_register.toml").read_text(encoding="utf-8")
-    assert "U13" in reg
-    assert "役割の混同" in reg
+    assert "U13" in reg and "役割の混同" in reg
 
 
-def test_the_unwritten_document_is_declared_not_claimed_done():
-    """利用者の目的・負担・権利を記した文書はまだ無い。無いと書く（公理3）。"""
+def test_what_cannot_be_removed_here_is_written_down():
+    """git 履歴・公開repoのURL・AGPL の source 提示は、この関門では直せない。"""
     reg = (ROOT / "governance" / "retreat_register.toml").read_text(encoding="utf-8")
-    assert "利用者の目的・負担・権利を記した文書はまだ無い" in reg
+    assert "U14" in reg
+    assert "git の履歴" in reg
+    assert "AGPL" in reg

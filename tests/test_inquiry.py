@@ -1,11 +1,11 @@
 """自由textの問い合わせ層の試験（2026-10-09）。
 
 なぜ在るか:
-  入り口が概念語1つである限り、半田様が実際に書いた文が system に入らない。
-  非有機的肉体の研究で分岐を作った3つの瞬間は、すべて半田様の発話だった
+  入り口が概念語1つである限り、所有者が実際に書いた文が system に入らない。
+  非有機的肉体の研究で分岐を作った3つの瞬間は、すべて所有者の発話だった
   （資料0件・AI0件）。
 
-半田様の決裁（2026-10-09）を機械で守る:
+所有者の決裁（2026-10-09）を機械で守る:
   鍵つきの外部AI検索は使わない  → 外部へ出る層の名前を固定し、増えたら落ちる
   外へ投げるのは押したときだけ  → web=False で外部connectorを1本も呼ばない
   投げた文字列を残す            → receipts に query_sent が全件在る
@@ -31,7 +31,7 @@ from fastapi.testclient import TestClient
 from app import inquiry
 from app.main import app
 
-# 外部へ出る層。半田様の決裁により、鍵つきの層をここへ増やしてはならない。
+# 外部へ出る層。所有者の決裁により、鍵つきの層をここへ増やしてはならない。
 KEYLESS_LAYERS = {
     "Wikipedia全文検索", "Wikidata", "SEP（スタンフォード哲学百科）",
     "OpenAlex", "Crossref", "NDLサーチ（作品名で照会）",
@@ -107,7 +107,7 @@ def test_questions_are_split_not_rewritten():
 
 
 # ===========================================================================
-# 押したときだけ外へ出る（半田様の決裁）
+# 押したときだけ外へ出る（所有者の決裁）
 # ===========================================================================
 
 def test_local_only_touches_no_external_connector(monkeypatch):
@@ -135,7 +135,7 @@ def test_local_only_touches_no_external_connector(monkeypatch):
 
 
 def test_the_keyless_layer_set_is_fixed(monkeypatch):
-    """鍵つきの層が黙って増えないようにする（P5・半田様の決裁）。"""
+    """鍵つきの層が黙って増えないようにする（P5・所有者の決裁）。"""
     d = run_with_stubs(monkeypatch, "「理性」と「感性」の違い。")
     web = {r["layer"] for r in d["receipts"] if r["layer"] != "哲学字彙1881（local）"}
     assert web <= KEYLESS_LAYERS, web - KEYLESS_LAYERS

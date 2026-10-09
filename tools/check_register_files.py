@@ -16,7 +16,7 @@
   2. 台帳の expected_tests と tests/test_*.py の集合が厳密に一致すること
   3. 台帳と、台帳を強制する試験が git に追跡されていること
 
-有効性や内容の正しさは検査しない（公理7）。それは pytest 側と半田様が見る。
+有効性や内容の正しさは検査しない（公理7）。それは pytest 側と所有者が見る。
 """
 import pathlib
 import subprocess

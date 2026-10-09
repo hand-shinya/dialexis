@@ -1,4 +1,4 @@
-"""普遍的な語源解剖（半田様指摘＝弁証法のdia-対話性の脱落を復元）。
+"""普遍的な語源解剖（所有者指摘＝弁証法のdia-対話性の脱落を復元）。
 
 Wiktionaryの語源記述から、原語への連鎖（from Old French…, from Ancient Greek…）と、
 構成要素（prefix+root, 例 dia+legein）を、意味glossつきで抽出する。特定語のseed不要＝
@@ -362,7 +362,7 @@ def _prose_from(text):
 
 async def _deepen_chain(r, max_hops=6):
     """連鎖の最古層を再帰的に辿り、根の構成要素（dia+legein 等）まで到達させる。独語 Dialektik のように
-    表層で Latin 止まりの語も、英語 dialectic と同じ深さ（希語の dia+legein）へ統一する（半田様指摘・普遍）。
+    表層で Latin 止まりの語も、英語 dialectic と同じ深さ（希語の dia+legein）へ統一する（所有者指摘・普遍）。
     追加する語は必ず実在ページで裏取り（junk 混入・切詰めを防ぐ）。構成要素に到達したら止める。"""
     seen = {c.get("term") for c in r.get("chain", []) if c.get("term")}
     cur = (r.get("chain") or [{}])[-1].get("term") if r.get("chain") else None

@@ -279,7 +279,7 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 /* グラフのコンテキストメニュー（選択時の7択・kind別） */
 /* 面（Context/Menu/Action）は surface manager が position/座標系/z を一元決定する。
    CSSは見た目と既定サイズのみを与え、配置とz-indexは manager のインラインstyleが決める
-   （Menuも fixed に統一＝Panelと座標系を揃え、スクロールでズレない・半田様2026-08-02）。 */
+   （Menuも fixed に統一＝Panelと座標系を揃え、スクロールでズレない・所有者2026-08-02）。 */
 #graph-menu { position: fixed; z-index: 50; width: 300px; box-sizing: border-box; background: var(--card);
   border: 1px solid var(--ink); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.18);
   font-family: system-ui, sans-serif; overflow: hidden; }
@@ -444,7 +444,7 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
   .ledger-row { grid-template-columns: 1fr; gap: .35rem; }
 }
 
-/* Context面＝概念全景（右側の永続ドロワー・半田様2026-08-02にAction(#graph-panel)からid分離）。
+/* Context面＝概念全景（右側の永続ドロワー・所有者2026-08-02にAction(#graph-panel)からid分離）。
    幅は clamp で必ず利用可能領域を残す（Menu/Action が Context と交差せず置ける前提）。
    本体は body の padding-right（surfSyncLayout）で退避するため、地図がドロワーの下に潜らない。 */
 #dx-context { position: fixed; z-index: 60; left: auto; right: 0; top: 0; transform: none;

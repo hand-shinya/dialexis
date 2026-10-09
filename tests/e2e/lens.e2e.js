@@ -1,5 +1,5 @@
 // Lens E2E: the same word/data must be viewable through several selectable maps
-// (半田様提案). Switching a lens re-projects the SAME fetched data (no refetch) —
+// (所有者の提案). Switching a lens re-projects the SAME fetched data (no refetch) —
 // widening the doorway for curiosity.
 const { chromium } = require("playwright-core");
 const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
