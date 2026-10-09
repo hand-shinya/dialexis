@@ -3096,10 +3096,11 @@ async def page_textscan(request: Request):
 
 @app.post("/api/handoff")
 async def api_handoff(request: Request):
-    """半田様の環境と責任で実行するための依頼文を組む（2026-10-09・半田様の設計）。
+    """利用者の環境と責任で実行するための依頼文を組む（2026-10-09・半田様の設計）。
 
     この system は送信しない。文を返すだけである。鍵も料金も使わない。
-    渡すのは、この system が実際に測ったものと、半田様自身が書いたものだけである。
+    渡すのは、この system が実際に測ったものと、利用者自身が書いたものだけである。
+    利用者は半田様とは別の人である（公開instanceでは workspace ごとに別人・§2.6）。
 
     `project_id` を渡せば、その企画の人の判断の欄（provisional/memory/naming）を
     文に含める。半田様自身が書いたものなので、そのまま渡す。

@@ -62,7 +62,8 @@ def build(**kw):
 
 def test_the_text_says_who_executes_it():
     d = build(text="「理性」と「感性」の違いが気になっています。")
-    assert "半田様の環境と責任" in d["responsibility"]
+    assert "あなたの環境と責任" in d["responsibility"]
+    assert "半田様" not in d["responsibility"], "所有者と利用者を同一視している"
     assert "送信しません" in d["responsibility"]
     assert "実行はあなたの環境で行ってください" in d["prompt"]
 
@@ -78,7 +79,7 @@ def test_the_system_does_not_send_anything():
 def test_the_ui_states_the_division_on_the_inquiry_page(client):
     body = client.get("/inquiry").text
     assert "この system は送信しません" in body
-    assert "半田様の環境と責任で行ってください" in body
+    assert "あなたの環境と責任で行ってください" in body
 
 
 # ===========================================================================
@@ -171,9 +172,10 @@ def test_human_records_are_passed_as_the_users_own():
         {"type": "memory", "title": "吉本は四分類していたと記憶している"},
         {"type": "naming", "title": "『知的非有機的器官』と呼ぶ"}])
     p = d["prompt"]
-    assert "半田様自身が書いた判断" in p
+    assert "私自身が書いた判断" in p
     assert "暫定定義" in p and "記憶" in p and "命名" in p
     assert "この system が生成したものではない" in p
+    assert "半田様" not in p, "持ち出す文に所有者の名が入っている"
 
 
 def test_the_endpoint_includes_human_records_of_a_project(client):
@@ -188,6 +190,7 @@ def test_the_endpoint_includes_human_records_of_a_project(client):
     for title in ("暫定の定義", "記憶している", "こう呼ぶ"):
         assert title in d["prompt"], title
     assert any("人の判断の欄 3 件" in x for x in d["contains"]), d["contains"]
+    assert "半田様" not in d["prompt"]
 
 
 def test_without_a_project_the_absence_is_declared(client):
