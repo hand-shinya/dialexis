@@ -38,6 +38,7 @@ from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, openc
 from .connectors.base import cached_get_json, cached_get_text
 from . import citations as cites
 from . import deepsearch
+from . import inquiry as inquiry_layer
 from . import bibliography
 from .llm import adapter
 
@@ -3090,6 +3091,55 @@ async def page_word(request: Request):
 async def page_textscan(request: Request):
     """文章スキャンの画面。app.js の単一dispatcher契約に触らない独立ページ。"""
     return render(request, "textscan.html")
+
+
+@app.get("/inquiry")
+async def page_inquiry(request: Request):
+    """自由textの問い合わせ画面（2026-10-09）。独立ページ（app.js に触らない）。"""
+    return render(request, "inquiry.html")
+
+
+@app.post("/api/inquiry")
+async def api_inquiry(request: Request):
+    """書いた文を受け、鍵の要らない取得先へ照会する（2026-10-09・半田様の設計）。
+
+    入り口が概念語1つである限り、半田様が実際に書いた文が system に入らない。
+    非有機的肉体の研究で分岐を作った3つの瞬間は、すべて半田様の発話だった
+    （資料0件・AI0件）。
+
+    半田様の決裁（2026-10-09）:
+      鍵つきの外部AI検索（Gemini の検索接地など）は使わない。P5 を崩さない。
+      外へ投げるのは押したときだけ。`web` が真のときだけ外部へ出る。
+
+    外へ送るのは、文から取り出した語だけである（文の全体は送らない）。
+    送った文字列・時刻・件数・利用条件は receipts に全件残す（C5）。
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    text = str((body or {}).get("text") or "")
+    if not text.strip():
+        raise HTTPException(400, "empty text")
+    lang = "ja" if str((body or {}).get("lang") or "ja").startswith("ja") else "en"
+    want_web = bool((body or {}).get("web"))
+    data = await inquiry_layer.gather(text, lang, want_web=want_web)
+    # 公理6: 取得した事実を外部証跡に残す。鍵もpromptも記録しない。
+    try:
+        with db.get_conn() as conn:
+            conn.execute(
+                "INSERT INTO ai_ledger (ts, provider, model, task, project_id,"
+                " workspace_id, summary) VALUES (?,?,?,?,?,?,?)",
+                (now(), "dialexis", "inquiry.v1", "free-text-inquiry", None,
+                 workspace_id(request),
+                 "語 %d 件 / 層 %d 中 %d が応答 / 候補 %d 件 / 外部照会 %s" % (
+                     len(data["terms"]), data["layers_asked"],
+                     data["layers_answered"], data["found"],
+                     "あり" if want_web else "なし")))
+            conn.commit()
+    except Exception:
+        pass            # 記録に失敗しても照会結果は返す（退化階梯）
+    return data
 
 
 # 抽出語が多いときの絞り込み案内（2026-10-05・半田様の指摘）。

@@ -23,6 +23,7 @@
     <a href="/word" class="{{ 'on' if path.startswith('/word') }}">{{ t.nav_word if t.nav_word is defined else '原語と典拠' }}</a>
       <a href="/wordspace" class="{{ 'on' if path.startswith('/wordspace') }}">関連空間</a>
     {# 文章から疑うべき語を拾う入口（2026-09-27）。i18nキー未定義でも落ちないよう既定文を置く。 #}
+    <a href="/inquiry" class="{{ 'on' if path.startswith('/inquiry') }}">書いた文から</a>
     <a href="/textscan" class="{{ 'on' if path.startswith('/textscan') }}">{{ t.nav_textscan if t.nav_textscan is defined else '文章スキャン' }}</a>
     <a href="/validation?lang={{ lang }}" class="{{ 'on' if path.startswith('/validation') }}">{{ t.nav_validation }}</a>
     <a href="/settings" class="{{ 'on' if path.startswith('/settings') }}">{{ t.nav_settings }}</a>

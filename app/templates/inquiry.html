@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}書いた文から調べる{% endblock %}
+{% block content %}
+{#
+  自由textの問い合わせ画面（2026-10-09・半田様の設計）。
+  app/static/app.js（単一dispatcher契約）には手を入れず、この画面だけで完結させる
+  （/textscan と同じ方針）。
+
+  半田様の決裁（2026-10-09）:
+    鍵の要らない取得先だけを使う。鍵つきの外部AI検索は使わない。
+    外へ投げるのは、押したときだけ。文を書いた時点では外へ出ない。
+#}
+<section class="iq-wrap">
+  <h1>書いた文から調べる</h1>
+  <p class="muted">
+    考えていることをそのまま書いてください。語を1つに決めてからでなくてかまいません。
+    文の形から語と問いを取り出し、<b>鍵の要らない取得先</b>へ照会します。
+    どの層へ何を投げて何件返ったかは、下に全件残します。順位は重要度の証明ではありません。
+  </p>
+
+  <textarea id="iq-text" rows="8" placeholder="例: 非有機的肉体という言葉が気になっています。「肉体」と「自然」の違いはどこにあるのか。（最大8,000字）"></textarea>
+
+  <div class="iq-actions">
+    <button id="iq-local" type="button">手元の資料だけで調べる</button>
+    <button id="iq-web" type="button" class="primary">外の公開資料にも照会する</button>
+    <span id="iq-state" class="muted" role="status" aria-live="polite"></span>
+  </div>
+  <p class="iq-notice">
+    「外の公開資料にも照会する」を押したときだけ、文から取り出した<b>語</b>が外部へ送られます。
+    送るのは語だけで、文の全体は送りません。送った文字列は下の受領証に残します。
+    照会先は Wikipedia・Wikidata・SEP・OpenAlex・Crossref・NDLサーチで、鍵も料金もありません。
+  </p>
+
+  <div id="iq-out"></div>
+</section>
+
+<style>
+.iq-wrap{max-width:980px}
+.iq-wrap textarea{width:100%;box-sizing:border-box;font:inherit;padding:.7rem;border-radius:8px;
+  border:1px solid rgba(128,128,128,.45);background:transparent;color:inherit}
+.iq-actions{display:flex;gap:.7rem;align-items:center;margin:.6rem 0 .3rem;flex-wrap:wrap}
+.iq-actions button{padding:.55rem 1.1rem;border-radius:8px;cursor:pointer;font:inherit;
+  border:1px solid rgba(128,128,128,.5);background:transparent;color:inherit}
+.iq-actions button.primary{border-color:var(--accent2,#8a6d3b)}
+.iq-notice{font-size:.84rem;opacity:.8;margin:.1rem 0 1.3rem;line-height:1.6}
+.iq-sec{margin:1.5rem 0}
+.iq-sec > h2{font-size:1.05rem;margin:0 0 .15rem}
+.iq-sec > p.why{margin:0 0 .7rem;font-size:.86rem;opacity:.75}
+.iq-card{border:1px solid rgba(128,128,128,.35);border-radius:10px;padding:.6rem .85rem;margin:.5rem 0}
+.iq-card h3{font-size:.98rem;margin:0 0 .2rem}
+.iq-meta{font-size:.8rem;opacity:.78}
+.iq-chip{display:inline-block;border:1px solid rgba(128,128,128,.4);border-radius:999px;
+  padding:.08rem .6rem;margin:.15rem .3rem .15rem 0;font-size:.84rem}
+.iq-tbl{width:100%;border-collapse:collapse;font-size:.84rem}
+.iq-tbl th,.iq-tbl td{border-bottom:1px solid rgba(128,128,128,.25);padding:.3rem .45rem;text-align:left;
+  vertical-align:top}
+.iq-zero{opacity:.8}
+.iq-q{margin:.3rem 0;padding-left:.8rem;border-left:3px solid rgba(128,128,128,.35)}
+</style>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  };
+
+  function receiptRows(rs) {
+    return rs.map(function (r) {
+      var zero = r.count === 0 && r.zero_means
+        ? '<div class="iq-zero">0件の意味: ' + esc(r.zero_means) + "</div>" : "";
+      var e = r.error ? '<div class="iq-zero">取得の記録: ' + esc(r.error) + "</div>" : "";
+      return "<tr><td>" + esc(r.layer) + "</td><td><code>" + esc(r.query_sent) +
+        "</code></td><td>" + esc(r.count) + "</td><td>" + esc(r.retrieved_at) +
+        (r.cached ? "（控えから）" : "") + zero + e + "</td><td>" + esc(r.licence || "") +
+        "</td></tr>";
+    }).join("");
+  }
+
+  function render(d) {
+    var h = "";
+
+    h += '<div class="iq-sec"><h2>この文が問うている語</h2>' +
+      '<p class="why">文の形から取りました。意味の判断はしていません。</p>';
+    h += (d.terms || []).length
+      ? (d.terms || []).map(function (t) {
+          return '<span class="iq-chip">' + esc(t.term) + "</span>";
+        }).join("")
+      : '<p class="muted">語として取れる形はまだありません。問いたい語を「」で括ると、その語を主題として取ります。</p>';
+    h += "</div>";
+
+    if ((d.questions || []).length) {
+      h += '<div class="iq-sec"><h2>問いの単位</h2>' +
+        '<p class="why">句読点で割っただけです。言い換えも補完もしていません。' +
+        '採るものがあれば、人の判断の欄（追記のみ）に記録できます。</p>';
+      h += (d.questions || []).map(function (q) {
+        return '<div class="iq-q">' + esc(q) + "</div>";
+      }).join("");
+      h += "</div>";
+    }
+
+    h += '<div class="iq-sec"><h2>見つかった候補（' + esc(d.found) + "件）</h2>" +
+      '<p class="why">文の他の語と同時に現れたものを上に置きました。' +
+      '関係があることの証明ではありません。確度はすべて「調査候補」です。</p>';
+    h += (d.sources || []).length
+      ? (d.sources || []).map(function (s) {
+          var t = s.url
+            ? '<a href="' + esc(s.url) + '" target="_blank" rel="noreferrer">' + esc(s.title) + "</a>"
+            : esc(s.title);
+          return '<div class="iq-card"><h3>' + t + "</h3>" +
+            (s.note ? "<div>" + esc(s.note) + "</div>" : "") +
+            '<div class="iq-meta">' + esc(s.layer) + " ／ 照会した語: " + esc(s.term) +
+            " ／ " + esc(s.why_ranked || "") + " ／ 利用条件: " + esc(s.licence || "未記入") +
+            "</div></div>";
+        }).join("")
+      : '<p class="muted">この語での一致は、照会したどの層にもまだありません。下の受領証に層ごとの0件の意味を残しました。</p>';
+    h += "</div>";
+
+    h += '<div class="iq-sec"><h2>取得の受領証（' + esc(d.layers_answered) + " / " +
+      esc(d.layers_asked) + " 層が応答）</h2>" +
+      '<p class="why">どの層へ、どの文字列を投げ、いつ、何件返ったか。' +
+      'system は入力をそのまま投げるのではなく、取り出した語を投げます。' +
+      'だから投げた文字列を出します。</p>';
+    h += '<table class="iq-tbl"><thead><tr><th>層</th><th>投げた文字列</th><th>件数</th>' +
+      "<th>取得時刻</th><th>利用条件</th></tr></thead><tbody>" +
+      receiptRows(d.receipts || []) + "</tbody></table></div>";
+
+    if ((d.drops || []).length) {
+      h += '<div class="iq-sec"><h2>落ちたもの</h2>' +
+        '<p class="why">黙って減らしません。</p>';
+      h += (d.drops || []).map(function (x) {
+        return '<div class="iq-card"><h3>' + esc(x.what) + "</h3><div>" + esc(x.why) +
+          '</div><div class="iq-meta">' + esc(x.how_to_fix || "") + "</div></div>";
+      }).join("");
+      h += "</div>";
+    }
+
+    h += '<div class="iq-sec"><h2>この層が保証しないこと</h2><p class="why">' +
+      esc(d.honesty || "") + "</p></div>";
+
+    $("iq-out").innerHTML = h;
+  }
+
+  function run(web) {
+    var text = ($("iq-text").value || "").trim();
+    if (!text) { $("iq-state").textContent = "文を書いてから押してください"; return; }
+    $("iq-state").textContent = web ? "外の公開資料へ照会しています…" : "手元の資料を引いています…";
+    fetch("/api/inquiry", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text, web: !!web, lang: document.documentElement.lang || "ja" })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      $("iq-state").textContent = web ? "外の公開資料まで照会しました" : "手元の資料だけで引きました";
+      render(d);
+    }).catch(function (e) {
+      $("iq-state").textContent = "もう一度押すと、同じ文で照会し直します（" + e + "）";
+    });
+  }
+
+  $("iq-local").addEventListener("click", function () { run(false); });
+  $("iq-web").addEventListener("click", function () { run(true); });
+})();
+</script>
+{% endblock %}

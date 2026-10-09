@@ -59,6 +59,7 @@ expected_tests = [
   "tests/test_explore_routing.py",
   "tests/test_export_bib.py",
   "tests/test_human_only_nodes.py",
+  "tests/test_inquiry.py",
   "tests/test_ja_wiktionary.py",
   "tests/test_kanji_variants.py",
   "tests/test_known_harms.py",
@@ -146,6 +147,27 @@ observation = "この台帳によって、実際に1件以上の機構が status
 observation_threshold = "status = \"retired\" の mechanism >= 1 件"
 how_to_measure = "この file の status 欄を数える（grep -c 'status = \"retired\"'）"
 retreat = "12-01 までに retired が1件も出なければ、この台帳と tests/test_retreat_register.py を削除する"
+status = "open"
+observed = ""
+evidence = ""
+verdict = ""
+verdict_date = ""
+retired_at = ""
+retired_commit = ""
+
+[[mechanism]]
+id = "free-text-inquiry"
+added = "2026-10-09"
+what = "書いた文から調べる層（画面 /inquiry・POST /api/inquiry）。文の形から語と問いを取り、鍵の要らない6層と手元の保全fileへ照会する"
+cost = "画面1枚・endpoint 1本。外部照会は押したときだけで、1回あたり最大18照会（語3 × 層6）"
+implemented_by = ["app/inquiry.py", "app/main.py:api_inquiry", "app/templates/inquiry.html"]
+deadline = "2026-11-06"
+# 入力欄を増やすだけで何も実らない機構は、注意予算の浪費である（M0 §7.2）。
+# 観測点は「照会した回数」ではなく「記録に変わった件数」に置く（M0 C2）。
+observation = "この層から出た候補が、実際に node か出典として記録されたこと"
+observation_threshold = "記録に変わった候補 >= 1 件"
+how_to_measure = "curl -s -c j -b j $BASE/api/ledger で task=free-text-inquiry の件数を見て、同じworkspaceの graph の node 数が照会の前後で増えたかを数える"
+retreat = "4週間で記録が0件なら、app/inquiry.py と app/templates/inquiry.html と tests/test_inquiry.py と /inquiry を削除する"
 status = "open"
 observed = ""
 evidence = ""
@@ -259,4 +281,10 @@ guarded_by = "tests/test_known_harms.py"
 #      applies_to_term=True になる。これは注記の作りではなく分割表の側の限界である。
 #   U7 tests/e2e/*.e2e.js は expected_tests の対象外である。e2e を消しても
 #      台帳は動かない（tests/test_*.py だけを数えている）。
+#   U8 自由text層は「押したときだけ」外へ出るが、押したかどうかは client の申告である
+#      （`web` flag）。origin と同じ型の限界で、発信者の判定機構は無い。
+#      保証できるのは「既定では外へ出ない」ことと「投げた文字列を残す」ことだけである。
+#   U9 外へ送るのは語だけで文の全体は送らないが、語は文から機械的に取ったものなので、
+#      半田様が書いた固有の言い方がそのまま語として出ることはありうる。
+#      送る前に語を画面で確かめる経路は、まだ無い。
 # ---------------------------------------------------------------------------
