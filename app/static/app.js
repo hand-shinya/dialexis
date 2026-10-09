@@ -2097,6 +2097,12 @@ const ACTIONS = {
   external:     { label: "外部で調べる", effect: "action", newPage: true, transient: true, commits: false, run: (t) => gExtPanel(t.term) },
   shelf:        { label: "棚に追加", effect: "store", commits: false, run: (t) => shelfAdd(t.term) },
   deepsearch:   { label: "深掘り", effect: "action", run: (t) => gPerspectivePanel(t.term) },
+  // 2026-10-09 半田様の設計: この system が AI や検索を提供できないなら、
+  // 両者を繋ぐのは「半田様の環境と責任で実行するための文」を出すことである。
+  // deepsearch（視点を選ぶ面）とは別に、いま画面に在るものをそのまま持ち出す。
+  // transient/commits:false ＝ 地図の状態を変えない（持ち出しは探索ではない）。
+  handoff:      { label: "持ち出す", effect: "action", transient: true, commits: false,
+                  run: (t, ctx) => gHandoffPanel(t.term, ctx || {}) },
   newtab:       { label: "新タブ", effect: "newpage", transient: true, commits: false, run: (t) => {
     const w = window.open(`/origin?q=${encodeURIComponent(t.term)}&lang=${LANG}`, "_blank");
     return !!w;   // popup blocker等で開けない時はdispatcherがMenuを再提示する
@@ -2115,23 +2121,23 @@ const ACTIONS = {
 // 各表示面が使う Action ID の宣言（テストが registry と照合し「未宣言のユーザー操作」を0にする）。
 // 実装側の各面はこの定義を参照する（文言から推測しない・面ごとに作用を再実装しない）。
 const UI_ACTION_MAP = {
-  panelFooter: { center: "center", lens: "lens", lang: "multilingual", ext: "external", combine: "combine", history: "translationHistory", new: "newtab" },
-  nomiss:      { center: "center", lang: "multilingual", ext: "external", combine: "combine", lens: "lens", history: "translationHistory" },
+  panelFooter: { center: "center", lens: "lens", lang: "multilingual", ext: "external", combine: "combine", history: "translationHistory", handoff: "handoff", new: "newtab" },
+  nomiss:      { center: "center", lang: "multilingual", ext: "external", combine: "combine", lens: "lens", history: "translationHistory", handoff: "handoff" },
 };
 const UI_ACTION_IDS = {
   topbar:      null,   // gActions（中心語）— 実行時に列挙
   popup:       null,   // gActions（選択ノード）— 実行時に列挙
-  edge:        ["hl", "focus", "combine", "deepsearch", "center", "resetFocus"],
-  node:        ["panorama"],
+  edge:        ["hl", "focus", "combine", "deepsearch", "handoff", "center", "resetFocus"],
+  node:        ["panorama", "handoff"],
   panelFooter: Object.values(UI_ACTION_MAP.panelFooter),
   nomiss:      Object.values(UI_ACTION_MAP.nomiss),
   lensMenu:    ["applyLens"],
-  textLink:    ["center"],
-  card:        ["dimension", "author", "external"],
-  play:        ["center", "combine"],
-  shelfPanel:  ["shelf", "center", "combine"],
-  scrollCard:  ["center"],
-  contextEnt:  ["panorama"],   // Context内の実体クリック＝標準メニューを開く（対象はそのentity）
+  textLink:    ["center", "handoff"],
+  card:        ["dimension", "author", "external", "handoff"],
+  play:        ["center", "combine", "handoff"],
+  shelfPanel:  ["shelf", "center", "combine", "handoff"],
+  scrollCard:  ["center", "handoff"],
+  contextEnt:  ["panorama", "handoff"],   // Context内の実体クリック＝標準メニューを開く（対象はそのentity）
 };
 
 function _activeTerm(fallback) {
@@ -3568,6 +3574,7 @@ function gActions(n) {
       { s: "↩ 全体に戻す", t: "↩ 全体の重力分布に戻す", action: "resetFocus" },
       { s: "🔦 経路を強調", t: "🔦 この分岐の経路を強調（ホバーでも可）", action: "hl", ctx: { nodeIdx: idx } },
       { s: "✍ 深掘り", t: "✍ 深掘り探索プロンプトを作る（視点・目的・難易度）", action: "deepsearch" },
+      { s: "📤 持ち出す", t: "📤 いまの内容を、ご自分のAIや検索で実行するための文にする", action: "handoff" },
     ];
   } else {
     const relationInfo = _relationInfo(n);
@@ -3588,6 +3595,7 @@ function gActions(n) {
       { s: "🌐 外部で調べる", t: "🌐 外部の専門情報で調べる（各サイトの言語で・新タブ）", action: "external" },
       { s: "⭐ 棚", t: "⭐ 棚に追加（あとで見る）", action: "shelf" },
       { s: "✍ 深掘り", t: "✍ 深掘り探索プロンプトを作る（視点・目的・難易度）", action: "deepsearch" },
+      { s: "📤 持ち出す", t: "📤 いまの内容を、ご自分のAIや検索で実行するための文にする", action: "handoff" },
       { s: "↗ 新タブ", t: "🔗 新しいタブでこの語を開く", action: "newtab" },
     ];
     let extra;
@@ -3742,6 +3750,7 @@ function gPanel(title, bodyHtml, term) {
     ["ext", "🌐 " + (jp ? "外部で調べる" : "external")],
     ["combine", "🔗 " + (jp ? "組み合わせ" : "combine")],
     ["history", "🧭 " + (jp ? "翻訳・受容史" : "translation history")],
+    ["handoff", "📤 " + (jp ? "持ち出す" : "hand off")],
     ["new", "↗ " + (jp ? "新タブ" : "new tab")],
   ].map(([a, l]) => `<button type="button" class="gp-cont-b" data-a="${a}">${esc(l)}</button>`).join("") + `</div>` : "";
   p.innerHTML = `<div class="gp-head">${back ? `<button type="button" class="gp-back" title="${jp ? "このノードのメニューに戻って別の項目を選ぶ" : "back to menu"}">← ${jp ? "メニュー" : "menu"}</button>` : ""}<b>${esc(title)}</b><button type="button" class="gp-x">×</button></div>
@@ -4394,6 +4403,47 @@ function gShelfPanel() {
   p.querySelector("#lens-save").addEventListener("click", () => { const name = p.querySelector("#lens-name").value.trim(), words = p.querySelector("#lens-words").value.trim(); if (name && words) { const ls = _lsGet("dx_lenses", []); ls.push({ name, words }); _lsSet("dx_lenses", ls); refresh(); } else { const n = p.querySelector("#shelf-note"); if (n) n.textContent = jp ? "観点の名前と語を入力してから保存してください。" : "Enter a lens name and terms before saving."; } });
   p.querySelectorAll(".lens-use").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const l = _lsGet("dx_lenses", [])[+a.dataset.i]; if (l && cur) { surfCloseAction(false); dispatchAction("combine", { term: cur }, currentViewState(), { surface: "shelf-panel", b: l.words.split(/[,、\s]+/).filter(Boolean).join(" "), op: "and" }); } else gToast(jp ? "先に語を選んでください" : "pick a word"); }));
   p.querySelectorAll(".lens-x").forEach(a => a.addEventListener("click", e => { e.preventDefault(); const ls = _lsGet("dx_lenses", []); ls.splice(+a.dataset.i, 1); _lsSet("dx_lenses", ls); refresh(); }));
+}
+
+// 持ち出す文（2026-10-09 半田様の設計）。
+// この system が AI や検索を提供できないなら、両者を繋ぐのは
+// 「半田様の環境と責任で実行するための文」を出すことである。送信はしない。
+// ctx.receipts / ctx.sources / ctx.project_id を渡せば、その場面で測ったものを文に含める。
+async function gHandoffPanel(word, ctx) {
+  const jp = LANG === "ja";
+  const p = gPanel((jp ? "持ち出す：" : "Hand off: ") + word,
+    `<p class="muted">${jp
+      ? "いまの内容を、ご自分のAI（ChatGPT／Gemini／Claude など）や検索で実行するための文にします。"
+      : "Builds a request you can run in your own AI or search."}</p>
+     <div id="ho-out"><p class="muted">${jp ? "文を組んでいます…" : "building…"}</p></div>`, word);
+  let d = null;
+  try {
+    d = await api("/api/handoff", { method: "POST", body: {
+      term: word, text: (ctx && ctx.text) || "", lang: LANG,
+      purpose: (ctx && ctx.purpose) || "",
+      receipts: (ctx && ctx.receipts) || [], sources: (ctx && ctx.sources) || [],
+      project_id: (ctx && ctx.project_id) || null } });
+  } catch (e) { d = null; }
+  const out = p.querySelector("#ho-out");
+  if (!out) return true;
+  if (!d || !d.prompt) { out.innerHTML = softLine(word); return true; }   // 否定表示を出さず続行へ
+  const li = a => (a || []).map(x => `<li>${esc(x)}</li>`).join("");
+  out.innerHTML =
+    `<p class="ho-resp"><b>${jp ? "責任の分担" : "Division of responsibility"}</b>：${esc(d.responsibility)}</p>
+     <textarea class="ho-text" readonly rows="14">${esc(d.prompt)}</textarea>
+     <p class="srcline"><button type="button" id="ho-copy" class="cmb-op">${jp ? "この文をコピーする" : "copy"}</button>
+       <span class="muted">${esc(d.chars)} ${jp ? "字" : "chars"}</span></p>
+     <h4 class="gp-h">${jp ? "この文に入れたもの" : "Included"}</h4><ul class="ct-ul">${li(d.contains)}</ul>
+     <h4 class="gp-h">${jp ? "この文に入れなかったもの" : "Deliberately omitted"}</h4><ul class="ct-ul">${li(d.omitted)}</ul>
+     <p class="srcline">${esc(d.licence_note)}</p>`;
+  const cp = p.querySelector("#ho-copy");
+  if (cp) cp.addEventListener("click", () => {
+    const ta = p.querySelector(".ho-text");
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    cp.textContent = jp ? "コピーしました" : "copied";
+  });
+  return true;
 }
 
 async function gPerspectivePanel(word) {

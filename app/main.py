@@ -38,6 +38,7 @@ from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, openc
 from .connectors.base import cached_get_json, cached_get_text
 from . import citations as cites
 from . import deepsearch
+from . import handoff as handoff_layer
 from . import inquiry as inquiry_layer
 from . import bibliography
 from .llm import adapter
@@ -3091,6 +3092,53 @@ async def page_word(request: Request):
 async def page_textscan(request: Request):
     """文章スキャンの画面。app.js の単一dispatcher契約に触らない独立ページ。"""
     return render(request, "textscan.html")
+
+
+@app.post("/api/handoff")
+async def api_handoff(request: Request):
+    """半田様の環境と責任で実行するための依頼文を組む（2026-10-09・半田様の設計）。
+
+    この system は送信しない。文を返すだけである。鍵も料金も使わない。
+    渡すのは、この system が実際に測ったものと、半田様自身が書いたものだけである。
+
+    `project_id` を渡せば、その企画の人の判断の欄（provisional/memory/naming）を
+    文に含める。半田様自身が書いたものなので、そのまま渡す。
+    """
+    try:
+        b = await request.json()
+    except Exception:
+        b = {}
+    b = b or {}
+    term = str(b.get("term") or "").strip()
+    text = str(b.get("text") or "")
+    if not term and not text.strip():
+        raise HTTPException(400, "term または text が必要")
+    lang = "ja" if str(b.get("lang") or "ja").startswith("ja") else "en"
+
+    records = []
+    pid = b.get("project_id")
+    if pid:
+        try:
+            with db.get_conn() as conn:
+                _project_or_404(conn, int(pid), request)
+                rows = db.rows(conn.execute(
+                    "SELECT type, title, body FROM nodes WHERE project_id=?"
+                    " AND type IN ({}) ORDER BY id".format(
+                        ",".join("?" * len(db.HUMAN_ONLY_TYPES))),
+                    (int(pid), *db.HUMAN_ONLY_TYPES)))
+                records = rows
+        except HTTPException:
+            raise
+        except Exception:
+            records = []        # 取れなくても文は返す（退化階梯）
+
+    data = handoff_layer.build(
+        term=term, text=text,
+        receipts=b.get("receipts") or [],
+        sources=b.get("sources") or [],
+        records=records,
+        lang=lang, purpose=str(b.get("purpose") or ""))
+    return data
 
 
 @app.get("/inquiry")

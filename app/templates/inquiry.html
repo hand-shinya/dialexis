@@ -31,6 +31,20 @@
     照会先は Wikipedia・Wikidata・SEP・OpenAlex・Crossref・NDLサーチで、鍵も料金もありません。
   </p>
 
+  <div id="iq-handoff" hidden>
+    <h2>この結果を持ち出す</h2>
+    <p class="muted">
+      いまの文と、上で測ったもの（受領証・候補・0件の意味・1881年の訳語対応）を、
+      ご自分のAI（ChatGPT／Gemini／Claude など）や検索で実行するための文にします。
+      <b>この system は送信しません。</b>実行は半田様の環境と責任で行ってください。
+    </p>
+    <div class="iq-actions">
+      <button id="iq-ho" type="button">持ち出す文を作る</button>
+      <span id="iq-ho-state" class="muted" role="status" aria-live="polite"></span>
+    </div>
+    <div id="iq-ho-out"></div>
+  </div>
+
   <div id="iq-out"></div>
 </section>
 
@@ -144,6 +158,45 @@
     $("iq-out").innerHTML = h;
   }
 
+  var LAST = null;        // 直前の照会結果。持ち出す文に渡す。
+
+  function handoff() {
+    if (!LAST) { $("iq-ho-state").textContent = "先に調べてから押してください"; return; }
+    $("iq-ho-state").textContent = "文を組んでいます…";
+    var terms = (LAST.terms || []).map(function (t) { return t.term; });
+    fetch("/api/handoff", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        term: terms[0] || "", text: ($("iq-text").value || "").trim(),
+        lang: document.documentElement.lang || "ja",
+        receipts: LAST.receipts || [], sources: LAST.sources || []
+      })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      $("iq-ho-state").textContent = "";
+      if (!d || !d.prompt) { $("iq-ho-state").textContent = "もう一度押すと組み直します"; return; }
+      var li = function (a) {
+        return (a || []).map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("");
+      };
+      $("iq-ho-out").innerHTML =
+        '<p class="ho-resp"><b>責任の分担</b>：' + esc(d.responsibility) + "</p>" +
+        '<textarea class="ho-text" id="iq-ho-text" readonly rows="14">' + esc(d.prompt) + "</textarea>" +
+        '<p class="iq-notice"><button type="button" id="iq-ho-copy">この文をコピーする</button> ' +
+        '<span class="muted">' + esc(d.chars) + "字</span></p>" +
+        "<h3>この文に入れたもの</h3><ul>" + li(d.contains) + "</ul>" +
+        "<h3>この文に入れなかったもの</h3><ul>" + li(d.omitted) + "</ul>" +
+        '<p class="iq-notice">' + esc(d.licence_note) + "</p>";
+      var cp = $("iq-ho-copy");
+      if (cp) cp.addEventListener("click", function () {
+        var ta = $("iq-ho-text");
+        ta.select();
+        try { document.execCommand("copy"); } catch (e) {}
+        cp.textContent = "コピーしました";
+      });
+    }).catch(function (e) {
+      $("iq-ho-state").textContent = "もう一度押すと組み直します（" + e + "）";
+    });
+  }
+
   function run(web) {
     var text = ($("iq-text").value || "").trim();
     if (!text) { $("iq-state").textContent = "文を書いてから押してください"; return; }
@@ -153,6 +206,8 @@
       body: JSON.stringify({ text: text, web: !!web, lang: document.documentElement.lang || "ja" })
     }).then(function (r) { return r.json(); }).then(function (d) {
       $("iq-state").textContent = web ? "外の公開資料まで照会しました" : "手元の資料だけで引きました";
+      LAST = d;
+      $("iq-handoff").hidden = false;
       render(d);
     }).catch(function (e) {
       $("iq-state").textContent = "もう一度押すと、同じ文で照会し直します（" + e + "）";
@@ -161,6 +216,7 @@
 
   $("iq-local").addEventListener("click", function () { run(false); });
   $("iq-web").addEventListener("click", function () { run(true); });
+  $("iq-ho").addEventListener("click", handoff);
 })();
 </script>
 {% endblock %}

@@ -58,6 +58,7 @@ expected_tests = [
   "tests/test_etymology_langname_guard.py",
   "tests/test_explore_routing.py",
   "tests/test_export_bib.py",
+  "tests/test_handoff.py",
   "tests/test_human_only_nodes.py",
   "tests/test_inquiry.py",
   "tests/test_ja_wiktionary.py",
@@ -168,6 +169,26 @@ observation = "この層から出た候補が、実際に node か出典とし�
 observation_threshold = "記録に変わった候補 >= 1 件"
 how_to_measure = "curl -s -c j -b j $BASE/api/ledger で task=free-text-inquiry の件数を見て、同じworkspaceの graph の node 数が照会の前後で増えたかを数える"
 retreat = "4週間で記録が0件なら、app/inquiry.py と app/templates/inquiry.html と tests/test_inquiry.py と /inquiry を削除する"
+status = "open"
+observed = ""
+evidence = ""
+verdict = ""
+verdict_date = ""
+retired_at = ""
+retired_commit = ""
+
+[[mechanism]]
+id = "handoff-text"
+added = "2026-10-09"
+what = "持ち出す文（POST /api/handoff・action `handoff`）。半田様の環境と責任で実行するための依頼文を組む。この system は送信しない"
+cost = "endpoint 1本・action 1つ。全面の menu と panel footer にボタン1つ増える"
+implemented_by = ["app/handoff.py", "app/main.py:api_handoff", "app/static/app.js:gHandoffPanel"]
+deadline = "2026-11-06"
+# 「出せること」は成功ではない。半田様が実際に持ち出し、戻ってきた結果が記録に変わること。
+observation = "持ち出した文で得た結果が、node か出典としてこの system に戻って記録されたこと"
+observation_threshold = "戻って記録された件数 >= 1 件"
+how_to_measure = "curl -s -c j -b j $BASE/api/ledger で task を数え、同じ企画の graph に node か provenance が増えたかを見る"
+retreat = "4週間で戻りが0件なら、app/handoff.py と action `handoff` と tests/test_handoff.py を削除する"
 status = "open"
 observed = ""
 evidence = ""
@@ -287,4 +308,11 @@ guarded_by = "tests/test_known_harms.py"
 #   U9 外へ送るのは語だけで文の全体は送らないが、語は文から機械的に取ったものなので、
 #      半田様が書いた固有の言い方がそのまま語として出ることはありうる。
 #      送る前に語を画面で確かめる経路は、まだ無い。
+#  U10 持ち出す文は、半田様が貼り付けた先（ChatGPT 等）の利用規約を検査しない。
+#      載せる本文の利用条件は台帳の tier で判定するが、貼り付け先の規約は半田様が確かめる。
+#  U11 持ち出した結果がこの system へ戻る経路（貼り戻し）が無い。
+#      手で node を作る以外に戻し方が無いので、観測点（戻って記録されたこと）は
+#      半田様の手作業に依存する。これは C7 に反する側の負担である。
+#  U12 持ち出す文に載せる受領証は、呼び出し側が渡したものである。
+#      server 側で取り直して照合していないので、画面と文がずれる余地が在る。
 # ---------------------------------------------------------------------------

@@ -206,6 +206,12 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .anat-compnote { margin: .2rem 0 .3rem; }
 /* その字がどの意味のまとまりの内側にあるか。字義のすぐ後ろに小さく置く。 */
 .anat-inunit { color: var(--muted); font-size: .72rem; margin-left: .15rem; }
+/* 持ち出す文（2026-10-09）。責任の分担は本文より目立たせる（読み飛ばされると分担が成立しない）。 */
+.ho-resp { font-size: .86rem; line-height: 1.6; border-left: 3px solid var(--accent2, #8a6d3b);
+  padding: .35rem .7rem; margin: .2rem 0 .7rem; }
+.ho-text { width: 100%; box-sizing: border-box; font: inherit; font-size: .84rem;
+  padding: .6rem; border-radius: 8px; border: 1px solid rgba(128,128,128,.45);
+  background: transparent; color: inherit; }
 .segment-unit { display: inline-flex; flex-direction: column; gap: .05rem; border: 1px solid var(--line); border-radius: 6px; padding: .28rem .5rem; background: #fffdf8; }
 .segment-unit a { color: var(--accent2); text-decoration: none; font-weight: 600; }
 .segment-unit a:hover { text-decoration: underline; }
