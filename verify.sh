@@ -16,6 +16,23 @@ export NODE_PATH="${NODE_PATH:-/home/handa/.npm/_npx/e41f203b7505f1fb/node_modul
 fail=0
 [ -d .venv ] && source .venv/bin/activate 2>/dev/null
 
+# 2026-10-10: marker は「この HEAD の code で全検証が通った」と主張する。
+# 主張が成り立つ条件を、最初と最後の両方で確かめる。
+# 2本を並行で走らせたとき、片方の marker が他方の commit を指した実例が在る。
+START_HEAD=$(git rev-parse HEAD)
+START_TREE=$(git status --porcelain --untracked-files=no | sort | md5sum | cut -d" " -f1)
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "══ 追跡fileに未commitの変更が在ります。marker は HEAD の code について主張するので、"
+  echo "   tree が HEAD と違う状態では検証できません。commit してから実行してください ══"
+  git status --porcelain --untracked-files=no | head -10
+  exit 4
+fi
+if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -q ":${PORT} "; then
+  echo "══ port ${PORT} は既に使われています。verify.sh が二重に走っている可能性があります。"
+  echo "   並行で走らせると server を奪い合い、落ちた理由が code の欠陥に見えます ══"
+  exit 5
+fi
+
 # 2026-10-09: 撤退台帳の最小検査は pytest の外に置く。
 # 試験fileの実在を検査する試験を、その試験file自身の中に置くと、
 # file を消したときに検査もろとも消えて静かに通る（315 passed・rc=0 で実証）。
@@ -68,8 +85,19 @@ for stem in $INTEGRATION; do
 done
 
 if [ "$fail" = "0" ]; then
+  # 2026-10-10: 走っている間に HEAD か tree が動いていたら、marker は書かない。
+  # 書くと「検証していない code が検証済み」になる（偽の成功・公理3）。
+  END_HEAD=$(git rev-parse HEAD)
+  END_TREE=$(git status --porcelain --untracked-files=no | sort | md5sum | cut -d" " -f1)
+  if [ "$END_HEAD" != "$START_HEAD" ] || [ "$END_TREE" != "$START_TREE" ]; then
+    echo "══ 検証中に HEAD か作業treeが動きました。markerは書きません ══"
+    echo "   開始時 HEAD: $START_HEAD"
+    echo "   終了時 HEAD: $END_HEAD"
+    echo "   検証した code と marker が一致しないので、もう一度最初から実行してください"
+    exit 6
+  fi
   # 検証済みマーカー: このHEADのコードで全検証が通ったことを記録。デプロイgate(vps_update.sh)が参照する。
-  git rev-parse HEAD > deploy/verified_sha.txt
+  echo "$START_HEAD" > deploy/verified_sha.txt
   echo "══ 検証すべて成功（verified_sha=$(cat deploy/verified_sha.txt) をコミットしてデプロイ可）══"
 else
   echo "══ 検証に失敗あり（デプロイ不可）══"
