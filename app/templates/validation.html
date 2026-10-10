@@ -71,9 +71,10 @@
       <dt>証拠</dt><dd>スクリーンショットまたは画面録画（必要ならURLも併記）</dd>
       <dt>判断</dt><dd>理解が深まった点／誤解を招いた点／次に知りたいこと</dd>
     </dl>
-    <p><a class="btn" href="/source">source を取得して、手元で再現する</a></p>
-    <p class="muted">報告の窓口は、この後に用意します。それまでは、上の手順と
-       取得時刻を控えておくと、後からそのまま確かめ直せます。</p>
+    <p><a class="btn" href="/report?page=/validation">不一致を報告する（匿名）</a>
+       <a class="btn" href="/source">source を取得して手元で再現する</a></p>
+    <p class="muted">報告は匿名です。名前・連絡先・IPaddress・workspace の識別子は保存しません。
+       参照番号をお返しするので、控えておくと状態だけ後から見られます。</p>
     {% else %}
     <p>Record intellectual usefulness as well as defects using the same compact format.</p>
     <dl class="validation-dl">
@@ -84,9 +85,10 @@
       <dt>Evidence</dt><dd>screenshot or recording, with URL when useful</dd>
       <dt>Judgment</dt><dd>what deepened understanding, what misled, what to ask next</dd>
     </dl>
-    <p><a class="btn" href="/source">Get the source and reproduce it locally</a></p>
-    <p class="muted">A reporting channel is being prepared. Until then, keep the steps
-       and the retrieved-at timestamps so the same check can be repeated later.</p>
+    <p><a class="btn" href="/report?page=/validation">Report a mismatch (anonymous)</a>
+       <a class="btn" href="/source">Get the source and reproduce it locally</a></p>
+    <p class="muted">Reports are anonymous: no name, contact, IP address or workspace
+       identifier is stored. You get a reference code; keep it to check the status later.</p>
     {% endif %}
   </div>
 </section>

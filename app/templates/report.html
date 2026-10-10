@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}{% if lang == 'ja' %}報告（匿名）{% else %}Report (anonymous){% endif %}{% endblock %}
+{% block content %}
+{#
+  匿名の報告窓口（2026-10-10）。
+  以前は公開repoのIssuesへlinkしていたが、そのURLにaccount名が含まれるため外した。
+  外部serviceも鍵も使わず、app の中で受ける。
+  一覧の面は作らない（認証機構が無いので、作ると他の利用者の文が読める面になる）。
+#}
+<section class="rp-wrap">
+{% if lang == 'ja' %}
+  <h1>報告（匿名）</h1>
+  <p class="muted">
+    表示が事実と合わない、取得が進まない、意味が分かりにくい、こう変えてほしい——
+    どれでも書いてください。<b>匿名です。</b>
+  </p>
+
+  <div class="rp-privacy">
+    <p><b>保存するもの</b>：本文／種別／どの画面から出したか／時刻／参照番号</p>
+    <p><b>保存しないもの</b>：名前／連絡先／IPaddress／workspace の識別子</p>
+    <p class="rp-why">workspace の識別子を保存すると、あなたの企画を辿れてしまいます。
+       報告のために企画を明け渡していただく必要はありません。</p>
+    <p class="rp-why">連絡先もうかがいません。集めると、返信の義務と個人情報の保管が
+       同時に生じます。代わりに参照番号をお返しします。</p>
+  </div>
+
+  <form id="rp-form" autocomplete="off">
+    <label class="rp-l">種別
+      <select id="rp-kind">
+        {% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="rp-l">どの画面のことか（任意）
+      <input id="rp-page" placeholder="例: /wordspace">
+    </label>
+    <label class="rp-l">本文（10字以上・4,000字まで）
+      <textarea id="rp-body" rows="8" placeholder="何をして、何が出て、どうなると良いか。取得時刻が画面に出ていたら、それも書き添えると再現しやすくなります。"></textarea>
+    </label>
+    <div class="rp-actions">
+      <button id="rp-send" type="button">この内容で送る</button>
+      <span id="rp-state" class="muted" role="status" aria-live="polite"></span>
+    </div>
+  </form>
+
+  <div id="rp-out"></div>
+
+  <h2>参照番号で状態を見る</h2>
+  <p class="muted">本文は返しません。番号を当てた人が他人の文を読めないようにしています。</p>
+  <div class="rp-actions">
+    <input id="rp-code" placeholder="参照番号（例: 1A2B3C4D）">
+    <button id="rp-check" type="button">状態を見る</button>
+    <span id="rp-cstate" class="muted" role="status" aria-live="polite"></span>
+  </div>
+  <div id="rp-cout"></div>
+{% else %}
+  <h1>Report (anonymous)</h1>
+  <p class="muted">
+    Something shown that does not match the sources, a retrieval that does not
+    progress, wording that is hard to read, a change you want — all welcome.
+    <b>This is anonymous.</b>
+  </p>
+
+  <div class="rp-privacy">
+    <p><b>Stored</b>: your text, the kind, which page, the time, a reference code</p>
+    <p><b>Not stored</b>: name, contact, IP address, workspace identifier</p>
+    <p class="rp-why">Storing the workspace identifier would let the operator reach your
+       own projects. Reporting should not cost you that.</p>
+    <p class="rp-why">No contact is collected either: collecting it would create both a
+       duty to reply and personal data to keep. You get a reference code instead.</p>
+  </div>
+
+  <form id="rp-form" autocomplete="off">
+    <label class="rp-l">Kind
+      <select id="rp-kind">
+        {% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="rp-l">Which page (optional)
+      <input id="rp-page" placeholder="e.g. /wordspace">
+    </label>
+    <label class="rp-l">Your text (10–4,000 characters)
+      <textarea id="rp-body" rows="8" placeholder="What you did, what appeared, and what would be better. If a retrieved-at timestamp was shown, include it."></textarea>
+    </label>
+    <div class="rp-actions">
+      <button id="rp-send" type="button">Send this</button>
+      <span id="rp-state" class="muted" role="status" aria-live="polite"></span>
+    </div>
+  </form>
+
+  <div id="rp-out"></div>
+
+  <h2>Check a status by reference code</h2>
+  <p class="muted">The text itself is never returned, so guessing a code reveals nothing.</p>
+  <div class="rp-actions">
+    <input id="rp-code" placeholder="reference code">
+    <button id="rp-check" type="button">Check</button>
+    <span id="rp-cstate" class="muted" role="status" aria-live="polite"></span>
+  </div>
+  <div id="rp-cout"></div>
+{% endif %}
+</section>
+
+<style>
+.rp-wrap{max-width:760px}
+.rp-wrap h2{font-size:1.02rem;margin:1.8rem 0 .3rem}
+.rp-privacy{border:1px solid rgba(128,128,128,.35);border-radius:10px;padding:.7rem .9rem;
+  margin:.9rem 0 1.3rem;font-size:.88rem;line-height:1.7}
+.rp-privacy p{margin:.15rem 0}
+.rp-why{opacity:.8;font-size:.84rem}
+.rp-l{display:block;margin:.7rem 0;font-size:.9rem}
+.rp-l select,.rp-l input,.rp-l textarea{display:block;width:100%;box-sizing:border-box;
+  font:inherit;margin-top:.2rem;padding:.5rem;border-radius:8px;
+  border:1px solid rgba(128,128,128,.45);background:transparent;color:inherit}
+.rp-actions{display:flex;gap:.6rem;align-items:center;margin:.6rem 0;flex-wrap:wrap}
+.rp-actions button{padding:.5rem 1.1rem;border-radius:8px;cursor:pointer;font:inherit;
+  border:1px solid rgba(128,128,128,.5);background:transparent;color:inherit}
+.rp-actions input{padding:.5rem;border-radius:8px;font:inherit;
+  border:1px solid rgba(128,128,128,.45);background:transparent;color:inherit}
+.rp-card{border:1px solid rgba(128,128,128,.35);border-radius:10px;padding:.7rem .9rem;margin:.7rem 0}
+.rp-code{font-size:1.3rem;font-weight:650;letter-spacing:.08em}
+.rp-card ul{margin:.2rem 0 .5rem 1.2rem}
+</style>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var jp = (document.documentElement.lang || "ja") === "ja";
+  var esc = function (s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  };
+  // ?page=/validation のように、呼んだ画面を入れておく
+  var qp = new URLSearchParams(location.search);
+  if (qp.get("page")) { $("rp-page").value = qp.get("page"); }
+
+  function li(a) {
+    return (a || []).map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("");
+  }
+
+  $("rp-send").addEventListener("click", function () {
+    var body = ($("rp-body").value || "").trim();
+    if (body.length < 10) {
+      $("rp-state").textContent = jp ? "本文を10字以上書いてください" : "Please write at least 10 characters";
+      return;
+    }
+    $("rp-state").textContent = jp ? "送っています…" : "sending…";
+    fetch("/api/report", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: body, kind: $("rp-kind").value,
+                             page: ($("rp-page").value || "").trim() })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d || !d.code) {
+        $("rp-state").textContent = jp ? "もう一度押すと送り直します" : "press again to retry";
+        return;
+      }
+      $("rp-state").textContent = "";
+      $("rp-out").innerHTML =
+        '<div class="rp-card"><p>' + (jp ? "受け取りました。参照番号です。" : "Received. Your reference code:") +
+        '</p><p class="rp-code">' + esc(d.code) + "</p>" +
+        "<p>" + (jp ? "保存したもの" : "Stored") + "</p><ul>" + li(d.stored) + "</ul>" +
+        "<p>" + (jp ? "保存しなかったもの" : "Not stored") + "</p><ul>" + li(d.not_stored) + "</ul>" +
+        '<p class="rp-why">' + esc(d.no_reply) + "</p>" +
+        '<p class="rp-why">' + esc(d.how_to_check) + "</p></div>";
+      $("rp-body").value = "";
+    }).catch(function (e) {
+      $("rp-state").textContent = (jp ? "もう一度押すと送り直します（" : "press again to retry (") + e + "）";
+    });
+  });
+
+  $("rp-check").addEventListener("click", function () {
+    var code = ($("rp-code").value || "").trim();
+    if (!code) { $("rp-cstate").textContent = jp ? "番号を入れてください" : "enter a code"; return; }
+    $("rp-cstate").textContent = jp ? "見ています…" : "checking…";
+    fetch("/api/report/" + encodeURIComponent(code))
+      .then(function (r) { return r.json(); }).then(function (d) {
+        $("rp-cstate").textContent = "";
+        if (!d.found) { $("rp-cout").innerHTML = '<div class="rp-card">' + esc(d.note) + "</div>"; return; }
+        $("rp-cout").innerHTML = '<div class="rp-card"><p>' +
+          (jp ? "受け取った時刻" : "received") + ": " + esc(d.received_at) + "</p><p>" +
+          (jp ? "種別" : "kind") + ": " + esc(d.kind) + "</p><p>" +
+          (jp ? "状態" : "status") + ": <b>" + esc(d.status) + "</b>" +
+          (d.handled_at ? "（" + esc(d.handled_at) + "）" : "") + "</p>" +
+          '<p class="rp-why">' + esc(d.note) + "</p></div>";
+      }).catch(function (e) {
+        $("rp-cstate").textContent = (jp ? "もう一度押すと見直します（" : "press again (") + e + "）";
+      });
+  });
+})();
+</script>
+{% endblock %}

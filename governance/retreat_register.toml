@@ -78,6 +78,7 @@ expected_tests = [
   "tests/test_poc_adopt_stance.py",
   "tests/test_question_doors.py",
   "tests/test_resolution.py",
+  "tests/test_report.py",
   "tests/test_resume_check.py",
   "tests/test_roles.py",
   "tests/test_retreat_register.py",
@@ -191,6 +192,27 @@ observation = "持ち出した文で得た結果が、node か出典としてこ
 observation_threshold = "戻って記録された件数 >= 1 件"
 how_to_measure = "curl -s -c j -b j $BASE/api/ledger で task を数え、同じ企画の graph に node か provenance が増えたかを見る"
 retreat = "4週間で戻りが0件なら、app/handoff.py と action `handoff` と tests/test_handoff.py を削除する"
+status = "open"
+observed = ""
+evidence = ""
+verdict = ""
+verdict_date = ""
+retired_at = ""
+retired_commit = ""
+
+[[mechanism]]
+id = "anonymous-report"
+added = "2026-10-10"
+what = "匿名の報告窓口（画面 /report・POST /api/report・GET /api/report/{code}）。app の中で受け、外部serviceも鍵も使わない"
+cost = "画面1枚・endpoint 2本・table 1つ。所有者が tools/read_reports.py で読む"
+implemented_by = ["app/templates/report.html", "app/main.py:api_report",
+                  "app/db.py:REPORT_KINDS", "tools/read_reports.py"]
+deadline = "2026-11-07"
+# 窓口が在ることは成功ではない。届いた報告が実際に直しへ繋がったかを見る（M0 C2）。
+observation = "届いた報告のうち1件以上が read か closed になり、対応するcommitが在ること"
+observation_threshold = "status が open 以外の報告 >= 1 件"
+how_to_measure = "VPS 上で python3 tools/read_reports.py --count を実行し、read と closed の件数を見る"
+retreat = "4週間で報告が0件なら、/report と app/templates/report.html と tests/test_report.py を削除する（table は残して data を失わない）"
 status = "open"
 observed = ""
 evidence = ""
@@ -349,6 +371,13 @@ guarded_by = "tests/test_roles.py"
 #          将来どこかに出すと名前が出る。
 #      どれも所有者の決裁が要るので、実装側では触らない。
 #      いま成立しているのは「配信される中身に名前が無いこと」だけである。
+#  U15 報告窓口の限界（2026-10-10）。
+#      (a) 連絡先を集めないので返信できない。参照番号で状態だけ見られる。
+#      (b) 報告者が本物の利用者かを判定しない。いたずらと本物を区別できない。
+#      (c) 一覧の endpoint を作らなかったので、所有者は VPS に入らないと読めない。
+#          認証機構を作らない代わりの選択であり、所有者の手間として残る。
+#      (d) 送信の回数に上限が無い。同じ文を繰り返し送られると table が伸びる。
+#          上限を付けるには IP か workspace を見る必要があり、それは保存しない方針と衝突する。
 #  U13 役割の混同（2026-10-09 に所有者が指摘）。所有者・開発者（所有者）と
 #      利用者（誰でも）を同一視した文が、画面と持ち出す文に入っていた。
 #      利用者に見える出力からは除いたが、M0 と現行system指針は所有者の目的を記した文書で

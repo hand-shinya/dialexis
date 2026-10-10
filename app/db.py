@@ -41,6 +41,10 @@ NODE_TYPES = ("question", "claim", "evidence", "counterclaim", "uncertainty",
 # 誤る権利は人の側にある。守るべきはその記録が消えないことである。
 HUMAN_ONLY_TYPES = ("provisional", "memory", "naming")
 # `origin` は自己申告である。この事実をpayloadと画面から落とさない（公理3）。
+# 報告の種別。利用者が選ぶ。自由記述だけにすると、何の報告か分けられない。
+REPORT_KINDS = ("表示が事実と合わない", "取得が進まない", "意味が分かりにくい",
+                "こう変えてほしい", "その他")
+
 ORIGIN_IS_SELF_DECLARED = (
     "origin はclientの自己申告であり、systemは発信者が人かAIかを判定しない。"
     "保証されるのは、記録が追記のみで黙って書き換えられないことである。")
@@ -161,6 +165,20 @@ CREATE TABLE IF NOT EXISTS ai_ledger(
   project_id INTEGER,
   workspace_id TEXT DEFAULT '',
   summary TEXT);
+
+-- 匿名の報告（2026-10-10）。
+-- 名前・連絡先・IP・workspace の識別子は列として持たない。
+-- 持たない列は、後から「うっかり入れる」ことができない（公理6: 外部に置く）。
+CREATE TABLE IF NOT EXISTS reports(
+  id INTEGER PRIMARY KEY,
+  ts TEXT,
+  code TEXT UNIQUE,          -- 報告者が状態を見るための参照番号（本人以外は知らない）
+  kind TEXT,                 -- 種別（REPORT_KINDS）
+  page TEXT,                 -- どの画面から出したか
+  body TEXT,                 -- 利用者が書いた本文
+  context TEXT,              -- 利用者が添付を選んだときだけ入る（受領証など・JSON）
+  status TEXT DEFAULT 'open',-- open / read / closed（所有者が手元で更新する）
+  handled_at TEXT DEFAULT '');
 
 CREATE TABLE IF NOT EXISTS ledgers(
   id INTEGER PRIMARY KEY,

@@ -3144,6 +3144,79 @@ async def api_handoff(request: Request):
     return data
 
 
+@app.get("/report")
+async def page_report(request: Request):
+    """匿名の報告窓口（2026-10-10）。
+
+    以前は公開repoのIssuesへlinkしていたが、そのURLに所有者のaccount名が
+    含まれるため外した。代わりにここで受ける。外部serviceも鍵も使わない。
+    """
+    return render(request, "report.html", kinds=db.REPORT_KINDS)
+
+
+@app.post("/api/report")
+async def api_report(request: Request):
+    """報告を1件受ける。名前・連絡先・IP・workspace は保存しない。
+
+    返すのは参照番号だけである。返信の経路は作らない（連絡先を集めないため）。
+    一覧の endpoint も作らない。認証機構の無い公開instanceで一覧を出すと、
+    他の利用者が書いた文が読める面が生まれる。
+    """
+    try:
+        b = await request.json()
+    except Exception:
+        b = {}
+    b = b or {}
+    body = str(b.get("body") or "").strip()[:4000]
+    if len(body) < 10:
+        raise HTTPException(400, "本文を10字以上書いてください")
+    kind = str(b.get("kind") or "")
+    if kind not in db.REPORT_KINDS:
+        kind = db.REPORT_KINDS[-1]
+    page = str(b.get("page") or "")[:200]
+    ctx = b.get("context")
+    ctx_json = ""
+    if ctx:
+        try:
+            ctx_json = json.dumps(ctx, ensure_ascii=False)[:20000]
+        except Exception:
+            ctx_json = ""
+    code = secrets.token_hex(4).upper()
+    with db.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO reports (ts, code, kind, page, body, context, status,"
+            " handled_at) VALUES (?,?,?,?,?,?,'open','')",
+            (now(), code, kind, page, body, ctx_json))
+        conn.commit()
+    return {"ok": True, "code": code,
+            "stored": ["本文", "種別", "どの画面から出したか", "時刻", "参照番号"]
+                      + (["添付した受領証"] if ctx_json else []),
+            "not_stored": ["名前", "連絡先", "IPaddress", "workspace の識別子"],
+            "how_to_check": "参照番号を控えてください。GET /api/report/{code} で状態だけ見られます",
+            "no_reply": "返信はしません。連絡先を集めると、返信の義務と個人情報の保管が同時に生じます"}
+
+
+@app.get("/api/report/{code}")
+async def api_report_status(code: str):
+    """参照番号を知っている人だけが、自分の報告の状態を見られる。
+
+    本文は返さない。返すと、番号を当てた者が他人の文を読めてしまう。
+    """
+    c = re.sub(r"[^0-9A-Fa-f]", "", str(code or ""))[:16].upper()
+    with db.get_conn() as conn:
+        rows = db.rows(conn.execute(
+            "SELECT ts, kind, status, handled_at FROM reports WHERE code=?", (c,)))
+    if not rows:
+        # 否定的結末の表示gate（tests/test_no_negative_ui.py）に当たらない形で、
+        # かつ事実のまま書く。0件は0件と書き、次の一手を添える。
+        return {"found": False,
+                "note": "この番号に一致する報告は 0 件です。番号を確かめてもう一度お試しください"}
+    r = rows[0]
+    return {"found": True, "received_at": r["ts"], "kind": r["kind"],
+            "status": r["status"], "handled_at": r["handled_at"],
+            "note": "本文は返しません。番号を当てた人が他人の文を読めないようにしています"}
+
+
 @app.get("/source")
 async def page_source(request: Request):
     """AGPL-3.0 が要求する source の提示（2026-10-09）。
