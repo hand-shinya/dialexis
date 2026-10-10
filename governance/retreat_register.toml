@@ -209,9 +209,13 @@ implemented_by = ["app/templates/report.html", "app/main.py:api_report",
                   "app/db.py:REPORT_KINDS", "tools/read_reports.py"]
 deadline = "2026-11-07"
 # 窓口が在ることは成功ではない。届いた報告が実際に直しへ繋がったかを見る（M0 C2）。
-observation = "届いた報告のうち1件以上が read か closed になり、対応するcommitが在ること"
-observation_threshold = "status が open 以外の報告 >= 1 件"
-how_to_measure = "VPS 上で python3 tools/read_reports.py --count を実行し、read と closed の件数を見る"
+# 2026-10-10 訂正: 当初の観測点は「status が open 以外 >= 1 件」だったが、
+# 本番では DB が app の実行user所有で、所有者のloginからは**書けない**（実測）。
+# sudo の許可は意図的に2命令だけで、広げるには決裁が要る。
+# 観測できない観測点は観測点ではないので、読み取りだけで測れる形へ替えた。
+observation = "報告が1件以上届き、そのうち1件以上に対応する修理のcommitが在ること"
+observation_threshold = "報告 >= 1 件 かつ 対応するcommit >= 1 本"
+how_to_measure = "VPS 上で DIALEXIS_DB=... .venv/bin/python tools/read_reports.py で本文を読み（読みは通る）、git log で対応commitを数える"
 retreat = "4週間で報告が0件なら、/report と app/templates/report.html と tests/test_report.py を削除する（table は残して data を失わない）"
 status = "open"
 observed = ""
@@ -376,6 +380,17 @@ guarded_by = "tests/test_roles.py"
 #      (b) 報告者が本物の利用者かを判定しない。いたずらと本物を区別できない。
 #      (c) 一覧の endpoint を作らなかったので、所有者は VPS に入らないと読めない。
 #          認証機構を作らない代わりの選択であり、所有者の手間として残る。
+#      (e) VPS では DB が app の実行user所有で、所有者のloginからは**読めるが書けない**
+#          （2026-10-10 に実測。sqlite3.OperationalError: readonly database）。
+#          したがって status を open から動かせない。
+#          sudo の許可は意図的に2命令（vps_update.sh と systemctl restart）だけで、
+#          任意の命令を app user として走らせる経路は無い。これは設計である。
+#          直す道は2つあり、どちらも所有者の決裁である。
+#            1. sudoers に1行足す（vps_update.sh と同じ理由で安全側: script は
+#               app user 所有のdirに在り、所有者のloginからは書き換えられない）
+#            2. 所有者だけが持つ合言葉で status を動かす endpoint を足す
+#               （一覧は作らない。合言葉を1本増やすことになる）
+#          当面は status を使わず、報告の本文と対応commitで効果を測る。
 #      (d) 送信の回数に上限が無い。同じ文を繰り返し送られると table が伸びる。
 #          上限を付けるには IP か workspace を見る必要があり、それは保存しない方針と衝突する。
 #  U13 役割の混同（2026-10-09 に所有者が指摘）。所有者・開発者（所有者）と

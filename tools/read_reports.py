@@ -85,11 +85,24 @@ def main():
         new = "read" if a.read else "closed"
         import datetime
         ts = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-        n = c.execute("UPDATE reports SET status=?, handled_at=? WHERE code=?",
-                      (new, ts, code)).rowcount
-        c.commit()
+        try:
+            n = c.execute("UPDATE reports SET status=?, handled_at=? WHERE code=?",
+                          (new, ts, code)).rowcount
+            c.commit()
+        except sqlite3.OperationalError as e:
+            # VPS では DB が app の実行user所有である。読みは通るが書きは通らない。
+            # 生のtracebackを出さず、何が要るかを言う（公理1: 沈黙も混乱もさせない）。
+            print("状態を書き換えられませんでした: %s" % e, file=sys.stderr)
+            print("DBは app の実行userが所有しています。そのuserで実行してください:",
+                  file=sys.stderr)
+            print("  sudo -u dialexis DIALEXIS_DB=%s \\" % DB, file=sys.stderr)
+            print("    /opt/dialexis/.venv/bin/python tools/read_reports.py %s %s"
+                  % ("--read" if a.read else "--close", code), file=sys.stderr)
+            print("sudo の許可は意図的に2命令（vps_update.sh と systemctl restart）"
+                  "だけなので、この命令を通すには1行足す決裁が要ります。", file=sys.stderr)
+            return 3
         print("%s を %s にしました（%d 件）" % (code, new, n) if n
-              else "%s は見つかりませんでした" % code)
+              else "%s に一致する報告は 0 件です" % code)
         return 0 if n else 1
 
     if a.count:
