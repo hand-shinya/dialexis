@@ -154,10 +154,15 @@ def test_an_unknown_code_says_so_without_a_dead_end(client):
     assert "確かめて" in d["note"] or "もう一度" in d["note"]
 
 
-def test_a_malformed_code_does_not_crash(client):
-    for bad in ("../../etc/passwd", "'; DROP TABLE reports;--", "%00", "x" * 200):
-        r = client.get("/api/report/" + bad)
-        assert r.status_code in (200, 404), (bad, r.status_code)
+@pytest.mark.parametrize("bad", ["../../etc/passwd", "'; DROP TABLE reports;--",
+                                 "%00", "x" * 200, "all", "A", "0123456", "0123456789"])
+def test_a_malformed_code_is_404_not_200(client, bad):
+    """形の違う番号で 200 を返すと、在る面のように見える（公理3）。"""
+    r = client.get("/api/report/" + bad)
+    assert r.status_code == 404, (bad, r.status_code)
+
+
+def test_the_table_survives_a_malformed_code(client):
     # tableが残っていること（注入で消えていない）
     with db.get_conn() as conn:
         conn.execute("SELECT COUNT(*) FROM reports")

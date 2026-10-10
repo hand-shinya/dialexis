@@ -3202,7 +3202,12 @@ async def api_report_status(code: str):
 
     本文は返さない。返すと、番号を当てた者が他人の文を読めてしまう。
     """
-    c = re.sub(r"[^0-9A-Fa-f]", "", str(code or ""))[:16].upper()
+    # 参照番号は16進8字である。形が違うものは 404 にする。
+    # 以前は非16進を削いでいたため、/api/report/all が "A" として 200 を返し、
+    # 面としては正直でなかった（内容は漏れないが、在るように見えた）。
+    c = str(code or "").strip().upper()
+    if not re.fullmatch(r"[0-9A-F]{8}", c):
+        raise HTTPException(404, "参照番号は16進8字です")
     with db.get_conn() as conn:
         rows = db.rows(conn.execute(
             "SELECT ts, kind, status, handled_at FROM reports WHERE code=?", (c,)))
