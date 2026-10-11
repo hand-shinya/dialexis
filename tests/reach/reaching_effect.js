@@ -5,7 +5,7 @@
 // 「捏造が無いか」「戻る/進むで同状態に復帰するか」を証拠として集める。成否判定でなく証拠収集。
 // 使い方: node tests/reach/reaching_effect.js https://219-94-244-239.nip.io  （既定=本番IP:8000）
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const B = (process.argv[2] || "http://219.94.244.239:8000").replace(/\/$/, "");
 
 // 文字体系・起源の異なる6概念（＋組合せ用の第2語）。低情報語（エポケー）を含む。

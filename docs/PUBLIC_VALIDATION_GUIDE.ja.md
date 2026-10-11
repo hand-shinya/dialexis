@@ -57,7 +57,7 @@ URLと入力語：
 スクリーンショット／録画：
 ```
 
-報告先は [GitHub Issues](https://github.com/hand-shinya/dialexis/issues)。公開URL・時刻・操作列を添え、APIキーや個人情報は貼らない。
+報告先は [GitHub Issues](https://github.com/<account>/dialexis/issues)。公開URL・時刻・操作列を添え、APIキーや個人情報は貼らない。
 
 ## 判定の限界
 

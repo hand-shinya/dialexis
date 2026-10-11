@@ -426,6 +426,17 @@ def sitemap_xml(request: Request):
     return Response(content=body, media_type="application/xml")
 
 
+def _openalex_params(params: dict) -> dict:
+    """OpenAlex の polite pool 用の連絡先を、環境変数から付ける（2026-10-11）。
+
+    以前は運用者のmail addressが source に直書きされており、
+    (a) 名前が公開repoと配布物に残り、
+    (b) OpenAlex へ毎回その address を送っていた。
+    `DIALEXIS_CONTACT` が空なら mailto を付けない（付けないこと自体は許されている）。
+    """
+    c = (os.environ.get("DIALEXIS_CONTACT") or "").strip()
+    return dict(params, mailto=c) if c else dict(params)
+
 @app.get("/healthz")
 def healthz(request: Request):
     conn = get_conn()
@@ -3981,7 +3992,7 @@ async def api_usage(q: str, lang: str = "ja"):
     for term in terms[:2]:
         try:
             d, _, _ = await cached_get_json("https://api.openalex.org/works",
-                {"search": term, "per_page": 8, "mailto": "handa.shinya@gmail.com"}, ttl=86400)
+                _openalex_params({"search": term, "per_page": 8}), ttl=86400)
         except Exception:
             continue
         for w in d.get("results", []):
@@ -4001,7 +4012,7 @@ async def api_usage(q: str, lang: str = "ja"):
     try:
         term0 = (cd.get("original_terms") or [{}])[0].get("term") or q
         sd, _, _ = await cached_get_json("https://api.openalex.org/works",
-            {"search": term0, "group_by": "authorships.author.id", "mailto": "handa.shinya@gmail.com"}, ttl=86400)
+            _openalex_params({"search": term0, "group_by": "authorships.author.id"}), ttl=86400)
         for g in sd.get("group_by", [])[:10]:
             nm = g.get("key_display_name")
             if nm and nm != "unknown":

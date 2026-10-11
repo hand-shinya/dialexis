@@ -3,7 +3,7 @@
 //  (4)menu項目を実DOMクリック (5)正しいActionID+targetが1回dispatchされる (6)後のViewStateが整合。
 // gMen()直呼びは不可——実マウス座標クリックで通す（所有者A4）。座標潰れ対策にfit後の位置を用いる。
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const B = process.argv[2] || "http://127.0.0.1:8021";
 (async () => {
   const b = await chromium.launch({ executablePath: EXE, headless: true });

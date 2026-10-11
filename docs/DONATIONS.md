@@ -12,7 +12,7 @@
 
 ## 2. 受付手段（開設手順）
 
-1. **GitHub Sponsors**（推奨・手数料0%）：github.com/sponsors で hand-shinya として申請 → Stripe連携 → 承認後 /donate ページのリンクが実働する
+1. **GitHub Sponsors**（推奨・手数料0%）：github.com/sponsors で <account> として申請 → Stripe連携 → 承認後 /donate ページのリンクが実働する
 2. **Ko-fi / Open Collective**（代替）：Open Collective は会計が公開されるため区分Cの受け皿として適する
 3. 開設までは /donate ページに「準備中」表示（現状）
 

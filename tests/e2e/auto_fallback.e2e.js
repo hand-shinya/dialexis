@@ -4,7 +4,7 @@
 //   ③contrast(/api/origin＋/api/anatomy を両方試済)が空→未試行の第三経路が無い＝虚偽の切替文言を出さず続行操作を即表示
 //   共通: 出所表示に内部endpoint名(/api/…)を出さない・捏造しない。
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const B = process.argv[2] || "http://127.0.0.1:8021";
 
 const EMPTY_ANAT = { term: "", components: [], chain: [] };

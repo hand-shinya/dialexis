@@ -675,7 +675,7 @@
             <div class="progress-line"><label>Mobile 390×844</label><div class="bar"><i></i></div><span class="pass">8/8</span></div>
             <div class="progress-line"><label>公開 healthz</label><div class="bar"><i></i></div><span class="pass">200</span></div>
             <p class="muted" style="font-size:.72rem;">統合originは外部情報源に依存するため、結果を別枠で表示します。未検証: 実機での主観的な理解効果。</p>
-            <div class="command"><button class="copy-btn" data-copy="cd /home/handa/dialexis\n./verify.sh">コピー</button>cd /home/handa/dialexis
+            <div class="command"><button class="copy-btn" data-copy="cd $HOME/dialexis\n./verify.sh">コピー</button>cd $HOME/dialexis
 ./verify.sh</div>
           </article>
           <article class="card verify-card">
@@ -688,13 +688,13 @@
               <div class="deploy-step"><span class="num">5</span><div><strong>人間検証</strong><span>入口・Map・Menu・台帳・スマホを実操作</span></div></div>
             </div>
             <div class="chip-row"><span class="chip ok">rollback = revert</span><span class="chip warn">DB初期化で隠さない</span></div>
-            <div class="command"><button class="copy-btn" data-copy="ssh -i /home/handa/.ssh/dialexis_vps ubuntu@219.94.244.239 /opt/dialexis/deploy/vps_deploy.sh">コピー</button>ssh -i /home/handa/.ssh/dialexis_vps ubuntu@219.94.244.239 /opt/dialexis/deploy/vps_deploy.sh</div>
+            <div class="command"><button class="copy-btn" data-copy="ssh -i $HOME/.ssh/dialexis_vps ubuntu@219.94.244.239 /opt/dialexis/deploy/vps_deploy.sh">コピー</button>ssh -i $HOME/.ssh/dialexis_vps ubuntu@219.94.244.239 /opt/dialexis/deploy/vps_deploy.sh</div>
           </article>
         </div>
         <div class="card" style="padding:1rem; margin-top:.8rem;">
           <h3>公開面の注意</h3>
           <p class="muted" style="font-size:.8rem;">公開URLは現在、アカウントなしの共有検証環境です。SQLiteの研究データと台帳は共有面になるため、個人情報・秘密を入力しません。</p>
-          <div class="chip-row"><a class="chip" href="http://219.94.244.239:8000/validation" target="_blank" rel="noreferrer">公開第三者検証入口</a><a class="chip" href="http://219.94.244.239:8000/origin?q=Karl%20Marx&lang=ja" target="_blank" rel="noreferrer">公開意味Map</a><a class="chip" href="https://github.com/hand-shinya/dialexis" target="_blank" rel="noreferrer">GitHub</a></div>
+          <div class="chip-row"><a class="chip" href="http://219.94.244.239:8000/validation" target="_blank" rel="noreferrer">公開第三者検証入口</a><a class="chip" href="http://219.94.244.239:8000/origin?q=Karl%20Marx&lang=ja" target="_blank" rel="noreferrer">公開意味Map</a><a class="chip" href="https://github.com/<account>/dialexis" target="_blank" rel="noreferrer">GitHub</a></div>
         </div>
       </section>
 

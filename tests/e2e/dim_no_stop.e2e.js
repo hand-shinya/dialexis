@@ -3,7 +3,7 @@
 // 現在語×次元名を既存の組合せ探索(実データ)へ渡して同一操作内で実行し、履歴増分がちょうど1件であること
 // （一操作一commit＝gDimActが非同期をreturnしdispatchAが settle後に1回だけcommit）を検証する。
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const B = process.argv[2] || "http://127.0.0.1:8021";
 (async () => {
   const b = await chromium.launch({ executablePath: EXE, headless: true }); const p = await b.newPage();

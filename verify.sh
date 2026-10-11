@@ -9,9 +9,9 @@ cd "$(dirname "$0")"
 
 PORT="${DX_PORT:-8099}"
 BASE="http://127.0.0.1:${PORT}"
-export DX_CHROMIUM="${DX_CHROMIUM:-/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome}"
-export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-/home/handa/.claude/jobs/b4518c70/tmp/alsa_ext/ext/usr/lib/x86_64-linux-gnu}"
-export NODE_PATH="${NODE_PATH:-/home/handa/.npm/_npx/e41f203b7505f1fb/node_modules}"
+export DX_CHROMIUM="${DX_CHROMIUM:-$HOME/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome}"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-$HOME/.claude/jobs/b4518c70/tmp/alsa_ext/ext/usr/lib/x86_64-linux-gnu}"
+export NODE_PATH="${NODE_PATH:-$HOME/.npm/_npx/e41f203b7505f1fb/node_modules}"
 
 fail=0
 [ -d .venv ] && source .venv/bin/activate 2>/dev/null

@@ -15,7 +15,7 @@ import httpx
 from ..db import get_conn, now
 
 CONTACT = os.environ.get("DIALEXIS_CONTACT", "")
-REPO = "https://github.com/hand-shinya/dialexis"
+REPO = "https://github.com/<account>/dialexis"
 UA = f"Dialexis/0.1 (+{REPO}" + (f"; mailto:{CONTACT}" if CONTACT else "") + ")"
 DEFAULT_TTL = 3600  # seconds
 

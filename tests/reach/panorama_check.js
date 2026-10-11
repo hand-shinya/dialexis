@@ -9,7 +9,7 @@
 // クリックは必ず実マウス（page.mouse.click(x,y)）。element.click() / force click / DOM関数直呼びは使わない。
 // viewport は 幅1128 と 幅1920 の両方を必須gateにする。
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const B = process.argv[2] || "http://127.0.0.1:8060";
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const VIEWPORTS = (process.env.DX_VIEWPORTS || "1128x900,1920x1000")

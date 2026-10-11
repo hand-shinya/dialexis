@@ -2,7 +2,7 @@
 // 実クリックでDispatcherへ有効Actionが渡ることを検証。さらに全ノード/全辺メニューの「無作用0」を
 // registry突合で機械保証（クリック可能なのに作用しない項目が1つも無いこと）。fixtureで層1..4。
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const B = process.argv[2] || "http://127.0.0.1:8021";
 (async () => {
   const b = await chromium.launch({ executablePath: EXE, headless: true }); const p = await b.newPage();

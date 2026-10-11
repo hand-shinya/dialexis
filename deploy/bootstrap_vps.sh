@@ -2,11 +2,11 @@
 # Dialexis VPS bootstrap — Ubuntu Server 22.04/24.04 and Rocky/RHEL 9/10.
 # (tested target: Sakura VPS 2G, Ubuntu Server, Osaka #3)
 # Run as root on a fresh VPS:
-#   curl -sL https://raw.githubusercontent.com/hand-shinya/dialexis/main/deploy/bootstrap_vps.sh | sudo -E bash
+#   curl -sL https://raw.githubusercontent.com/<account>/dialexis/main/deploy/bootstrap_vps.sh | sudo -E bash
 # Idempotent: safe to re-run.
 set -euo pipefail
 
-REPO="https://github.com/hand-shinya/dialexis.git"
+REPO="https://github.com/<account>/dialexis.git"
 APP_DIR="/opt/dialexis"
 CONTACT="${DIALEXIS_CONTACT:-}"   # export DIALEXIS_CONTACT=you@example.com before running (recommended)
 

@@ -1,7 +1,7 @@
 # Dialexis 現状・完全再現・継続開発仕様書
 
 **スナップショット日時:** 2026-08-14（Asia/Tokyo）
-**対象:** /home/handa/dialexis
+**対象:** $HOME/dialexis
 **目的:** このファイルだけを受け取った、プロジェクトを一度も見たことのない人間またはAIが、Dialexisの目的・画面・データ契約・操作契約・障害時の振る舞い・再現手順・次の改良方針を推測なしで再構築できるようにする。
 **現行ブランチ:** main
 **HEAD:** 37e05e5 全景クリック契約の是正(所有者2026-08-02・preview)
@@ -122,7 +122,7 @@ Graph: Canvas自前描画。失敗時は表形式へ退化可能。
 ### 3.2 インストールと起動
 
 ~~~bash
-git clone https://github.com/hand-shinya/dialexis.git
+git clone https://github.com/<account>/dialexis.git
 cd dialexis
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
@@ -928,7 +928,7 @@ panorama_checkの内訳は、1128px/1920pxの各viewportで全Action列挙、実
 
 ~~~bash
 export DX_PORT=8099
-export DX_CHROMIUM=/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome
+export DX_CHROMIUM=$HOME/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome
 .venv/bin/python -m pytest -q
 ./verify.sh
 ~~~
@@ -1140,7 +1140,7 @@ universality_sweep.e2e.js   3/3 PASS
 実行例:
 
 ~~~bash
-LD_LIBRARY_PATH=/home/handa/pwlibs/usr/lib/x86_64-linux-gnu \
+LD_LIBRARY_PATH=$HOME/pwlibs/usr/lib/x86_64-linux-gnu \
   node tests/e2e/run_local.js tests/e2e/universality_sweep.e2e.js
 ~~~
 

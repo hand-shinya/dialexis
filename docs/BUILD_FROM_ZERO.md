@@ -12,7 +12,7 @@
 ## 1. 取得と起動（5分）
 
 ```bash
-git clone https://github.com/hand-shinya/dialexis.git
+git clone https://github.com/<account>/dialexis.git
 cd dialexis
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt

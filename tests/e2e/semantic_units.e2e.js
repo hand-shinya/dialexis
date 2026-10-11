@@ -1,6 +1,6 @@
 // 意味単位の実API形状と、解剖/意味Actionの表示優先順位を確認する。
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const BASE = process.argv[2] || "http://127.0.0.1:8815";
 
 const LAYERS = [

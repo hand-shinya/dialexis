@@ -1,7 +1,7 @@
 // 5.1 操作同値性: 同じ Action ID + 同じ target なら、どの表示面から実行しても、dispatch される
 // (actionId, target) が一致し、確定後 ViewState が等しい。実際に各面の要素をクリックして検証する。
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const B = process.argv[2] || "http://127.0.0.1:8021";
 (async () => {
   const b = await chromium.launch({ executablePath: EXE, headless: true }); const p = await b.newPage();

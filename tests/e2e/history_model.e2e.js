@@ -1,7 +1,7 @@
 // 5.4 履歴モデル: 固定操作列の各段の確定 ViewState を保存し、最後→開始へ戻り、開始→最後へ進み、
 // 各段の状態が保存値と一致することを検証。combine は決定論 fixture で mock（SearXNG非依存）。
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const B = process.argv[2] || "http://127.0.0.1:8021";
 const canon = (v) => JSON.stringify({ q: v.q, lens: v.lens, focus: v.focus, panel: v.panel, combine: v.combine });
 (async () => {

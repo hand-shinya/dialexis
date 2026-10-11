@@ -6,3 +6,4 @@ data/*.db-wal
 data/*.db-shm
 data/harvester_status.json
 .pytest_cache/
+_backups/

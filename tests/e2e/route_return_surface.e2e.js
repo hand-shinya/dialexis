@@ -4,7 +4,7 @@
 // 3) 翻訳・受容史の「保存→台帳を開く」から戻った時、Map/ViewStateを初期化しない
 // 外部情報はfixtureに固定し、UIの帰路契約だけを検証する。
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const B = process.argv[2] || "http://127.0.0.1:8831";
 
 const graph = { query: "弁証法", nodes: [

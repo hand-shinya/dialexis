@@ -3,7 +3,7 @@
 // 条件・理由・同条件の外部検索・再試行を同じAction面に残す。
 // メニュー選択は実マウス操作（DOMの element.click() は使わない）。
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const BASE = process.argv[2] || "http://127.0.0.1:8143";
 
 (async () => {

@@ -18,8 +18,8 @@ Dialexis_再現継承ガイド、2026-08-11の全景クリック検証資料を�
 
 | 項目 | 現在値 |
 |---|---|
-| 開発リポジトリ | /home/handa/dialexis |
-| GitHub | https://github.com/hand-shinya/dialexis |
+| 開発リポジトリ | $HOME/dialexis |
+| GitHub | https://github.com/<account>/dialexis |
 | ブランチ | main |
 | 前回公開反映済みの製品コードHEAD | 2a418f1（公開コード本体: 7cca756、検証マーカー: 7cca756） |
 | 現在のローカルHEAD | `git rev-parse HEAD`で確認。固定値ではなく、直近の検証マーカーを正本とする |
@@ -423,14 +423,14 @@ source-grounding、埋没の明示、語と著者の分離、実ブラウザ検�
 
 ## 3. 場所と文書の関係
 
-コードのGit正本は /home/handa/dialexis。ユーザーの指示・背景・引継ぎ資料は
+コードのGit正本は $HOME/dialexis。ユーザーの指示・背景・引継ぎ資料は
 I:\GoogleDriveMirror\MyKnowledgeBase\Main\論考\哲学DESK にある。
 WSLでは /mnt/i/GoogleDriveMirror/MyKnowledgeBase/Main/論考/哲学DESK。
 
 本書は同じ内容を次の二か所に配置する。
 
 ~~~text
-/home/handa/dialexis/DIALEXIS_PROJECT_MASTER_HANDOFF_20260816.md
+$HOME/dialexis/DIALEXIS_PROJECT_MASTER_HANDOFF_20260816.md
 /mnt/i/GoogleDriveMirror/MyKnowledgeBase/Main/論考/哲学DESK/DIALEXIS_PROJECT_MASTER_HANDOFF_20260816.md
 ~~~
 
@@ -495,7 +495,7 @@ npm、webpack、React、外部DB、必須LLMキーを追加してはならない
 ### 4.2 起動
 
 ~~~bash
-git clone https://github.com/hand-shinya/dialexis.git
+git clone https://github.com/<account>/dialexis.git
 cd dialexis
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
@@ -513,7 +513,7 @@ http://127.0.0.1:8000 を開く。APIキー無しで探索、原語、Map、
 | DIALEXIS_CONTACT | 外部API用User-Agent連絡先 | 空 |
 | SEARXNG_URL | 組み合わせの主検索源 | http://127.0.0.1:8888 |
 | DX_PORT | verify/run_localのポート | verify=8099、run_local=8815 |
-| DX_CHROMIUM | Chromium実体 | /home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome |
+| DX_CHROMIUM | Chromium実体 | $HOME/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome |
 | NODE_PATH | playwright-coreの解決先 | 現環境のnpxキャッシュ |
 | LD_LIBRARY_PATH | Chromium補助ライブラリ | 現環境のalsa展開先 |
 
@@ -524,10 +524,10 @@ http://127.0.0.1:8000 を開く。APIキー無しで探索、原語、Map、
 製品自体はNode不要だが、E2Eはplaywright-coreとChromiumが必要。
 
 ~~~bash
-cd /home/handa/dialexis
-export DX_CHROMIUM=/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome
-export NODE_PATH=/home/handa/.npm/_npx/e41f203b7505f1fb/node_modules
-export LD_LIBRARY_PATH=/home/handa/.claude/jobs/b4518c70/tmp/alsa_ext/ext/usr/lib/x86_64-linux-gnu
+cd $HOME/dialexis
+export DX_CHROMIUM=$HOME/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome
+export NODE_PATH=$HOME/.npm/_npx/e41f203b7505f1fb/node_modules
+export LD_LIBRARY_PATH=$HOME/.claude/jobs/b4518c70/tmp/alsa_ext/ext/usr/lib/x86_64-linux-gnu
 node tests/e2e/run_local.js tests/e2e/semantic_units.e2e.js
 ~~~
 
@@ -1067,7 +1067,7 @@ fa6478d、4f0ef98、439e367で検証マーカー、公開確認、最終反映�
 ### 11.1 公式コマンド
 
 ~~~bash
-cd /home/handa/dialexis
+cd $HOME/dialexis
 ./verify.sh
 ~~~
 
@@ -1178,7 +1178,7 @@ node tests/e2e/run_local.js tests/e2e/graph_ux.e2e.js
 ### 12.1 正規デプロイ
 
 ~~~bash
-ssh -i /home/handa/.ssh/dialexis_vps ubuntu@219.94.244.239 \
+ssh -i $HOME/.ssh/dialexis_vps ubuntu@219.94.244.239 \
   /opt/dialexis/deploy/vps_deploy.sh
 ~~~
 
@@ -1516,7 +1516,7 @@ UIで確認できる失敗原因と修正は次の通り。
 バックアップ、可逆的なコード修正、検証済みデプロイはこの引継ぎの範囲で進める。
 
 ~~~bash
-cd /home/handa/dialexis
+cd $HOME/dialexis
 git status --short
 git log -5 --oneline --decorate
 cat deploy/verified_sha.txt

@@ -1,7 +1,7 @@
 // 5.3 failure injection: 主要API経路に timeout/abort/404/500/空/malformed/stale を注入し、
 // (a) 生エラーがユーザー向けDOMに出ない (b) 自動代替(続行フッター)が出る (c) menu shell と戻る/進むが壊れない。
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const B = process.argv[2] || "http://127.0.0.1:8021";
 // 生エラー/技術文が本文に出ていないことの検査語
 const RAWERR = ["Error", "error", "TypeError", "fetch", "undefined", "500", "404", "abort", "timeout", "NetworkError", "JSON", "stack", "e.message", "Failed to"];

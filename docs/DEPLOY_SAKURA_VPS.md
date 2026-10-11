@@ -25,7 +25,7 @@ ssh ubuntu@219.94.244.239
 
 ```bash
 export DIALEXIS_CONTACT="あなたのメールアドレス"   # 無料API群への丁寧アクセス用（推奨）
-curl -sL https://raw.githubusercontent.com/hand-shinya/dialexis/main/deploy/bootstrap_vps.sh | sudo -E bash
+curl -sL https://raw.githubusercontent.com/<account>/dialexis/main/deploy/bootstrap_vps.sh | sudo -E bash
 ```
 
 bootstrap は次を自動実行する（再実行しても安全）：

@@ -42,7 +42,7 @@ Then deploy only the commit whose SHA was written to `deploy/verified_sha.txt`:
 
 ```bash
 git push origin main
-ssh -i /home/handa/.ssh/dialexis_vps ubuntu@219.94.244.239 /opt/dialexis/deploy/vps_deploy.sh
+ssh -i $HOME/.ssh/dialexis_vps ubuntu@219.94.244.239 /opt/dialexis/deploy/vps_deploy.sh
 ```
 
 After deployment, verify `/healthz`, `/validation?lang=ja`, `/robots.txt`, `/sitemap.xml`, Karl Marx, the person relation panel, Communist Manifesto lineage, combine, ledger return, and the narrow-screen scenario.

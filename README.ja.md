@@ -15,7 +15,7 @@ Dialexisは、哲学的な問いを持つあらゆる人——小学生から専
 ## クイックスタート
 
 ```bash
-git clone https://github.com/hand-shinya/dialexis.git
+git clone https://github.com/<account>/dialexis.git
 cd dialexis
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/uvicorn app.main:app --port 8000

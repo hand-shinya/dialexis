@@ -30,7 +30,7 @@ philosophy Wikipedia, a scholar search engine, or a chatbot. It offers:
 ## Quick start
 
 ```bash
-git clone https://github.com/hand-shinya/dialexis.git
+git clone https://github.com/<account>/dialexis.git
 cd dialexis
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/uvicorn app.main:app --port 8000

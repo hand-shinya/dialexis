@@ -11,7 +11,7 @@
    viewport は 幅1128 と 幅1920 の両方を必須gate（DX_VIEWPORTS で 1280x720 等を追加できる）。
    DX_FULL=1 で stable ID による循環停止を無効化し、全DOM instanceを個別に押す。 */
 const { chromium } = require("playwright-core");
-const EXE = process.env.DX_CHROMIUM || "/home/handa/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome";
+const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const B = process.argv[2] || "http://127.0.0.1:8060";
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const VIEWPORTS = (process.env.DX_VIEWPORTS || "1128x900,1920x1000")

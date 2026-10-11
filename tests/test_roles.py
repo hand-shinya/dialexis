@@ -44,7 +44,17 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 # 符号位置から組む。source に読める形で名前を置かない。
 NAME = chr(0x534A) + chr(0x7530)                       # 姓
 GIVEN = chr(0x4FE1) + chr(0x5F25)                      # 名の表記候補
+# 2026-10-11: romaji を見ていなかった。追跡file 53本に在り、/source の配布物に
+# そのまま入っていた（本番から取得して中身を開いて確認）。
+# 「配信される中身に名前が無い」という報告は、日本語表記についてのみ正しかった。
+ROMAJI = ("".join(map(chr, (104, 97, 110, 100, 97))),          # 姓のromaji
+          "".join(map(chr, (115, 104, 105, 110, 121, 97))))   # 名のromaji
 FORBIDDEN = (NAME, NAME + chr(0x6A23), GIVEN)
+
+
+def hits_romaji(text):
+    low = text.lower()
+    return [r for r in ROMAJI if r in low]
 
 # 利用者が browser で取得できるもの。配信されるなら中身は全部読める。
 SERVED = ["/static/app.js", "/static/style.css", "/static/favicon.svg",
@@ -64,7 +74,8 @@ def client():
 
 
 def hits(text):
-    return [f for f in FORBIDDEN if f in text]
+    """日本語表記と romaji の両方を見る。romaji を忘れて1度漏らした。"""
+    return [f for f in FORBIDDEN if f in text] + hits_romaji(text)
 
 
 # ===========================================================================
