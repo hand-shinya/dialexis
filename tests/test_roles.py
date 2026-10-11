@@ -43,13 +43,19 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 # 符号位置から組む。source に読める形で名前を置かない。
 NAME = chr(0x534A) + chr(0x7530)                       # 姓
-GIVEN = chr(0x4FE1) + chr(0x5F25)                      # 名の表記候補
+# 名の表記。2026-10-11 まで、ここに**私が romaji から推測した表記**を書いていた。
+# 実在したのは別の表記で（GENESIS.md:144）、一致しなかったため、
+# 「配信される中身に名前が無い」という2度の報告は、名の表記については
+# 一度も検査されていなかった。関門が照合する対象を推測で決めれば、
+# 関門は推測しか守らない。実在した表記を加え、推測した表記も残して両方を拒む。
+GIVEN = chr(0x664B) + chr(0x4E5F)                      # 実在した表記
+GIVEN_GUESSED = chr(0x4FE1) + chr(0x5F25)              # 以前の推測（残して拒む）
 # 2026-10-11: romaji を見ていなかった。追跡file 53本に在り、/source の配布物に
 # そのまま入っていた（本番から取得して中身を開いて確認）。
 # 「配信される中身に名前が無い」という報告は、日本語表記についてのみ正しかった。
 ROMAJI = ("".join(map(chr, (104, 97, 110, 100, 97))),          # 姓のromaji
           "".join(map(chr, (115, 104, 105, 110, 121, 97))))   # 名のromaji
-FORBIDDEN = (NAME, NAME + chr(0x6A23), GIVEN)
+FORBIDDEN = (NAME, NAME + chr(0x6A23), GIVEN, GIVEN_GUESSED)
 
 
 def hits_romaji(text):
