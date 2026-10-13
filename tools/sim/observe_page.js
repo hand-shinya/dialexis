@@ -50,7 +50,18 @@ const pageObserve = () => {
       if (G && G.nodes && cv && vis(cv)) { const cr = cv.getBoundingClientRect();
         nodes = G.nodes.map(n => window.__dx.nodeClientXY(n.id)).filter(p => p && p.x >= cr.left && p.x <= cr.right && p.y >= cr.top && p.y <= cr.bottom)
           .slice(0, 30).map(p => ({ label: (p.label.length > 22 ? p.label.slice(0, 21) + "…" : p.label), x: p.x, y: p.y })); } } catch (e) {}
-    const text = (document.body.innerText || "").replace(/\n{3,}/g, "\n\n");
+    // 文も可視判定を通す（2026-10-13・回帰調査の指摘 D）。body.innerText はパネルの下に隠れた文まで含み、
+    // 「画面に見えている文」という見出しと中身が食い違っていた。直に文字を持つ要素ごとに同じ判定を掛ける。
+    const seenText = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let lastEl = null, lastOk = false;
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const t = n.nodeValue.replace(/\s+/g, " ").trim(); if (!t) continue;
+      const el = n.parentElement; if (!el || /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(el.tagName)) continue;
+      if (el !== lastEl) { lastEl = el; lastOk = vis(el); }
+      if (lastOk) seenText.push(t);
+    }
+    const text = seenText.join("\n");
     return { url: location.href, path: location.pathname + location.search, title: document.title, items, nodes, text,
       scrollY: Math.round(scrollY), docH: document.documentElement.scrollHeight, viewH: innerHeight };
   };

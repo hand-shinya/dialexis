@@ -29,6 +29,8 @@ function makeMask(reader) {
 }
 
 function typedAllowed(text, scripts) {
+  // □ はマスクの記号で、人が打つ字ではない（\p{S} に入るので punct が通していた）
+  if (text.includes("□")) return false;
   return [...text].every(c => readable(c, scripts));
 }
 

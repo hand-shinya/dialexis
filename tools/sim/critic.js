@@ -51,16 +51,19 @@ const PROMPT = `あなたはユーザビリティの監査者です。下は、�
 
 const files = fs.readdirSync(dir).filter(f => f.endsWith(".jsonl") && f !== "critic.jsonl").sort();
 const out = fs.openSync(path.join(dir, "critic.jsonl"), "a");
-const done = new Set(fs.existsSync(path.join(dir, "critic.jsonl")) ? fs.readFileSync(path.join(dir, "critic.jsonl"), "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l).run) : []);
+const done = new Set(fs.existsSync(path.join(dir, "critic.jsonl")) ? fs.readFileSync(path.join(dir, "critic.jsonl"), "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l)).filter(x => !x.error).map(x => x.run) : []);   // 失敗行は済みに数えず再試行する
 const cwd = path.join(require("os").tmpdir(), "dx-sim-critic"); fs.mkdirSync(cwd, { recursive: true });
 for (const f of files) {
   const run = f.replace(/\.jsonl$/, ""); if (done.has(run)) continue;
-  const ev = readTrace(path.join(dir, f)); const c = compact(ev);
+  const ev = readTrace(path.join(dir, f));
+  if (!ev.find(e => e.ev === "start")) { fs.writeSync(out, JSON.stringify({ run, error: "trace_without_start" }) + "\n"); continue; }
+  const c = compact(ev);
   const r = spawnSync("claude", ["-p", "--restricted", "--strict-mcp-config", "--no-session-persistence", "--tools", "",
     "--model", MODEL, "--output-format", "json", "--json-schema", JSON.stringify(SCHEMA)],
     { input: PROMPT + JSON.stringify(c, null, 1), cwd, encoding: "utf8", timeout: 300000, maxBuffer: 16 << 20 });
   let d; try { d = JSON.parse(r.stdout); } catch (e) { fs.writeSync(out, JSON.stringify({ run, error: (r.stderr || "").slice(0, 300) }) + "\n"); continue; }
-  const raw = (d.structured_output && d.structured_output.findings) || [];
+  if (d.is_error || !d.structured_output) { fs.writeSync(out, JSON.stringify({ run, error: "critic_no_structured_output" }) + "\n"); continue; }
+  const raw = d.structured_output.findings || [];
   // 引用の実在を機械で照合する。実在しない引用の所見は捨て、捨てた数を残す
   const kept = [], dropped = [];
   for (const x of raw) {

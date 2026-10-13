@@ -37,11 +37,12 @@ function metrics(ev) {
   m.reached_query = acted.some(s => /[?&]q=[^&]/.test(s.to || ""));   // 空の q= は問いではない（smoke2 で誤計数）
   m.first_query_step = (acted.find(s => /[?&]q=[^&]/.test(s.to || "")) || {}).step || null;
   m.empty_label_clicks = acted.filter(s => s.desc === "「」を押した").length;
-  m.external = acted.reduce((a, s) => a + (s.popups || []).length, 0) + acted.filter(s => s.observed === "external_site" && !(s.popups || []).length).length;
+  const baseHost = (() => { try { return new URL(start.base).host; } catch (e) { return ""; } })();
+  m.external = acted.reduce((a, s) => a + (s.popups || []).filter(h => h !== baseHost).length, 0) + acted.filter(s => s.observed === "external_site" && !(s.popups || []).length).length;
   const net = acted.flatMap(s => s.net || []);
   m.api_calls = net.filter(n => n.p.startsWith("/api/")).length;
   m.api_errors = net.filter(n => n.p.startsWith("/api/") && (n.s >= 400 || n.s === 0)).length;   // s=0 は応答なしの失敗
-  m.record_writes = net.filter(n => ["POST", "PATCH", "PUT"].includes(n.m) && RECORD_RE.test(n.p) && n.s < 300).length;
+  m.record_writes = net.filter(n => ["POST", "PATCH", "PUT"].includes(n.m) && RECORD_RE.test(n.p) && n.s >= 200 && n.s < 300).length;   // s=0（応答なしの失敗）を成功に数えない
   m.page_errors = acted.reduce((a, s) => a + (s.page_errors || []).length, 0);
   const judged = acted.filter(s => !s.rejected && s.observed);
   m.pred_mismatch = judged.length ? +(judged.filter(s => s.expect !== s.observed).length / judged.length).toFixed(2) : null;
@@ -50,7 +51,7 @@ function metrics(ev) {
   let run = 0, maxRun = 0; const seenQ = new Set();
   for (const s of acted) {
     const q = (/[?&]q=([^&]+)/.exec(s.to || "") || [])[1];
-    const progressed = (q && !seenQ.has(q)) || (s.net || []).some(n => RECORD_RE.test(n.p) && n.m !== "GET" && n.s < 300);
+    const progressed = (q && !seenQ.has(q)) || (s.net || []).some(n => RECORD_RE.test(n.p) && n.m !== "GET" && n.s >= 200 && n.s < 300);
     if (q) seenQ.add(q);
     run = progressed ? 0 : run + 1; maxRun = Math.max(maxRun, run);
   }

@@ -40,6 +40,7 @@ const FIXTURE = `<!doctype html><meta charset=utf-8><body>
   for (const s of ["HIDDEN-IN-CLOSED-DETAILS", "HIDDEN-LINK-IN-DETAILS", "HIDDEN-DISPLAY-NONE", "HIDDEN-VISIBILITY", "HIDDEN-OPACITY", "HIDDEN-ZERO-HEIGHT", "HIDDEN-UNDER-PANEL", "HIDDEN-BELOW-UNDER-PANEL"])
     ok(`見えない物を返さない: ${s}`, !labels.includes(s));
   ok("画面の文に、閉じた details の中身が出ない", !/HIDDEN-LINK-IN-DETAILS/.test(o.text));
+  ok("画面の文に、パネルの下に隠れた文が出ない", !/HIDDEN-UNDER-PANEL/.test(o.text) && /SEEN-PANEL-CLOSE/.test(o.text));
   ok("下の方の物には印が付く", (o.items.find(x => x.label === "SEEN-BELOW-FOLD") || {}).below === true);
   // 語彙マスク
   const kyo = makeMask({ scripts: ["latin", "kana", "kanji_kyoiku", "digits", "punct"] });

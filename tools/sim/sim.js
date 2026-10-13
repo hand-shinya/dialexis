@@ -61,7 +61,11 @@ const SCHEMA = {
 
 // ---- 画面の観測（ブラウザ内で実行。可視判定は offsetHeight と bounding box） ----
 async function observe(page) {
-  const o = await page.evaluate(pageObserve);
+  let o;
+  for (let i = 0; ; i++) {
+    try { o = await page.evaluate(pageObserve); break; }
+    catch (e) { if (i >= 2) throw e; await page.waitForLoadState("domcontentloaded", { timeout: 10000 }).catch(() => {}); await settle(page); }
+  }
   o.textHash = crypto.createHash("md5").update(o.text).digest("hex");
   o.elemSig = crypto.createHash("md5").update(o.items.map(x => x.label).join("|")).digest("hex");
   return o;
@@ -101,7 +105,8 @@ const OBS_TEXT = {
 const F = FRAME[P.situation_lang] || FRAME.en, OT = OBS_TEXT[P.situation_lang] || OBS_TEXT.en;
 function render(o, history) {
   const L = [];
-  L.push(`${F.addr}: ${mask(decodeURIComponent(o.path)).slice(0, 120)}`);
+  let shown = o.path; try { shown = decodeURIComponent(o.path); } catch (e) {}
+  L.push(`${F.addr}: ${mask(shown).slice(0, 120)}`);
   L.push(`${F.title}: ${mask(o.title)}`);
   L.push(`--- ${F.text}（${o.scrollY > 0 ? F.scrolled : F.top}）---`);
   L.push(mask(o.text).slice(0, 1800));
@@ -147,7 +152,8 @@ function typo(s) {
 }
 
 function classify(before, after, popupHosts) {
-  if (popupHosts.some(h => h !== host) || new URL(after.url).host !== host) return "external_site";
+  let afterHost = host; try { afterHost = new URL(after.url).host; } catch (e) {}
+  if (popupHosts.some(x => x.host !== host) || afterHost !== host) return "external_site";
   if (before.path !== after.path) return "new_page";
   if (before.textHash === after.textHash && before.elemSig === after.elemSig && before.scrollY === after.scrollY) return "nothing_changes";
   if (after.items.length > before.items.length && Math.abs(after.text.length - before.text.length) < 400) return "menu_or_panel_opens";
@@ -172,9 +178,15 @@ function classify(before, after, popupHosts) {
   const pageErrors = []; page.on("pageerror", e => pageErrors.push(String(e).slice(0, 200)));
   // 別タブ: 開いた瞬間に数え、host は読み込み後に確定する（分類が host 確定を待てるように）
   let popupHosts = [], popupOpened = 0;
-  ctx.on("page", async (pg) => { if (pg === page) return; popupOpened++;
+  // 2026-10-13 修正: 空の URL で new URL が投げ、未処理の例外で走行全体が落ちていた（本走A3で1本）。
+  // 開いた手の番号を札として持たせ、遅れて確定した別タブが次の手に数えられないようにする。
+  let curStep = 0;
+  ctx.on("page", async (pg) => { if (pg === page) return; const st = curStep; popupOpened++;
     try { await pg.waitForURL(u => !String(u).startsWith("about:"), { timeout: 8000 }); } catch (e) {}
-    popupHosts.push(new URL(pg.url()).host); rec({ ev: "popup", url: pg.url() }); await pg.close().catch(() => {}); });
+    let url = "", h = "invalid"; try { url = pg.url(); h = new URL(url).host; } catch (e) {}
+    rec({ ev: "popup", step: st, url, host: h });
+    if (st === curStep) popupHosts.push({ host: h, url });
+    await pg.close().catch(() => {}); });
 
   rec({ ev: "start", run: runId, persona: P.id, group: P.group, seed: SEED, concept, condition: COND, base: BASE, model: MODEL, mutate: process.env.SIM_MUTATE || null,
         scenario_sha256: crypto.createHash("sha256").update(scenRaw).digest("hex"), max_steps: P.max_steps });
@@ -188,7 +200,7 @@ function classify(before, after, popupHosts) {
     const a = callActor(actorPrompt(view, step));
     if (!a.ok) { rec({ ev: "actor_error", step, ...a }); end = "actor_error"; break; }
     const act = a.out.action || {}; let desc = "", adesc = "", rejected = null;
-    popupHosts = []; popupOpened = 0; net.length = 0; const ts = Date.now();
+    curStep = step; popupHosts = []; popupOpened = 0; net.length = 0; const ts = Date.now();
     try {
       if (act.kind === "stop") { rec({ ev: "step", step, view_chars: view.length, actor: a.out, actor_ms: a.ms, model: a.model }); end = "stop:" + (act.stop_reason || "unspecified"); break; }
       if (act.kind === "click") {
@@ -215,7 +227,10 @@ function classify(before, after, popupHosts) {
       else rejected = "unknown_kind";
     } catch (e) { rejected = "action_failed:" + String(e).split("\n")[0].slice(0, 120); }
     if (!rejected) { await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {}); await settle(page);
-      for (let i = 0; i < 40 && popupHosts.length < popupOpened; i++) await page.waitForTimeout(200); }
+      for (let i = 0; i < 40 && popupHosts.length < popupOpened; i++) await page.waitForTimeout(200);
+      // 同じサイトの新しいタブ（例 /origin?q=… を _blank で開く）は、人ならそのタブへ移って読む
+      const same = popupHosts.find(x => x.host === host);
+      if (same) { await page.goto(same.url, { waitUntil: "networkidle", timeout: 30000 }).catch(() => {}); await settle(page); } }
     const after = await observe(page);
     const observed = rejected ? "rejected" : classify(before, after, popupHosts);
     history.push({ step, adesc: adesc || `${act.kind} ${act.id ?? ""}`, aobs: rejected ? `${OT.rejected} (${rejected})` : OT[observed] });
@@ -223,7 +238,7 @@ function classify(before, after, popupHosts) {
           rejected, desc, expect: a.out.expect, observed, act_ms: Date.now() - ts,
           from: before.path, to: after.path, n_items: after.items.length, n_nodes: after.nodes.length,
           text_len: after.text.length, masked_ratio: (mask(after.text).match(/□/g) || []).length / Math.max(1, after.text.length),
-          net: net.slice(), popups: popupHosts.slice(), page_errors: pageErrors.splice(0) });
+          net: net.slice(), popups: popupHosts.map(x => x.host), page_errors: pageErrors.splice(0) });
   }
   rec({ ev: "end", end, wall_ms: Date.now() - t0 });
   fs.closeSync(T);
