@@ -1,0 +1,46 @@
+{
+ "concept_pool": [
+  "Q11471",
+  "Q8",
+  "Q450",
+  "Q4",
+  "Q491",
+  "Q7949",
+  "Q157811",
+  "Q878070"
+ ],
+ "group": "nonja",
+ "id": "ho-nonja-sw",
+ "input_langs": [
+  "sw"
+ ],
+ "max_steps": 15,
+ "reader": {
+  "scripts": [
+   "latin",
+   "digits",
+   "punct"
+  ]
+ },
+ "situation": {
+  "Q11471": "Your first language is Swahili. You know this idea as \"wakati\". You read some English but no Japanese.",
+  "Q157811": "Your first language is Swahili. You know this idea as \"adili\". You read some English but no Japanese.",
+  "Q4": "Your first language is Swahili. You know this idea as \"Mauti\". You read some English but no Japanese.",
+  "Q450": "Your first language is Swahili. You know this idea as \"Akili ya binadamu\". You read some English but no Japanese.",
+  "Q491": "Your first language is Swahili. You know this idea as \"rafiki\". You read some English but no Japanese.",
+  "Q7949": "Your first language is Swahili. You know this idea as \"ukweli\". You read some English but no Japanese.",
+  "Q8": "Your first language is Swahili. You know this idea as \"furaha\". You read some English but no Japanese.",
+  "Q878070": "Your first language is Swahili. You know this idea as \"Wajibu\". You read some English but no Japanese."
+ },
+ "situation_lang": "en",
+ "writer": {
+  "can_type": true,
+  "max_len": 40,
+  "scripts": [
+   "latin",
+   "digits",
+   "punct"
+  ],
+  "typo_rate": 0.0
+ }
+}

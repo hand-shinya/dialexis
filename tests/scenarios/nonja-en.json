@@ -1,0 +1,54 @@
+{
+ "concept_pool": [
+  "Q11471",
+  "Q1274115",
+  "Q8",
+  "Q450",
+  "Q4",
+  "Q491",
+  "Q2979",
+  "Q7949",
+  "Q157811",
+  "Q545825",
+  "Q546054",
+  "Q878070"
+ ],
+ "group": "nonja",
+ "id": "nonja-en",
+ "input_langs": [
+  "en"
+ ],
+ "max_steps": 15,
+ "reader": {
+  "scripts": [
+   "latin",
+   "digits",
+   "punct"
+  ]
+ },
+ "situation": {
+  "Q11471": "You keep thinking about the word \"time\" and want to see how other languages and traditions understand it. You cannot read Japanese.",
+  "Q1274115": "You keep thinking about the word \"responsibility\" and want to see how other languages and traditions understand it. You cannot read Japanese.",
+  "Q157811": "You keep thinking about the word \"virtue\" and want to see how other languages and traditions understand it. You cannot read Japanese.",
+  "Q2979": "You keep thinking about the word \"liberty\" and want to see how other languages and traditions understand it. You cannot read Japanese.",
+  "Q4": "You keep thinking about the word \"death\" and want to see how other languages and traditions understand it. You cannot read Japanese.",
+  "Q450": "You keep thinking about the word \"mind\" and want to see how other languages and traditions understand it. You cannot read Japanese.",
+  "Q491": "You keep thinking about the word \"friendship\" and want to see how other languages and traditions understand it. You cannot read Japanese.",
+  "Q545825": "You keep thinking about the word \"social alienation\" and want to see how other languages and traditions understand it. You cannot read Japanese.",
+  "Q546054": "You keep thinking about the word \"Śūnyatā\" and want to see how other languages and traditions understand it. You cannot read Japanese.",
+  "Q7949": "You keep thinking about the word \"truth\" and want to see how other languages and traditions understand it. You cannot read Japanese.",
+  "Q8": "You keep thinking about the word \"happiness\" and want to see how other languages and traditions understand it. You cannot read Japanese.",
+  "Q878070": "You keep thinking about the word \"duty\" and want to see how other languages and traditions understand it. You cannot read Japanese."
+ },
+ "situation_lang": "en",
+ "writer": {
+  "can_type": true,
+  "max_len": 60,
+  "scripts": [
+   "latin",
+   "digits",
+   "punct"
+  ],
+  "typo_rate": 0.0
+ }
+}

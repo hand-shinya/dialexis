@@ -1,0 +1,46 @@
+{
+ "concept_pool": [
+  "Q11471",
+  "Q8",
+  "Q4",
+  "Q491",
+  "Q2979",
+  "Q7949",
+  "Q157811"
+ ],
+ "group": "nonja",
+ "id": "nonja-ka",
+ "input_langs": [
+  "ka"
+ ],
+ "max_steps": 15,
+ "reader": {
+  "scripts": [
+   "latin",
+   "georgian",
+   "digits",
+   "punct"
+  ]
+ },
+ "situation": {
+  "Q11471": "Your first language is Georgian. You know this idea as \"დრო\". You read some English but no Japanese. You want to see how others have thought about it.",
+  "Q157811": "Your first language is Georgian. You know this idea as \"სათნოება\". You read some English but no Japanese. You want to see how others have thought about it.",
+  "Q2979": "Your first language is Georgian. You know this idea as \"თავისუფლება\". You read some English but no Japanese. You want to see how others have thought about it.",
+  "Q4": "Your first language is Georgian. You know this idea as \"სიკვდილი\". You read some English but no Japanese. You want to see how others have thought about it.",
+  "Q491": "Your first language is Georgian. You know this idea as \"მეგობრობა\". You read some English but no Japanese. You want to see how others have thought about it.",
+  "Q7949": "Your first language is Georgian. You know this idea as \"ჭეშმარიტება\". You read some English but no Japanese. You want to see how others have thought about it.",
+  "Q8": "Your first language is Georgian. You know this idea as \"ბედნიერება\". You read some English but no Japanese. You want to see how others have thought about it."
+ },
+ "situation_lang": "en",
+ "writer": {
+  "can_type": true,
+  "max_len": 40,
+  "scripts": [
+   "latin",
+   "georgian",
+   "digits",
+   "punct"
+  ],
+  "typo_rate": 0.0
+ }
+}

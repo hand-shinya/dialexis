@@ -7,3 +7,4 @@ data/*.db-shm
 data/harvester_status.json
 .pytest_cache/
 _backups/
+sim_runs/

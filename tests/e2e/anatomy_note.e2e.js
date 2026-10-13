@@ -66,9 +66,13 @@ async function panel(p, payload, lang) {
   await p.evaluate(t => gAnatomyPanel(t), payload.term);
   await p.waitForTimeout(900);
   // 見えているか（offsetHeight>0）まで測る。display:none は文字列検査では捕まらない。
+  // 2026-10-13: offsetHeight>0 だけでは閉じた <details> の中身も「見える」になる
+  // （Chromium は描かずに寸法を持たせる。tools/sim/selftest.js で実測）。checkVisibility を併せて見る。
   return await p.evaluate(() => {
+    const seen = e => e.offsetHeight > 0
+      && (!e.checkVisibility || e.checkVisibility({ contentVisibilityAuto: true, opacityProperty: true, visibilityProperty: true }));
     const vis = sel => [...document.querySelectorAll(sel)]
-      .filter(e => e.offsetHeight > 0 && (e.textContent || "").trim().length > 0)
+      .filter(e => seen(e) && (e.textContent || "").trim().length > 0)
       .map(e => (e.textContent || "").trim());
     return { note: vis(".anat-compnote"), inunit: vis(".anat-inunit"),
              body: ((document.querySelector("#graph-panel .gp-body") || {}).textContent || "").trim() };
