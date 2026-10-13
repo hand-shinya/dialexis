@@ -42,10 +42,21 @@ def parse_etymology(text):
     for lang, term, inside in re.findall(r"from ([A-Z][a-z]+(?: [A-Z][a-z]+)*) ([^\s,(]+)\s*(?:\(([^)]*)\))?", seg):
         chain.append({"lang": lang.strip(), "term": term.strip(" .,"), "gloss": _gloss(inside)})
     comps = []
-    cm = re.search(r"([^\s]+\s*\([^)]*[“\"][^”\"]+[”\"][^)]*\)(?:\s*\+\s*[^\s]+\s*\([^)]*\))+)", seg)
+    # 2026-10-13: 構成（A + B + C）を取る。旧版は全部分に（“意味”）が付く形しか取れず、
+    # 「ver- +‎ Antwort (“answer”) +‎ -ung」（Verantwortung）のように意味の無い接辞が入ると全体を落としていた。
+    # さらに Wiktionary は「+」の後に U+200E（左右制御文字）を置き、\s に一致しない。
+    # 独・羅・英 37語で構成を取れたのは2語だった（sim_runs/_mut/etym_before.json）。
+    # 意味の無い部分は meaning を空のまま返す（捏造しない・P6）。
+    seg_c = re.sub("[\u200e\u200f]", "", seg)
+    # 言語名の並び（Middle English・Proto-Indo-European 等）は部分ではない。duty の
+    # 「Middle English dewe + Middle English -te」で Middle を部分に取っていた。
+    seg_c = re.sub(r"\b[A-Z][A-Za-z]+(?:[\s\-]+[A-Z][A-Za-z]+)*\b\s*",
+                   lambda m: "" if _is_langname(m.group(0)) else m.group(0), seg_c)
+    tok = r"[^\s+(),.;:“”\"]+"
+    cm = re.search(r"(" + tok + r"(?:\s*\([^)]*\))?(?:\s*\+\s*" + tok + r"(?:\s*\([^)]*\))?)+)", seg_c)
     if cm:
-        for term, inside in re.findall(r"([^\s+]+)\s*\(([^)]*)\)", cm.group(1)):
-            comps.append({"part": term.strip(), "meaning": _gloss(inside) or inside.strip()[:40]})
+        for term, inside in re.findall(r"(" + tok + r")(?:\s*\(([^)]*)\))?", cm.group(1)):
+            comps.append({"part": term.strip(), "meaning": (_gloss(inside) or inside.strip()[:40]) if inside else ""})
     return {"summary": re.sub(r"\s+", " ", seg).strip()[:400], "chain": chain[:6], "components": comps[:6]}
 
 
@@ -373,9 +384,14 @@ async def _deepen_chain(r, max_hops=6):
         if not text:
             break
         sub = parse_etymology(text)
-        if sub.get("components"):
+        # 意味の付いた部分が1つも無い構成（dialecticus + -ē のような接尾辞付加）は根の構成要素ではない。
+        # ここで止めると Dialektik が dia+legein まで届かない（所有者指摘「どの言語形からも同じ深さ」）。
+        # 深く辿れなかったときの控えとしてだけ持つ。
+        if sub.get("components") and any(c.get("meaning") for c in sub["components"]):
             r["components"] = sub["components"]
             break
+        if sub.get("components") and not r.get("_shallow"):
+            r["_shallow"] = sub["components"]
         nxt = None
         for c in sub.get("chain", []):                 # 清潔な der/inh 連鎖を優先
             t = _strip_len_marks(c.get("term") or "")  # 表示・クリックとも計量記号を外した実在形へ
@@ -393,7 +409,11 @@ async def _deepen_chain(r, max_hops=6):
 async def anatomy(word, orig_terms, lang="ja"):
     """候補の原語（英/羅/独/希ラベル、無ければ入力語）を順に試し、語源が取れた最初のものを解剖。
     アルファベット語で取れない場合は、CJK 語なら構成文字へ分解して解剖する（矛盾＝矛＋盾・普遍化）。"""
-    for term in [t for t in orig_terms if t] + [word]:
+    # 入力がラテン文字などの原語なら、まずその語自身の項を試す。訳語（英語等）を先に試すと、
+    # Verantwortung を入れて英語 responsibility の来歴が返っていた（P1 無中心: 特定言語を経由させない）。
+    own_first = bool(word and re.search(r"[A-Za-zΑ-Ωα-ωÀ-ÿ]", word))
+    order = ([word] if own_first else []) + [t for t in orig_terms if t and t != word] + ([] if own_first else [word])
+    for term in order:
         if not term or not re.search(r"[A-Za-zΑ-Ωα-ωÀ-ÿ]", term):
             continue
         text = await _extract(term)
@@ -403,6 +423,9 @@ async def anatomy(word, orig_terms, lang="ja"):
                 r["term"] = term
                 r["wiktionary_url"] = f"https://en.wiktionary.org/wiki/{term}"
                 await _deepen_chain(r)   # 連鎖を最古層まで辿り、根の構成要素まで到達＝どの言語形から入っても同じ深さ（統一）
+                shallow = r.pop("_shallow", None)
+                if not r.get("components") and shallow:
+                    r["components"] = shallow
                 r["segment_layers"] = _semantic_layers(term, components=r.get("components"))
                 r.setdefault("components_note", "")   # 契約: どの経路でもキーが在る
                 r.setdefault("components_note_parts", {})

@@ -1737,7 +1737,7 @@ function altFromOrigin(o, word) {
 function altFromAnatomy(a, word) {
   const jp = LANG === "ja"; let h = ""; if (!a || !a.term) return "";
   h += segmentLayersHtml(a.segment_layers, { includeCharacter: false });
-  if ((a.components || []).length) h += _compNote(a) + `<div class="anat-comp">` + a.components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}${_compInUnit(c)}</span>`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
+  if ((a.components || []).length) h += _compNote(a) + `<div class="anat-comp">` + a.components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>${c.meaning ? "＝" + esc(c.meaning) : ""}${_compInUnit(c)}</span>`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
   if ((a.chain || []).length) h += `<div class="chain">` + a.chain.map(c => `<span class="chain-step"><span class="chain-lang">${esc(c.lang)}</span><a href="#" class="ext-term chain-form" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `<span class="anat-gloss">「${esc(c.gloss)}」</span>` : ""}</span>`).join("<span class=\"chain-arrow\">←</span>") + `</div>`;
   if (a.summary) h += `<p class="anat-summary">${esc(a.summary.length > 300 ? a.summary.slice(0, 300) + "…" : a.summary)}</p>`;
   return h;
@@ -3297,7 +3297,7 @@ async function gAnatomyPanel(word) {
   h += segmentLayersHtml(d.segment_layers, { includeWhole: true, includeCharacter: false });
   if (components.length) {
     const hasChars = (d.segment_layers || []).some(x => x && x.level === "character");
-    const comp = _compNote(d) + components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}${_compInUnit(c)}</span>`).join(`<span class="anat-plus">＋</span>`);
+    const comp = _compNote(d) + components.map(c => `<span class="anat-part"><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>${c.meaning ? "＝" + esc(c.meaning) : ""}${_compInUnit(c)}</span>`).join(`<span class="anat-plus">＋</span>`);
     h += hasChars
       ? `<details class="segment-secondary"><summary>${jp ? "文字辞書義（補助）を開く" : "Open character glosses (secondary)"}</summary><p class="segment-note">${jp ? "意味のまとまりを確認した後に、各文字の辞書義を補助情報として参照できます。" : "Refer to character dictionary glosses after reading the meaningful units."}</p><div class="anat-comp">${comp}</div></details>`
       : `<h4 class="gp-h">${jp ? "語源的な構成要素（クリックで探索）" : "Components"}</h4><div class="anat-comp">${comp}</div>`;
@@ -3332,7 +3332,7 @@ async function gContrastPanel(word) {
   const jaMean = (o.general_meaning || []).map(s => `<li>${esc(s.length > 200 ? s.slice(0, 200) + "…" : s)}</li>`).join("") || `<li class="muted">—</li>`;
   const cw = o.collapse_warning;
   const jaCollapse = cw && cw.lemmas && cw.lemmas.length ? `<p class="srcline">${jp ? "※この一語に埋没した原語（クリックで探索）：" : "collapsed: "}${cw.lemmas.map(l => `<a href="#" class="ext-term" data-w="${esc(l.lemma)}">${esc(l.lemma)}</a>`).join("・")}</p>` : "";
-  const comps = (Array.isArray(a.components) ? a.components : []).map(c => `<li><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>＝${esc(c.meaning)}${_compInUnit(c)}</li>`).join("");
+  const comps = (Array.isArray(a.components) ? a.components : []).map(c => `<li><a href="#" class="ext-term" data-w="${esc(c.part)}" lang="grc">${esc(c.part)}</a>${c.meaning ? "＝" + esc(c.meaning) : ""}${_compInUnit(c)}</li>`).join("");
   const chain = (Array.isArray(a.chain) ? a.chain : []).map(c => `<li>${esc(c.lang)}：<a href="#" class="ext-term" data-w="${esc(c.term)}">${esc(c.term)}</a>${c.gloss ? `「${esc(c.gloss)}」` : ""}</li>`).join("");
   const semantic = segmentLayersHtml(a.segment_layers, { includeWhole: false, includeCharacter: false });
   const origHtml = (semantic || comps || chain)
