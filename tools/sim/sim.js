@@ -48,7 +48,9 @@ const SCHEMA = {
   type: "object", additionalProperties: false,
   required: ["note_now", "expect", "action"],
   properties: {
-    note_now: { type: "string", description: "この瞬間に考えていること（80字以内）" },
+    // 2026-10-14: 「この瞬間に考えていること」は Sonnet 5.5 の安全機構に reasoning_extraction として拒否された（12本すべて）。
+    // 求めているのは推論の開示でなく、この手の目的の表明である。
+    note_now: { type: "string", description: "この手で何を確かめたいか（80字以内）" },
     expect: { type: "string", enum: ["new_page", "more_on_same_page", "menu_or_panel_opens", "external_site", "nothing_changes"] },
     action: {
       type: "object", additionalProperties: false, required: ["kind"],
@@ -194,7 +196,8 @@ function classify(before, after, popupHosts) {
     await pg.close().catch(() => {}); });
 
   rec({ ev: "start", run: runId, persona: P.id, group: P.group, seed: SEED, concept, condition: COND, base: BASE, model: MODEL, mutate: process.env.SIM_MUTATE || null,
-        scenario_sha256: crypto.createHash("sha256").update(scenRaw).digest("hex"), max_steps: P.max_steps });
+        scenario_sha256: crypto.createHash("sha256").update(scenRaw).digest("hex"), max_steps: P.max_steps,
+        harness_commit: (() => { try { return require("child_process").execSync("git rev-parse --short HEAD", { cwd: REPO }).toString().trim(); } catch (e) { return null; } })() });
   const t0 = Date.now();
   await page.goto(BASE + "/", { waitUntil: "networkidle", timeout: 30000 }).catch(e => rec({ ev: "goto_error", err: String(e).slice(0, 200) }));
   await settle(page);
@@ -211,6 +214,9 @@ function classify(before, after, popupHosts) {
       if (act.kind === "click") {
         if (act.id >= 1000 && before.nodes[act.id - 1000]) { const n = before.nodes[act.id - 1000];
           await page.mouse.click(n.x, n.y); desc = `図の語「${n.label}」を押した`; adesc = OT.node(n.label); }
+        else if (before.items[act.id] && before.items[act.id].input) { const it = before.items[act.id];
+          const h = await page.evaluateHandle((i) => window.__simEls[i], act.id);
+          await h.asElement().focus(); desc = `入力欄「${it.label}」を選んだ`; adesc = OT.clicked(it.label); }
         else if (before.items[act.id] && !before.items[act.id].input) { const it = before.items[act.id];
           await page.evaluate((i) => window.__simEls[i].scrollIntoView({ block: "center" }), act.id);
           const h = await page.evaluateHandle((i) => window.__simEls[i], act.id);

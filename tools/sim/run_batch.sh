@@ -19,5 +19,8 @@ node tools/sim/checker.js "$OUT" --md > "$OUT/metrics.md"
 ok=$(wc -l < "$OUT/runs.tsv"); want=${#jobs_list[@]}
 echo "done: ${ok}/${want} runs → $OUT/metrics.md"
 # 落ちた走行を沈黙させない（xargs の終了状態と本数の不足を出す）
-if [ "$rc" -ne 0 ] || [ "$ok" -lt "$want" ]; then echo "走行の失敗あり: xargs rc=$rc・完了 ${ok}/${want}・$OUT/errors.log を見ること"; exit 5; fi
+# 「完了」でも中身が Actor や harness の失敗だった走行を数える（2026-10-14: Sonnet 12本が全部 actor_error で done 12/12 と出た）
+bad=$(cut -f2 "$OUT/runs.tsv" | grep -cE '^(actor_error|harness_error|incomplete)' || true)
+[ "$bad" -gt 0 ] && echo "中身が失敗の走行: ${bad}/${want}（actor_error 等）"
+if [ "$rc" -ne 0 ] || [ "$ok" -lt "$want" ] || [ "$bad" -gt 0 ]; then echo "走行の失敗あり: xargs rc=$rc・完了 ${ok}/${want}・$OUT/errors.log を見ること"; exit 5; fi
 exit 0
