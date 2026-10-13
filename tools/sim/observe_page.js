@@ -42,7 +42,9 @@ const pageObserve = () => {
       const href = tag === "a" ? el.href : null;
       return { i, tag, input: isInput && !["submit", "button", "checkbox", "radio"].includes(el.type),
         label: label.slice(0, 70), ext: (() => { try { return !!(href && new URL(href, location.href).host !== location.host); } catch (e) { return false; } })(),
-        newtab: el.target === "_blank", y: Math.round(r.top + window.scrollY), below: r.top > innerHeight };
+        newtab: el.target === "_blank", y: Math.round(r.top + window.scrollY), below: r.top > innerHeight,
+        // 見えている範囲（viewport）に掛かっているか。外の物は人には見えず、送らないと押せない
+        inview: r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth };
     });
     // canvas の重力グラフ: 人の目に見えるのは描かれたラベル。ラベルと画面座標だけを渡す
     let nodes = [];
@@ -58,11 +60,13 @@ const pageObserve = () => {
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const t = n.nodeValue.replace(/\s+/g, " ").trim(); if (!t) continue;
       const el = n.parentElement; if (!el || /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(el.tagName)) continue;
-      if (el !== lastEl) { lastEl = el; lastOk = vis(el); }
+      // 文も見えている範囲（viewport）に掛かる要素のものだけ（2026-10-14・評価資料の「特権的DOM認知」）
+      if (el !== lastEl) { lastEl = el; const q = el.getBoundingClientRect(); lastOk = vis(el) && q.bottom > 0 && q.top < innerHeight; }
       if (lastOk) seenText.push(t);
     }
     const text = seenText.join("\n");
     return { url: location.href, path: location.pathname + location.search, title: document.title, items, nodes, text,
-      scrollY: Math.round(scrollY), docH: document.documentElement.scrollHeight, viewH: innerHeight };
+      scrollY: Math.round(scrollY), docH: document.documentElement.scrollHeight, viewH: innerHeight,
+      moreBelow: scrollY + innerHeight < document.documentElement.scrollHeight - 20, moreAbove: scrollY > 20 };
   };
 module.exports = { pageObserve };

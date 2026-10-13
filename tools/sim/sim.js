@@ -55,7 +55,7 @@ const SCHEMA = {
     action: {
       type: "object", additionalProperties: false, required: ["kind"],
       properties: {
-        kind: { type: "string", enum: ["click", "type_submit", "scroll_down", "back", "stop"] },
+        kind: { type: "string", enum: ["click", "type_submit", "scroll_down", "scroll_up", "back", "stop"] },
         id: { type: "integer" }, text: { type: "string" },
         stop_reason: { type: "string", enum: ["found_what_i_wanted", "found_something_else_useful", "gave_up", "confused"] },
       },
@@ -90,21 +90,24 @@ async function settle(page) {
 const FRAME = {
   ja: { addr: "アドレス", title: "題", text: "画面に見えている文", top: "先頭", scrolled: "下へ送った位置", items: "押せる物（番号で選ぶ）",
         input: "入力欄", link: "リンク", button: "ボタン", ext: "（外のサイト）", below: "（下の方）", empty: "（文字なし）",
-        nodes: "図の中の語（番号で押せる）", node: "図の語", hist: "これまでの手" },
+        nodes: "図の中の語（番号で押せる）", node: "図の語", hist: "これまでの手",
+        moreBelow: "（この下にまだ続きがある。見るには下へ送る）", moreAbove: "（上にも内容がある）" },
   zh: { addr: "地址", title: "标题", text: "画面上看到的文字", top: "顶部", scrolled: "已向下滚动", items: "可以点的东西（用编号选择）",
         input: "输入框", link: "链接", button: "按钮", ext: "（外部网站）", below: "（在下方）", empty: "（无文字）",
-        nodes: "图中的词（可用编号点击）", node: "图中的词", hist: "到目前为止的操作" },
+        nodes: "图中的词（可用编号点击）", node: "图中的词", hist: "到目前为止的操作",
+        moreBelow: "（下面还有内容。要看需向下滚动）", moreAbove: "（上面也有内容）" },
   en: { addr: "Address", title: "Title", text: "Text visible on screen", top: "top", scrolled: "scrolled down", items: "Things you can press (choose by number)",
         input: "input box", link: "link", button: "button", ext: " (external site)", below: " (further down)", empty: "(no text)",
-        nodes: "Words in the diagram (pressable by number)", node: "diagram word", hist: "Your actions so far" },
+        nodes: "Words in the diagram (pressable by number)", node: "diagram word", hist: "Your actions so far",
+        moreBelow: "(There is more below. Scroll down to see it.)", moreAbove: "(There is also content above.)" },
 };
 const OBS_TEXT = {
   ja: { new_page: "別の画面になった", more_on_same_page: "同じ画面で中身が変わった", menu_or_panel_opens: "何かが開いた", external_site: "外のサイトが開いた", nothing_changes: "何も変わらなかった", rejected: "受け付けられなかった",
-        clicked: (l) => `「${l}」を押した`, node: (l) => `図の語「${l}」を押した`, typed: (t) => `「${t}」と入れて送った`, scroll: "下へ送った", back: "戻った" },
+        clicked: (l) => `「${l}」を押した`, node: (l) => `図の語「${l}」を押した`, typed: (t) => `「${t}」と入れて送った`, scroll: "下へ送った", scrollUp: "上へ戻した", back: "戻った" },
   zh: { new_page: "换到了别的画面", more_on_same_page: "同一画面的内容变了", menu_or_panel_opens: "打开了什么", external_site: "打开了外部网站", nothing_changes: "什么都没变", rejected: "没有被接受",
-        clicked: (l) => `点了「${l}」`, node: (l) => `点了图中的词「${l}」`, typed: (t) => `输入「${t}」并发送`, scroll: "向下滚动", back: "返回" },
+        clicked: (l) => `点了「${l}」`, node: (l) => `点了图中的词「${l}」`, typed: (t) => `输入「${t}」并发送`, scroll: "向下滚动", scrollUp: "向上滚动", back: "返回" },
   en: { new_page: "a different screen appeared", more_on_same_page: "the same screen changed", menu_or_panel_opens: "something opened", external_site: "an external site opened", nothing_changes: "nothing changed", rejected: "not accepted",
-        clicked: (l) => `pressed "${l}"`, node: (l) => `pressed diagram word "${l}"`, typed: (t) => `typed "${t}" and submitted`, scroll: "scrolled down", back: "went back" },
+        clicked: (l) => `pressed "${l}"`, node: (l) => `pressed diagram word "${l}"`, typed: (t) => `typed "${t}" and submitted`, scroll: "scrolled down", scrollUp: "scrolled up", back: "went back" },
 };
 const F = FRAME[P.situation_lang] || FRAME.en, OT = OBS_TEXT[P.situation_lang] || OBS_TEXT.en;
 function render(o, history) {
@@ -115,8 +118,12 @@ function render(o, history) {
   L.push(`--- ${F.text}（${o.scrollY > 0 ? F.scrolled : F.top}）---`);
   L.push(mask(o.text).slice(0, 1800));
   L.push(`--- ${F.items} ---`);
-  const lines = o.items.slice(0, 70).map(x => `[${x.i}] ${x.input ? F.input : x.tag === "a" ? F.link : F.button}${x.ext ? F.ext : ""}${x.below ? F.below : ""}: ${mask(x.label) || F.empty}`);
+  // 見えている範囲の物だけを渡す（2026-10-14）。旧版は画面の下の物まで「（下の方）」の印付きで渡し、
+  // 送らずに押せた。評価資料の失敗表「特権的DOM認知」が求める「スクロール外の要素を含まない」に反していた。
+  const lines = o.items.filter(x => x.inview).slice(0, 70).map(x => `[${x.i}] ${x.input ? F.input : x.tag === "a" ? F.link : F.button}${x.ext ? F.ext : ""}: ${mask(x.label) || F.empty}`);
   L.push(...lines);
+  if (o.moreBelow) L.push(F.moreBelow);
+  if (o.moreAbove) L.push(F.moreAbove);
   if (o.nodes.length) {
     L.push(`--- ${F.nodes} ---`);
     o.nodes.forEach((n, k) => L.push(`[${1000 + k}] ${F.node}: ${mask(n.label)}`));
@@ -205,13 +212,19 @@ function classify(before, after, popupHosts) {
   for (let step = 1; step <= P.max_steps; step++) {
     const before = await observe(page);
     const view = render(before, history);
+    // 生ログ: 各手の直前の画面（評価資料ステップ4・5）。JPEG で軽くする
+    const shotDir = path.join(OUTDIR, "shots", runId); fs.mkdirSync(shotDir, { recursive: true });
+    await page.screenshot({ path: path.join(shotDir, `${String(step).padStart(2, "0")}.jpg`), type: "jpeg", quality: 45 }).catch(() => {});
     const a = callActor(actorPrompt(view, step));
     if (!a.ok) { rec({ ev: "actor_error", step, ...a }); end = "actor_error"; break; }
     const act = a.out.action || {}; let desc = "", adesc = "", rejected = null;
     curStep = step; popupHosts = []; popupOpened = 0; net.length = 0; const ts = Date.now();
     try {
       if (act.kind === "stop") { rec({ ev: "step", step, view_chars: view.length, actor: a.out, actor_ms: a.ms, model: a.model }); end = "stop:" + (act.stop_reason || "unspecified"); break; }
-      if (act.kind === "click") {
+      // 見えている範囲の外の番号は受け付けない（Actor が履歴から番号を覚えていても、人には見えていない）
+      const target = (act.kind === "click" || act.kind === "type_submit") && act.id < 1000 ? before.items[act.id] : null;
+      if (target && !target.inview) rejected = "not_in_view";
+      else if (act.kind === "click") {
         if (act.id >= 1000 && before.nodes[act.id - 1000]) { const n = before.nodes[act.id - 1000];
           await page.mouse.click(n.x, n.y); desc = `図の語「${n.label}」を押した`; adesc = OT.node(n.label); }
         else if (before.items[act.id] && before.items[act.id].input) { const it = before.items[act.id];
@@ -234,6 +247,7 @@ function classify(before, after, popupHosts) {
           await h.asElement().fill(""); await h.asElement().type(typed, { delay: 5 }); await h.asElement().press("Enter");
           desc = `「${typed}」と入れて送った${typed !== text ? `（打ち間違い: 意図は「${text}」）` : ""}`; adesc = OT.typed(typed); }
       } else if (act.kind === "scroll_down") { await page.mouse.wheel(0, Math.round(before.viewH * 0.8)); desc = "下へ送った"; adesc = OT.scroll; }
+      else if (act.kind === "scroll_up") { await page.mouse.wheel(0, -Math.round(before.viewH * 0.8)); desc = "上へ戻した"; adesc = OT.scrollUp; }
       else if (act.kind === "back") { await page.goBack({ timeout: 10000 }).catch(() => {}); desc = "戻った"; adesc = OT.back; }
       else rejected = "unknown_kind";
     } catch (e) { rejected = "action_failed:" + String(e).split("\n")[0].slice(0, 120); }

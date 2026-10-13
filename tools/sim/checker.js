@@ -58,6 +58,10 @@ function metrics(ev) {
   m.idle_run_max = maxRun;
   m.idle_ratio = acted.length ? +(maxRun / acted.length).toFixed(2) : 0;
   m.distinct_queries = seenQ.size;
+  // 出典の確認行動（評価資料の理解層）: 外の出典を開いた、または出典・典拠を名乗る項目を押した手
+  m.source_checks = acted.filter(s => (s.popups || []).some(h => h !== baseHost) || s.observed === "external_site"
+    || /出典|典拠|Source|source|Wiktionary|SEP|Stanford|NDL|原典/.test(s.desc || "")).length;
+  m.path5 = acted.slice(0, 5).map(s => pathOf(s.to)).join(">");   // 経路の多様性を測るための最初の5画面
   m.actor_errors = ev.filter(e => e.ev === "actor_error").length;
   m.actor_cost_usd = +steps.reduce((a, s) => a + (s.cost || 0), 0).toFixed(4);
   // 以下は Actor の申告。数えた値ではない
@@ -80,6 +84,9 @@ function aggregate(rows, key) {
     record_writes: rs.reduce((a, r) => a + r.record_writes, 0), api_errors: rs.reduce((a, r) => a + r.api_errors, 0),
     pred_mismatch: median(rs.map(r => r.pred_mismatch)), masked_ratio: median(rs.map(r => r.masked_ratio)),
     gave_up_or_confused: rs.filter(r => ["gave_up", "confused"].includes(r.claimed_stop)).length,
+    source_checks: median(rs.map(r => r.source_checks || 0)),
+    // 最多の経路（最初の5画面）が占める割合。1.0 に近いほど全員が同じ道を辿った（多様性の錯覚の検出）
+    top_path_share: (() => { const c = {}; rs.forEach(r => { c[r.path5] = (c[r.path5] || 0) + 1; }); return +(Math.max(...Object.values(c)) / rs.length).toFixed(2); })(),
   }));
 }
 

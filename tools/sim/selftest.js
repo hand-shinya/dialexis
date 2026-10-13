@@ -42,6 +42,10 @@ const FIXTURE = `<!doctype html><meta charset=utf-8><body>
   ok("画面の文に、閉じた details の中身が出ない", !/HIDDEN-LINK-IN-DETAILS/.test(o.text));
   ok("画面の文に、パネルの下に隠れた文が出ない", !/HIDDEN-UNDER-PANEL/.test(o.text) && /SEEN-PANEL-CLOSE/.test(o.text));
   ok("下の方の物には印が付く", (o.items.find(x => x.label === "SEEN-BELOW-FOLD") || {}).below === true);
+  ok("見えている範囲の外の物は inview=false（Actor に渡さない）", (o.items.find(x => x.label === "SEEN-BELOW-FOLD") || {}).inview === false
+     && (o.items.find(x => x.label === "SEEN-LINK") || {}).inview === true);
+  ok("画面の文は見えている範囲だけ（下の方の文を含まない）", !/SEEN-BELOW-FOLD/.test(o.text) && /SEEN-LINK/.test(o.text));
+  ok("下に続きがあることは知らせる", o.moreBelow === true);
   // 語彙マスク
   const kyo = makeMask({ scripts: ["latin", "kana", "kanji_kyoiku", "digits", "punct"] });
   ok("教育漢字の外の字は □ になる", kyo("疎外") === "□外");
