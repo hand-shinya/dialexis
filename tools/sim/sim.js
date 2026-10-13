@@ -103,11 +103,20 @@ const FRAME = {
 };
 const OBS_TEXT = {
   ja: { new_page: "別の画面になった", more_on_same_page: "同じ画面で中身が変わった", menu_or_panel_opens: "何かが開いた", external_site: "外のサイトが開いた", nothing_changes: "何も変わらなかった", rejected: "受け付けられなかった",
-        clicked: (l) => `「${l}」を押した`, node: (l) => `図の語「${l}」を押した`, typed: (t) => `「${t}」と入れて送った`, scroll: "下へ送った", scrollUp: "上へ戻した", back: "戻った" },
+        clicked: (l) => `「${l}」を押した`, node: (l) => `図の語「${l}」を押した`, typed: (t) => `「${t}」と入れて送った`, scroll: "下へ送った", scrollUp: "上へ戻した", back: "戻った",
+        why: { word_unknown_to_persona: "打てなかった。その言葉をあなたは知らない（思いつかない）。自分の知っている言葉で考える",
+               script_not_typable_by_persona: "打てなかった。その字をあなたは書けない。自分が書ける字で考える",
+               persona_cannot_type: "あなたは文字を打たない", too_long_for_persona: "長すぎて打てなかった。短くする",
+               not_in_view: "その物は今の画面に見えていない", no_such_clickable: "その番号の物は無い", not_an_input: "そこは入力欄ではない",
+               action_failed: "押せなかった（何かに隠れているか、まだ出ていない）" } },
   zh: { new_page: "换到了别的画面", more_on_same_page: "同一画面的内容变了", menu_or_panel_opens: "打开了什么", external_site: "打开了外部网站", nothing_changes: "什么都没变", rejected: "没有被接受",
-        clicked: (l) => `点了「${l}」`, node: (l) => `点了图中的词「${l}」`, typed: (t) => `输入「${t}」并发送`, scroll: "向下滚动", scrollUp: "向上滚动", back: "返回" },
+        clicked: (l) => `点了「${l}」`, node: (l) => `点了图中的词「${l}」`, typed: (t) => `输入「${t}」并发送`, scroll: "向下滚动", scrollUp: "向上滚动", back: "返回",
+        why: { word_unknown_to_persona: "没打出来。你不知道那个词。用你知道的词来想", script_not_typable_by_persona: "没打出来。你不会写那些字。用你会写的字",
+               not_in_view: "那个东西现在不在画面上", action_failed: "点不了（被遮住或还没出现）" } },
   en: { new_page: "a different screen appeared", more_on_same_page: "the same screen changed", menu_or_panel_opens: "something opened", external_site: "an external site opened", nothing_changes: "nothing changed", rejected: "not accepted",
-        clicked: (l) => `pressed "${l}"`, node: (l) => `pressed diagram word "${l}"`, typed: (t) => `typed "${t}" and submitted`, scroll: "scrolled down", scrollUp: "scrolled up", back: "went back" },
+        clicked: (l) => `pressed "${l}"`, node: (l) => `pressed diagram word "${l}"`, typed: (t) => `typed "${t}" and submitted`, scroll: "scrolled down", scrollUp: "scrolled up", back: "went back",
+        why: { word_unknown_to_persona: "could not type it: you do not know that word. Think in words you know", script_not_typable_by_persona: "could not type it: you cannot write those characters",
+               not_in_view: "that item is not on the screen now", action_failed: "could not press it (covered or not shown yet)" } },
 };
 const F = FRAME[P.situation_lang] || FRAME.en, OT = OBS_TEXT[P.situation_lang] || OBS_TEXT.en;
 function render(o, history) {
@@ -241,6 +250,7 @@ function classify(before, after, popupHosts) {
         else if (!it || !it.input) rejected = "not_an_input";
         else if (!text) rejected = "empty_text";
         else if (text.length > P.writer.max_len) rejected = "too_long_for_persona";
+        else if ((P.reader.unknown_words || []).length && !typedAllowed(text, ["any"], P.reader.unknown_words)) rejected = "word_unknown_to_persona";
         else if (!typedAllowed(text, P.writer.scripts, P.reader.unknown_words)) rejected = "script_not_typable_by_persona";
         else { const typed = typo(text);
           const h = await page.evaluateHandle((i) => window.__simEls[i], act.id);
@@ -262,7 +272,10 @@ function classify(before, after, popupHosts) {
     let success = null;
     if (P.success) { let u = after.url; try { u = decodeURIComponent(after.url); } catch (e) {}
       success = new RegExp(P.success.url_re).test(u) && new RegExp(P.success.text_re).test(after.text); }
-    history.push({ step, adesc: adesc || `${act.kind} ${act.id ?? ""}`, aobs: rejected ? `${OT.rejected} (${rejected})` : OT[observed] });
+    // 拒否の理由は、harness の内部語でなくペルソナの側の事情として伝える（2026-10-14・MC-001 で、
+    // script_not_typable_by_persona を見た Actor が「入力欄は使えない」と誤解し、文字入力を全部やめた）
+    const why = OT.why[rejected && rejected.split(":")[0]] || `${OT.rejected} (${rejected})`;
+    history.push({ step, adesc: adesc || `${act.kind} ${act.id ?? ""}`, aobs: rejected ? why : OT[observed] });
     rec({ ev: "step", step, view_chars: view.length, actor: a.out, actor_ms: a.ms, model: a.model, cost: a.cost,
           rejected, desc, expect: a.out.expect, observed, success, act_ms: Date.now() - ts,
           from: before.path, to: after.path, n_items: after.items.length, n_nodes: after.nodes.length,
