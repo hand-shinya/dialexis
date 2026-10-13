@@ -21,7 +21,10 @@ const FIXTURE = `<!doctype html><meta charset=utf-8><body>
 <a href="/v" style="visibility:hidden">HIDDEN-VISIBILITY</a>
 <a href="/o" style="opacity:0">HIDDEN-OPACITY</a>
 <div style="height:0;overflow:hidden"><a href="/z">HIDDEN-ZERO-HEIGHT</a></div>
-<div style="height:2000px"></div><a href="/below">SEEN-BELOW-FOLD</a>
+<a href="/under" style="position:absolute;left:20px;top:300px">HIDDEN-UNDER-PANEL</a>
+<div id="ov" style="position:fixed;left:0;top:250px;width:400px;height:400px;background:#fff;z-index:9"><button>SEEN-PANEL-CLOSE</button></div>
+<div style="height:2000px"></div><a href="/below" style="position:relative;left:600px">SEEN-BELOW-FOLD</a>
+<a href="/belowunder" style="position:absolute;left:30px;top:2400px">HIDDEN-BELOW-UNDER-PANEL</a>
 </body>`;
 
 (async () => {
@@ -32,9 +35,9 @@ const FIXTURE = `<!doctype html><meta charset=utf-8><body>
   await p.goto("http://fixture.invalid/");
   const o = await p.evaluate(pageObserve);
   const labels = o.items.map(x => x.label);
-  for (const s of ["SEEN-LINK", "SEEN-BUTTON", "SEEN-INPUT", "SEEN-SUMMARY", "OPEN-SUMMARY", "SEEN-IN-OPEN-DETAILS", "SEEN-BELOW-FOLD"])
+  for (const s of ["SEEN-LINK", "SEEN-BUTTON", "SEEN-INPUT", "SEEN-SUMMARY", "OPEN-SUMMARY", "SEEN-IN-OPEN-DETAILS", "SEEN-BELOW-FOLD", "SEEN-PANEL-CLOSE"])
     ok(`見える物を返す: ${s}`, labels.includes(s), labels.join(","));
-  for (const s of ["HIDDEN-IN-CLOSED-DETAILS", "HIDDEN-LINK-IN-DETAILS", "HIDDEN-DISPLAY-NONE", "HIDDEN-VISIBILITY", "HIDDEN-OPACITY", "HIDDEN-ZERO-HEIGHT"])
+  for (const s of ["HIDDEN-IN-CLOSED-DETAILS", "HIDDEN-LINK-IN-DETAILS", "HIDDEN-DISPLAY-NONE", "HIDDEN-VISIBILITY", "HIDDEN-OPACITY", "HIDDEN-ZERO-HEIGHT", "HIDDEN-UNDER-PANEL", "HIDDEN-BELOW-UNDER-PANEL"])
     ok(`見えない物を返さない: ${s}`, !labels.includes(s));
   ok("画面の文に、閉じた details の中身が出ない", !/HIDDEN-LINK-IN-DETAILS/.test(o.text));
   ok("下の方の物には印が付く", (o.items.find(x => x.label === "SEEN-BELOW-FOLD") || {}).below === true);

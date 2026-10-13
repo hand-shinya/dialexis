@@ -16,7 +16,21 @@ const pageObserve = () => {
         if (/hidden|clip/.test(ac.overflowX + ac.overflowY)) { const q = a.getBoundingClientRect();
           if (r.right <= q.left || r.left >= q.right || r.bottom <= q.top || r.top >= q.bottom) return false; }
       }
-      return true; };
+      return !occluded(el, r); };
+    // 被さり判定（2026-10-13・本走A2で実測）。浮動パネル（position:fixed）の背後にある物は人に見えない。
+    // 画面内の物は中心点の elementFromPoint で、画面外の物は「送って中央に来たとき」に
+    // 固定配置の覆いの下に入るかで判定する。
+    function occluded(el, r) {
+      const cx = r.left + r.width / 2;
+      const inView = r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth;
+      if (inView) { const top = document.elementFromPoint(cx, r.top + r.height / 2);
+        return !!top && !el.contains(top) && !top.contains(el); }
+      const cy = innerHeight / 2;
+      return fixedCovers.some(f => !f.el.contains(el) && cx >= f.r.left && cx <= f.r.right && cy >= f.r.top && cy <= f.r.bottom);
+    }
+    const fixedCovers = [...document.querySelectorAll("body *")].filter(e => { const cs = getComputedStyle(e);
+      if (cs.position !== "fixed" || cs.display === "none" || cs.visibility === "hidden" || e.offsetHeight <= 0) return false;
+      const q = e.getBoundingClientRect(); return q.width * q.height > 0.1 * innerWidth * innerHeight; }).map(e => ({ el: e, r: e.getBoundingClientRect() }));
     const sel = "a[href], button, input:not([type=hidden]), textarea, select, summary, [role=button], [role=menuitem], [role=tab], [onclick]";
     const els = [...document.querySelectorAll(sel)].filter(vis);
     window.__simEls = els;
