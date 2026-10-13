@@ -7,19 +7,25 @@
   <h2>{{ t.ledger_title }}</h2>
   <p class="muted">{{ t.ledger_empty }}</p>
   <h3>{{ t.ledger_new }}</h3>
-  <div class="formrow"><input id="nl-title" placeholder="{{ t.ledger_name }}"></div>
+  {# 2026-10-14: form で包む。form が無いと入力欄で Enter を押しても何も起きず（要求0件・画面変化なし）、
+     シミュレーションで「何度送っても変化なし」が繰り返された。required で空の台帳名も黙って捨てない。 #}
+  <form class="desk-form" onsubmit="event.preventDefault(); ledgerCreate();">
+  <div class="formrow"><input id="nl-title" placeholder="{{ t.ledger_name }}" required></div>
   <div class="formrow"><input id="nl-subject" placeholder="{{ t.ledger_subject }}"></div>
   <div class="formrow"><input id="nl-question" placeholder="{{ t.ledger_question }}"></div>
   <label class="checkrow"><input id="nl-public" type="checkbox"> 公開台帳 / Public ledger（他の利用者は閲覧のみ）</label>
-  <button onclick="ledgerCreate()">{{ t.ledger_create }}</button>
+  <button type="submit">{{ t.ledger_create }}</button>
+  </form>
   <div id="ledger-list"></div>
 </div>
 <div class="card">
   <h2>{{ t.desk_new_project }}</h2>
-  <div class="formrow"><input id="np-title" placeholder="{{ t.desk_project_title }}"></div>
+  <form class="desk-form" onsubmit="event.preventDefault(); deskCreate();">
+  <div class="formrow"><input id="np-title" placeholder="{{ t.desk_project_title }}" required></div>
   <div class="formrow"><input id="np-question" placeholder="{{ t.desk_question }}"></div>
   <label class="checkrow"><input id="np-public" type="checkbox"> 公開プロジェクト / Public project（他の利用者は閲覧のみ）</label>
-  <button onclick="deskCreate()">{{ t.desk_create }}</button>
+  <button type="submit">{{ t.desk_create }}</button>
+  </form>
 </div>
 <div id="project-list"></div>
 
