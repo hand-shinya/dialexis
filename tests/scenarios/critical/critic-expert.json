@@ -1,0 +1,44 @@
+{
+ "concept_pool": [
+  "Q1274115",
+  "MC_REIF",
+  "Q_DIAL"
+ ],
+ "group": "critical",
+ "id": "critic-expert",
+ "input_langs": [],
+ "max_steps": 12,
+ "reader": {
+  "scripts": [
+   "any"
+  ]
+ },
+ "situation": {
+  "MC_REIF": "「物象化」の原語が何であるかを、私は知っている。このサイトがそれを正しく、欠けなく示すか、誤りを探しに来た。",
+  "Q1274115": "ドイツ語の Verantwortung が「責任」と訳されるとき何が落ちるかを、私は知っている。このサイトがそれを正しく示すか、誤りや欠けを探しに来た。",
+  "Q_DIAL": "「弁証法」がギリシア語で何から来たかを、私は知っている。このサイトがそれを正しく示すか、誤りを探しに来た。"
+ },
+ "situation_lang": "ja",
+ "success_by_concept": {
+  "MC_REIF": {
+   "text_re": "(?=[\\s\\S]*Versachlichung)(?=[\\s\\S]*Verdinglichung)",
+   "url_re": "q="
+  },
+  "Q1274115": {
+   "text_re": "Antwort",
+   "url_re": "q="
+  },
+  "Q_DIAL": {
+   "text_re": "(?=[\\s\\S]*(διά|dia))(?=[\\s\\S]*(λέγειν|λέγω|legein))",
+   "url_re": "q="
+  }
+ },
+ "writer": {
+  "can_type": true,
+  "max_len": 80,
+  "scripts": [
+   "any"
+  ],
+  "typo_rate": 0.0
+ }
+}

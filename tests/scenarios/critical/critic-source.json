@@ -1,0 +1,42 @@
+{
+ "abandon_rule": {
+  "consecutive": 3,
+  "name": "no_source_shown",
+  "text_re": "出典|典拠|出所|取得|一次資料|Source|source|retrieved|Wiktionary|SEP|Stanford|NDL"
+ },
+ "concept_pool": [
+  "Q11471",
+  "Q2979",
+  "Q7949",
+  "Q545825",
+  "Q546054"
+ ],
+ "group": "critical",
+ "id": "critic-source",
+ "input_langs": [],
+ "max_steps": 15,
+ "reader": {
+  "scripts": [
+   "any"
+  ]
+ },
+ "situation": {
+  "Q11471": "「時間」について画面に出ている説明を、元の資料（一次資料）を自分で開いて確かめたい。出典や、いつ取った情報かが分からないものは信じない。",
+  "Q2979": "「自由」について画面に出ている説明を、元の資料（一次資料）を自分で開いて確かめたい。出典や、いつ取った情報かが分からないものは信じない。",
+  "Q545825": "「疎外」について画面に出ている説明を、元の資料（一次資料）を自分で開いて確かめたい。出典や、いつ取った情報かが分からないものは信じない。",
+  "Q546054": "「空」について画面に出ている説明を、元の資料（一次資料）を自分で開いて確かめたい。出典や、いつ取った情報かが分からないものは信じない。",
+  "Q7949": "「真理」について画面に出ている説明を、元の資料（一次資料）を自分で開いて確かめたい。出典や、いつ取った情報かが分からないものは信じない。"
+ },
+ "situation_lang": "ja",
+ "success": {
+  "ext_host_re": "wiktionary\\.org|plato\\.stanford\\.edu|iep\\.utm\\.edu|ndl\\.go\\.jp|wikisource\\.org|perseus|ctext\\.org|gutenberg|archive\\.org|wikidata\\.org|wikipedia\\.org"
+ },
+ "writer": {
+  "can_type": true,
+  "max_len": 80,
+  "scripts": [
+   "any"
+  ],
+  "typo_rate": 0.0
+ }
+}

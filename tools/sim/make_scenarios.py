@@ -151,6 +151,45 @@ def build_microcase():
     return [p]
 
 
+def build_critical():
+    """最も批判的な、向きの違う3人（2026-10-14・所有者の指示）。年齢・職業のラベルは使わない（P3）。
+    批判の基準は Actor の性格づけ（prompt）でなく、harness が強制する離脱規則と、決定論の合否に置く。"""
+    W_ANY = {"can_type": True, "scripts": ["any"], "typo_rate": 0.0, "max_len": 80}
+    C = []
+    # 1 出典に厳しい人: 出典・典拠・取得時刻の表示が無い画面が3つ続いたら離れる（JS が強制）。
+    #   合否: 外部の一次資料（辞書・事典・原典の公開先）を自分で開けたか
+    pool1 = ["Q11471", "Q2979", "Q7949", "Q545825", "Q546054"]
+    p1 = persona("critic-source", "critical", READ_ALL, W_ANY, 15, "ja",
+                 {q: f"「{lab(q, 'ja')}」について画面に出ている説明を、元の資料（一次資料）を自分で開いて確かめたい。"
+                     f"出典や、いつ取った情報かが分からないものは信じない。" for q in pool1}, pool1)
+    p1["abandon_rule"] = {"name": "no_source_shown", "consecutive": 3,
+                          "text_re": "出典|典拠|出所|取得|一次資料|Source|source|retrieved|Wiktionary|SEP|Stanford|NDL"}
+    p1["success"] = {"ext_host_re": "wiktionary\\.org|plato\\.stanford\\.edu|iep\\.utm\\.edu|ndl\\.go\\.jp|wikisource\\.org|perseus|ctext\\.org|gutenberg|archive\\.org|wikidata\\.org|wikipedia\\.org"}
+    C.append(p1)
+    # 2 誤りを探しに来る原語の専門家: 一次資料で確かめた事実が画面に出るかで採点する
+    #   （en.wiktionary 2026-10-14T01:04:30 / ja.wikipedia「物象化」2026-10-14T00:45:38 で確認）
+    p2 = persona("critic-expert", "critical", READ_ALL, W_ANY, 12, "ja", {
+        "Q1274115": "ドイツ語の Verantwortung が「責任」と訳されるとき何が落ちるかを、私は知っている。このサイトがそれを正しく示すか、誤りや欠けを探しに来た。",
+        "MC_REIF": "「物象化」の原語が何であるかを、私は知っている。このサイトがそれを正しく、欠けなく示すか、誤りを探しに来た。",
+        "Q_DIAL": "「弁証法」がギリシア語で何から来たかを、私は知っている。このサイトがそれを正しく示すか、誤りを探しに来た。",
+    }, ["Q1274115", "MC_REIF", "Q_DIAL"])
+    p2["success_by_concept"] = {
+        "Q1274115": {"url_re": "q=", "text_re": "Antwort"},
+        "MC_REIF": {"url_re": "q=", "text_re": "(?=[\\s\\S]*Versachlichung)(?=[\\s\\S]*Verdinglichung)"},
+        "Q_DIAL": {"url_re": "q=", "text_re": "(?=[\\s\\S]*(διά|dia))(?=[\\s\\S]*(λέγειν|λέγω|legein))"},
+    }
+    C.append(p2)
+    # 3 偏りを疑う人（P1 無中心・P2 中立）: 欧州の言語以外の伝統に、このサイトの中で行き着けるか
+    #   合否: デーヴァナーガリー・アラビア・ヘブライ・タイ・エチオピア・タミル等の文字が、その語の画面に2種以上出たか
+    pool3 = ["Q11471", "Q546054", "Q450", "Q4", "Q157811"]
+    p3 = persona("critic-bias", "critical", READ_ALL, W_ANY, 15, "ja",
+                 {q: f"このサイトは西洋の哲学に偏っていないか疑っている。「{lab(q, 'ja')}」について、ヨーロッパ以外の伝統"
+                     f"（インド・中国・イスラーム・アフリカなど）での考え方に、このサイトの中で行き着けるかを試す。" for q in pool3}, pool3)
+    p3["success"] = {"url_re": "q=", "text_re": "(?=[\\s\\S]*[\\u0900-\\u097F])(?=[\\s\\S]*[\\u0600-\\u06FF\\u0590-\\u05FF\\u0E00-\\u0E7F\\u1200-\\u137F\\u0B80-\\u0BFF])"}
+    C.append(p3)
+    return C
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "holdout").mkdir(exist_ok=True)
@@ -176,6 +215,13 @@ def main():
         (OUT / "microcase" / f"{p['id']}.json").write_text(body, encoding="utf-8")
         mlines.append(f"{hashlib.sha256(body.encode()).hexdigest()}  {p['id']}.json")
     (OUT / "microcase" / "microcase.sha256").write_text("\n".join(mlines) + "\n", encoding="utf-8")
+    (OUT / "critical").mkdir(exist_ok=True)
+    clines = []
+    for p in build_critical():
+        body = json.dumps(p, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+        (OUT / "critical" / f"{p['id']}.json").write_text(body, encoding="utf-8")
+        clines.append(f"{hashlib.sha256(body.encode()).hexdigest()}  {p['id']}.json")
+    (OUT / "critical" / "critical.sha256").write_text("\n".join(clines) + "\n", encoding="utf-8")
     print("\n".join(lines))
 
 

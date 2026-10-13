@@ -217,7 +217,7 @@ function classify(before, after, popupHosts) {
   const t0 = Date.now();
   await page.goto(BASE + "/", { waitUntil: "networkidle", timeout: 30000 }).catch(e => rec({ ev: "goto_error", err: String(e).slice(0, 200) }));
   await settle(page);
-  const history = []; let end = "step_limit";
+  const history = []; let end = "step_limit"; let lacking = 0;
   for (let step = 1; step <= P.max_steps; step++) {
     const before = await observe(page);
     const view = render(before, history);
@@ -269,18 +269,29 @@ function classify(before, after, popupHosts) {
     const after = await observe(page);
     const observed = rejected ? "rejected" : classify(before, after, popupHosts);
     // シナリオが成功条件を持つときだけ、マスク前の画面で決定論的に判定する（評価資料 MC-001 の終了条件）
+    // 合否は概念ごとにも持てる（success_by_concept）。ext_host_re は外部の出典を開いたかで判定する
     let success = null;
-    if (P.success) { let u = after.url; try { u = decodeURIComponent(after.url); } catch (e) {}
-      success = new RegExp(P.success.url_re).test(u) && new RegExp(P.success.text_re).test(after.text); }
+    const SC = (P.success_by_concept && P.success_by_concept[concept]) || P.success;
+    if (SC) { let u = after.url; try { u = decodeURIComponent(after.url); } catch (e) {}
+      const byPage = SC.text_re ? (new RegExp(SC.url_re || ".").test(u) && new RegExp(SC.text_re).test(after.text)) : false;
+      const byExt = SC.ext_host_re ? popupHosts.some(x => new RegExp(SC.ext_host_re).test(x.host)) : false;
+      success = byPage || byExt; }
+    // 離脱の規則（JS が強制・prompt に書かない）: 指定の表示が無い画面が N 回続いたら、その人はここで離れる
+    let abandon = false;
+    if (P.abandon_rule && !rejected) {
+      lacking = new RegExp(P.abandon_rule.text_re).test(after.text) ? 0 : lacking + 1;
+      abandon = lacking >= P.abandon_rule.consecutive;
+    }
     // 拒否の理由は、harness の内部語でなくペルソナの側の事情として伝える（2026-10-14・MC-001 で、
     // script_not_typable_by_persona を見た Actor が「入力欄は使えない」と誤解し、文字入力を全部やめた）
     const why = OT.why[rejected && rejected.split(":")[0]] || `${OT.rejected} (${rejected})`;
     history.push({ step, adesc: adesc || `${act.kind} ${act.id ?? ""}`, aobs: rejected ? why : OT[observed] });
     rec({ ev: "step", step, view_chars: view.length, actor: a.out, actor_ms: a.ms, model: a.model, cost: a.cost,
-          rejected, desc, expect: a.out.expect, observed, success, act_ms: Date.now() - ts,
+          rejected, desc, expect: a.out.expect, observed, success, abandon, act_ms: Date.now() - ts,
           from: before.path, to: after.path, n_items: after.items.length, n_nodes: after.nodes.length,
           text_len: after.text.length, masked_ratio: (mask(after.text).match(/□/g) || []).length / Math.max(1, after.text.length),
           net: net.slice(), popups: popupHosts.map(x => x.host), page_errors: pageErrors.splice(0) });
+    if (abandon) { end = "abandon:" + (P.abandon_rule.name || "rule"); break; }
   }
   rec({ ev: "end", end, wall_ms: Date.now() - t0 });
   closed = true; fs.closeSync(T);
