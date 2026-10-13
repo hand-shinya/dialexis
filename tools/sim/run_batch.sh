@@ -9,7 +9,7 @@ SCEN=("$@"); [ ${#SCEN[@]} -eq 0 ] && SCEN=(tests/scenarios/*.json)
 mkdir -p "$OUT"
 # harness の自己試験に落ちたら走らせない（2026-10-13: 可視判定の欠陥で本走Aを無効にした）
 node tools/sim/selftest.js > "$OUT/selftest.log" 2>&1 || { echo "harness 自己試験に失敗（$OUT/selftest.log）"; exit 4; }
-(cd tests/scenarios && sha256sum -c scenarios.sha256 --quiet) || { echo "scenarios.sha256 不一致: 修理中にペルソナが書き換えられている"; exit 3; }
+(cd tests/scenarios && sha256sum -c scenarios.sha256 --quiet && cd probe && sha256sum -c probe.sha256 --quiet) || { echo "scenarios.sha256 不一致: 修理中にペルソナが書き換えられている"; exit 3; }
 jobs_list=()
 for s in "${SCEN[@]}"; do for seed in $SEEDS; do jobs_list+=("$s $seed"); done; done
 export SIM_BASE="$BASE" SIM_OUT="$OUT" SIM_COND="$COND"

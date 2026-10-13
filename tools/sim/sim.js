@@ -40,7 +40,9 @@ const runId = `${P.id}_s${SEED}_${COND}`;
 fs.mkdirSync(OUTDIR, { recursive: true });
 const tracePath = path.join(OUTDIR, `${runId}.jsonl`);
 const T = fs.openSync(tracePath, "w");
-const rec = (o) => fs.writeSync(T, JSON.stringify({ t: Date.now(), ...o }) + "\n");
+// 走行の終了後に遅れて届いた事件（別タブ等）は書かない。閉じた fd に書いて EBADF で落ちていた（本走A4で1本）
+let closed = false;
+const rec = (o) => { if (!closed) fs.writeSync(T, JSON.stringify({ t: Date.now(), ...o }) + "\n"); };
 
 const SCHEMA = {
   type: "object", additionalProperties: false,
@@ -156,7 +158,10 @@ function classify(before, after, popupHosts) {
   if (popupHosts.some(x => x.host !== host) || afterHost !== host) return "external_site";
   if (before.path !== after.path) return "new_page";
   if (before.textHash === after.textHash && before.elemSig === after.elemSig && before.scrollY === after.scrollY) return "nothing_changes";
-  if (after.items.length > before.items.length && Math.abs(after.text.length - before.text.length) < 400) return "menu_or_panel_opens";
+  // 新しく現れた押せる物があれば「何かが開いた」。総数では判定しない: 開いたメニューが他を覆うと
+  // 総数は減る（ノードのメニューで 113→88 を実測し、「中身が変わった」と誤分類していた）
+  const had = new Set(before.items.map(x => x.label));
+  if (after.items.filter(x => x.label && !had.has(x.label)).length >= 3 && Math.abs(after.text.length - before.text.length) < 1500) return "menu_or_panel_opens";
   return "more_on_same_page";
 }
 
@@ -241,7 +246,7 @@ function classify(before, after, popupHosts) {
           net: net.slice(), popups: popupHosts.map(x => x.host), page_errors: pageErrors.splice(0) });
   }
   rec({ ev: "end", end, wall_ms: Date.now() - t0 });
-  fs.closeSync(T);
+  closed = true; fs.closeSync(T);
   await b.close();
   console.log(`${runId}\t${end}\t${tracePath}`);
 })().catch(e => { try { rec({ ev: "harness_error", err: String(e).slice(0, 400) }); } catch (_) {} console.error("SIM ERROR", e); process.exit(2); });

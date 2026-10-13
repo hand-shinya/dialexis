@@ -122,6 +122,20 @@ def build_holdout():
     return H
 
 
+def build_probe():
+    """反証用（2026-10-13）。凍結済みの12本・holdout とは別の hash で持つ。
+    命題「記録への接続が0件なのは、記録への経路が画面に無いからだ」に対し、
+    反対仮説「ペルソナに記録したい動機が無いからだ」を試すため、動機を状況に書く。"""
+    W_KYOIKU = {"can_type": True, "scripts": READ_KYOIKU["scripts"], "typo_rate": 0.0, "max_len": 40}
+    W_ANY = {"can_type": True, "scripts": ["any"], "typo_rate": 0.0, "max_len": 80}
+    return [
+        persona("probe-record-ja", "probe", READ_ALL, W_ANY, 15, "ja",
+                {q: f"「{lab(q, 'ja')}」について調べ、気づいたことを後で見返せるように、このサイトの中に一つ書き残しておきたい。" for q in POOL}, POOL),
+        persona("probe-record-daily", "probe", READ_KYOIKU, W_KYOIKU, 15, "ja",
+                {q: DAILY[q] + "わかったことを、あとで見られるように、このページのどこかに書いておきたい。" for q in POOL}, POOL),
+    ]
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "holdout").mkdir(exist_ok=True)
@@ -133,6 +147,13 @@ def main():
             path.write_text(body, encoding="utf-8")
             lines.append(f"{hashlib.sha256(body.encode()).hexdigest()}  {sub}{p['id']}.json")
     (OUT / "scenarios.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (OUT / "probe").mkdir(exist_ok=True)
+    plines = []
+    for p in build_probe():
+        body = json.dumps(p, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+        (OUT / "probe" / f"{p['id']}.json").write_text(body, encoding="utf-8")
+        plines.append(f"{hashlib.sha256(body.encode()).hexdigest()}  {p['id']}.json")
+    (OUT / "probe" / "probe.sha256").write_text("\n".join(plines) + "\n", encoding="utf-8")
     print("\n".join(lines))
 
 
