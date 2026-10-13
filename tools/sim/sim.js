@@ -241,7 +241,7 @@ function classify(before, after, popupHosts) {
         else if (!it || !it.input) rejected = "not_an_input";
         else if (!text) rejected = "empty_text";
         else if (text.length > P.writer.max_len) rejected = "too_long_for_persona";
-        else if (!typedAllowed(text, P.writer.scripts)) rejected = "script_not_typable_by_persona";
+        else if (!typedAllowed(text, P.writer.scripts, P.reader.unknown_words)) rejected = "script_not_typable_by_persona";
         else { const typed = typo(text);
           const h = await page.evaluateHandle((i) => window.__simEls[i], act.id);
           await h.asElement().fill(""); await h.asElement().type(typed, { delay: 5 }); await h.asElement().press("Enter");
@@ -258,9 +258,13 @@ function classify(before, after, popupHosts) {
       if (same) { await page.goto(same.url, { waitUntil: "networkidle", timeout: 30000 }).catch(() => {}); await settle(page); } }
     const after = await observe(page);
     const observed = rejected ? "rejected" : classify(before, after, popupHosts);
+    // シナリオが成功条件を持つときだけ、マスク前の画面で決定論的に判定する（評価資料 MC-001 の終了条件）
+    let success = null;
+    if (P.success) { let u = after.url; try { u = decodeURIComponent(after.url); } catch (e) {}
+      success = new RegExp(P.success.url_re).test(u) && new RegExp(P.success.text_re).test(after.text); }
     history.push({ step, adesc: adesc || `${act.kind} ${act.id ?? ""}`, aobs: rejected ? `${OT.rejected} (${rejected})` : OT[observed] });
     rec({ ev: "step", step, view_chars: view.length, actor: a.out, actor_ms: a.ms, model: a.model, cost: a.cost,
-          rejected, desc, expect: a.out.expect, observed, act_ms: Date.now() - ts,
+          rejected, desc, expect: a.out.expect, observed, success, act_ms: Date.now() - ts,
           from: before.path, to: after.path, n_items: after.items.length, n_nodes: after.nodes.length,
           text_len: after.text.length, masked_ratio: (mask(after.text).match(/□/g) || []).length / Math.max(1, after.text.length),
           net: net.slice(), popups: popupHosts.map(x => x.host), page_errors: pageErrors.splice(0) });

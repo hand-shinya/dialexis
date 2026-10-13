@@ -24,11 +24,17 @@ function readable(c, scripts) {
 
 function makeMask(reader) {
   const s = reader.scripts;
-  if (s.includes("any")) return (t) => t || "";
-  return (t) => [...(t || "")].map(c => readable(c, s) ? c : "□").join("");
+  // 語単位の未知語（評価資料 P-01 の語彙マスク）。指定があるときだけ働く。字の数だけ □ にする
+  const unknown = (reader.unknown_words || []).slice().sort((x, y) => y.length - x.length);
+  const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const wordMask = (t) => unknown.reduce((acc, w) => acc.replace(new RegExp(esc(w), "gi"), (m) => "□".repeat([...m].length)), t || "");
+  if (s.includes("any")) return (t) => wordMask(t);
+  return (t) => [...wordMask(t)].map(c => c === "□" || readable(c, s) ? c : "□").join("");
 }
 
-function typedAllowed(text, scripts) {
+function typedAllowed(text, scripts, unknownWords) {
+  // 知らない語は打てない（見えていないので）
+  if ((unknownWords || []).some(w => text.toLowerCase().includes(w.toLowerCase()))) return false;
   // □ はマスクの記号で、人が打つ字ではない（\p{S} に入るので punct が通していた）
   if (text.includes("□")) return false;
   return [...text].every(c => readable(c, scripts));

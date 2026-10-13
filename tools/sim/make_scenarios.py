@@ -136,6 +136,21 @@ def build_probe():
     ]
 
 
+def build_microcase():
+    """評価資料（Dialexis AI Usability Evaluation.md）の最小実験 MC-001 を現物に合わせて置く（2026-10-14）。
+    資料の Condition A の前提「トップに専門用語リンクが並ぶ」は現物と違う（実測: 0件・問いの扉5つ）。
+    問い「日常語しか持たない人がトップから物象化とその出典へ届くか」は有効なので、P-01 の定義で試す。"""
+    unknown = ["物象化", "Verdinglichung", "Reification", "物神性", "弁証法"]
+    p = persona("mc001-reification-entry", "microcase",
+                {"scripts": ["any"], "unknown_words": unknown},
+                {"can_type": True, "scripts": ["any"], "typo_rate": 0.0, "max_len": 40}, 12, "ja",
+                {"MC001": "人間関係がモノのようになってしまう現象が気になっている。この現象を哲学ではどう考えてきたのか、その起源を知りたい。"},
+                ["MC001"])
+    p["success"] = {"url_re": "q=(物象化|Verdinglichung|Reification|reification)",
+                    "text_re": "ルカーチ|Lukács|Lukacs|マルクス|Marx"}
+    return [p]
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "holdout").mkdir(exist_ok=True)
@@ -154,6 +169,13 @@ def main():
         (OUT / "probe" / f"{p['id']}.json").write_text(body, encoding="utf-8")
         plines.append(f"{hashlib.sha256(body.encode()).hexdigest()}  {p['id']}.json")
     (OUT / "probe" / "probe.sha256").write_text("\n".join(plines) + "\n", encoding="utf-8")
+    (OUT / "microcase").mkdir(exist_ok=True)
+    mlines = []
+    for p in build_microcase():
+        body = json.dumps(p, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+        (OUT / "microcase" / f"{p['id']}.json").write_text(body, encoding="utf-8")
+        mlines.append(f"{hashlib.sha256(body.encode()).hexdigest()}  {p['id']}.json")
+    (OUT / "microcase" / "microcase.sha256").write_text("\n".join(mlines) + "\n", encoding="utf-8")
     print("\n".join(lines))
 
 

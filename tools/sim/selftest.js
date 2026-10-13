@@ -51,6 +51,8 @@ const FIXTURE = `<!doctype html><meta charset=utf-8><body>
   ok("教育漢字の外の字は □ になる", kyo("疎外") === "□外");
   ok("教育漢字は読める", kyo("自由と時間") === "自由と時間");
   ok("ラテン文字だけのペルソナには仮名も漢字も □", makeMask({ scripts: ["latin", "digits", "punct"] })("time 時間 です") === "time □□ □□");
+  ok("語単位の未知語は大文字小文字を問わず □ になる（評価資料 P-01）",
+     makeMask({ scripts: ["any"], unknown_words: ["Reification", "物象化"] })("reification と Reification と 物象化") === "□□□□□□□□□□□ と □□□□□□□□□□□ と □□□");
   ok("打てない字を含む入力を拒む", !typedAllowed("疎外", ["latin", "kana", "kanji_kyoiku"]) && typedAllowed("ともだち", ["latin", "kana", "kanji_kyoiku"]));
   await b.close();
   const pass = R.filter(Boolean).length; console.log(`\n${pass}/${R.length} PASS`);
