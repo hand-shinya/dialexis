@@ -313,6 +313,8 @@ async def node(word: str, lang: str = "ja") -> dict:
 
         return ok("concept-node", ts, cached, {
             "word": word, "found": True, "qid": qid,
+            # 曖昧さ回避の記事に着いたか（言語の橋がこれを見て、別の経路へ渡す）
+            "disambiguation": "disambiguation" in (page.get("pageprops") or {}),
             "title": title,                    # 実際に辿った記事名（間主観→間主観性）
             "resolved_from": resolved_from,    # 入力語と異なる記事へ解決した場合の元語
             "original_terms": origs,          # 概念-翻訳-原点の候補（記事が明示・LEAD）

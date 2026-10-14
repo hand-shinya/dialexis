@@ -36,6 +36,7 @@ from .connectors import canon  # 哲学典拠への解決（2026-09-28）
 from .connectors import translation_edge  # 訳語辺（2026-10-02）
 from .connectors import ja_wiktionary, ndl_fulltext  # 辞書層と用例層（2026-10-05）
 from .connectors import tetsugaku_jii  # 訳語史層・1881年の訳語対応（2026-10-07）
+from .connectors import langpivot  # 言語の橋・入力/検索/表示の言語を分ける（2026-10-14）
 from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept, searxng, etymology
 from .connectors.base import cached_get_json, cached_get_text
 from . import citations as cites
@@ -510,6 +511,7 @@ NONCONCEPT_P31 = frozenset({
     "Q7366", "Q134556", "Q482994",          # song / single / album
     "Q11424", "Q5398426",                   # film / TV series
     "Q215380",     # musical group (truth/en → Indonesian band 'Truth')
+    "Q5741069",    # rock band (freedom/en の説明文の語 free → 'Free (band)'・2026-10-14)
     "Q4167410",    # Wikimedia disambiguation page
 })
 
@@ -838,6 +840,68 @@ def _canon_should_override(q: str, article_title: str, resolved: bool) -> bool:
     return not (q in t or t in q)
 
 
+async def _resolve_en_lemma(lemma: str) -> list:
+    """辞書の英語の語義（freedom）→ Wikidata の概念項目の候補。言語の橋の経路B。
+
+    二つの経路の結果を両方返す（Wikidata は freedom と liberty を別項目に分けており、
+    片方だけでは利用者の言語の記事へ戻れないことがある）。
+      1. en.wikipedia の同名記事の項目（記事→項目は決定論。検索の偏り dharma→Buddhism を避ける）
+      2. SEP で意味を選ぶ既存の解決（_resolve_entity）
+    人物・作品・名前・曖昧さ回避の項目は返さない。"""
+    out = []
+    try:
+        body, _, _ = await cached_get_json("https://en.wikipedia.org/w/api.php", {
+            "action": "query", "prop": "pageprops", "titles": lemma[:1].upper() + lemma[1:],
+            "redirects": 1, "format": "json"}, ttl=86400)
+        page = next(iter((body.get("query", {}).get("pages") or {}).values()), {})
+        pp = page.get("pageprops") or {}
+        if "missing" not in page and "disambiguation" not in pp and pp.get("wikibase_item"):
+            e = await wikidata.entity(pp["wikibase_item"], "en")
+            if not e["error"] and not e["data"].get("is_person") and not _nonconcept(e):
+                out.append(pp["wikibase_item"])
+    except Exception:
+        pass
+    wd = await wikidata.search(lemma, "en", limit=20)
+    if not wd["error"] and wd["data"]:
+        e = await _resolve_entity(wd["data"], "en")
+        if not e["error"] and not e["data"].get("is_person") and not _nonconcept(e):
+            out.append(e["data"]["qid"])
+    return list(dict.fromkeys(out))
+
+
+async def _language_bridge(q: str, lang: str, defs: dict | None = None,
+                           force_qid: str = "") -> dict:
+    return await langpivot.bridge(q, lang, _resolve_en_lemma, NONCONCEPT_P31, defs=defs,
+                                  force_qid=force_qid)
+
+
+@app.get("/api/pivot")
+async def api_pivot(q: str, lang: str = "ja", qid: str = ""):
+    """言語の橋: 入力の言語の判定・検索に使う言語（実測順）・表示の言語を返す。"""
+    if not q.strip():
+        raise HTTPException(400, "empty query")
+    await wiktionary.ensure_langnames(lang)
+    qid = qid.strip() if re.fullmatch(r"Q[0-9]+", qid.strip() or "") else ""
+    r = await _language_bridge(q.strip(), lang, force_qid=qid)
+    d = r.get("data") or {}
+    for c in d.get("input_candidates", []):
+        c["name"] = wiktionary.langname(c["code"]) if c.get("code") else c.get("name_en")
+    if d.get("identified"):
+        code = d["identified"].get("code")
+        d["identified"]["name"] = wiktionary.langname(code) if code else d["identified"].get("name_en")
+    for row in d.get("retrieval", []):
+        row["name"] = wiktionary.langname(row["lang"])
+    return r
+
+
+@app.get("/api/backgloss")
+async def api_backgloss(term: str, src: str = "", lang: str = "ja"):
+    """展開した先の語を、利用者の言語の辞書の語義へ戻す（機械翻訳は外部リンクのみ）。"""
+    if not term.strip():
+        raise HTTPException(400, "empty term")
+    return await langpivot.back_gloss(term.strip(), src.strip(), lang)
+
+
 @app.get("/api/origin")
 async def api_origin(q: str, lang: str = "ja"):
     """原語による探求 — 無中心の原点エンジン。どの言語の語からでも、Wiktionaryを
@@ -863,10 +927,55 @@ async def api_origin(q: str, lang: str = "ja"):
     #    biased search), giving the concept-TRANSLATION-origin (疎外→独 Entfremdung,
     #    縁起→梵) and the multilingual WORD fan (the concept in N languages).
     #  ・語経路 wiktionary.trace — the word's linguistic etymology (空→梵 śūnyatā).
-    tr, cn = await asyncio.gather(
-        wiktionary.trace(q, section_lang), concept.node(q, lang))
+    tr, cn, defs = await asyncio.gather(
+        wiktionary.trace(q, section_lang), concept.node(q, lang), langpivot.definitions(q))
     td = tr["data"] if not tr["error"] else {}
     cd = cn["data"] if not cn["error"] else {}
+
+    # 言語の橋（2026-10-14）: 入力語を画面の言語の記事名として引いて着かなかったとき
+    # （候補止まり・別の語へのずれ・曖昧さ回避）、または辞書がその語を画面の言語の語として
+    # 載せていないときは、入力の言語を辞書で判定し、概念を Wikidata で同定してから、
+    # 画面の言語の記事へ戻して辿り直す。入力語そのもので正しく着いた語は変えない。
+    bridge_note = {"applied": False}
+    if langpivot.needs_bridge(defs, cd, lang):
+        br = await _language_bridge(q, lang, defs=defs)
+        bd = br.get("data") or {}
+        disp = bd.get("display") or {}
+        concept_b = bd.get("concept") or {}
+        ident = bd.get("identified") or {}
+        # 入力が画面の言語の語のときは、ラベルで照合できた場合だけ差し替える。
+        # 照合なしで差し替えると、日本語の語が英語の語義を経て別物へずれる
+        # （主体 → 語義 main → マイン川 を 2026-10-14 の回帰比較で実測）。
+        same_lang_unconfirmed = ident.get("code") == lang and not ident.get("confirmed")
+        if concept_b.get("qid") and not same_lang_unconfirmed:
+            route_title, route_lang = disp.get("title"), lang
+            if not route_title:
+                # 画面の言語にこの概念の記事が無い: 検索に使う言語の首位の記事で辿り、その旨を示す
+                top = next(iter(bd.get("retrieval") or []), None)
+                if top:
+                    route_title, route_lang = top["article_title"], top["lang"]
+            if route_title:
+                cn2, tr2 = await asyncio.gather(
+                    concept.node(route_title, route_lang),
+                    wiktionary.trace(q, ident.get("name_en") or section_lang))
+                if not cn2["error"] and (cn2["data"] or {}).get("found"):
+                    cn, cd = cn2, dict(cn2["data"])
+                    cd["resolved_from"] = None
+                if not tr2["error"]:
+                    tr, td = tr2, tr2["data"]
+                bridge_note = {
+                    "applied": True, "from": q, "to": route_title, "to_lang": route_lang,
+                    "display_is_ui_lang": route_lang == lang,
+                    "qid": concept_b.get("qid"), "input_lang": ident.get("code"),
+                    "input_lang_name_en": ident.get("name_en"),
+                    "confirmed": ident.get("confirmed"), "basis": ident.get("basis"),
+                    "retrieved_at": br.get("retrieved_at")}
+        if not bridge_note["applied"]:
+            bridge_note = {"applied": False, "attempted": True,
+                           "why": ("画面の言語の語で、Wikidata のラベルの照合が取れなかったため、既存の解決を保った"
+                                   if same_lang_unconfirmed else
+                                   next((s_["note"] for s_ in bd.get("steps", []) if not s_.get("ok")),
+                                        "概念の項目に着かなかった"))}
 
     # 記事経路の解決が「弱い」ときだけ是正する。強いとき（辿った記事名が問いと表記を
     # 共有しているとき）は一切触らない。実測（基準値42語・2026-09-28）で弱かったのは
@@ -876,7 +985,8 @@ async def api_origin(q: str, lang: str = "ja"):
     canon_applied = None
     canon_data: dict = {}
     _ct = str(cd.get("title") or "")
-    _weak = _canon_should_override(q, _ct, bool(td.get("found") or cd.get("found")))
+    _weak = (not bridge_note.get("applied")) and _canon_should_override(
+        q, _ct, bool(td.get("found") or cd.get("found")))
     # 典拠経路は「弱いとき」だけ呼ぶ。全語で呼ぶと SEP のHTML取得を含む3往復が
     # 毎回加算され、E2E（contrast／nav_viewstate／origin_danger）が時間切れで落ちた。
     # 実測では42語中3語しか弱くないため、通常の語の応答時間は変わらない。
@@ -917,13 +1027,15 @@ async def api_origin(q: str, lang: str = "ja"):
             cd["qid"] = _item.get("qid")
             cd["wikidata_url"] = _item.get("url") or cd.get("wikidata_url")
             cd["found"] = True
-    gen = await wiktionary.ja_senses(q) if lang == "ja" else None
+    # 橋を渡ったときは、利用者の言語の語（戻した先の記事名）で意味と埋没の警告を引く
+    q_ui = bridge_note["to"] if (bridge_note.get("applied") and bridge_note.get("display_is_ui_lang")) else q
+    gen = await wiktionary.ja_senses(q_ui) if lang == "ja" else None
     gen_senses = (gen["data"]["senses"] if gen and not gen["error"] and gen.get("data") else [])
 
     # 埋没の明示警告（最重要）: この日本語の一語に、原語では複数の別語が一語へ抽象化され
     # 一つになっている——それを具体的に指摘し「注意して扱え」と警告することが、この
     # ポータルの核心価値。verified seed（orig_clusters）から、qに一致する語族を出す。
-    cl = _orig_cluster(q, None)
+    cl = _orig_cluster(q_ui, None) or _orig_cluster(q, None)
     collapse_warning = None
     if cl:
         collapse_warning = {
@@ -978,6 +1090,7 @@ async def api_origin(q: str, lang: str = "ja"):
     return {
         "query": q, "lang": lang, "queried_at": now(),
         "word": {"query": q},
+        "language_bridge": bridge_note,          # 言語の橋（入力の言語→概念→表示の言語）
         "found": td.get("found", False) or cd.get("found", False),
         "resolved_from": cd.get("resolved_from"),   # 間主観→間主観性 と辿った場合の元語
         "resolved_to": cd.get("title"),             # 実際に辿った記事名
@@ -1028,7 +1141,7 @@ async def api_origin(q: str, lang: str = "ja"):
             "word_origin": "推定（語源チェーンの最古層・断定でない）",
             "breadth": "データの和集合（言語選定はモデルでなくデータ）"},
         "sources": [{"source": r["source"], "retrieved_at": r["retrieved_at"],
-                     "error": r["error"]} for r in (tr, cn)],
+                     "error": r["error"]} for r in (tr, cn, defs)],
     }
 
 

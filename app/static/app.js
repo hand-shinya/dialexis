@@ -4763,6 +4763,8 @@ async function originRun(q, tok) {
   html += `<div class="card word-card">
     <p class="srcline">${isPerson ? (jp ? "この探求は、まず人物の同定と著作から始まります" : "This inquiry begins with identifying the person and their works") : (jp ? "この探求は、まず言葉そのものから始まります" : "This inquiry begins with the word itself")}</p>
     <h2 class="theword">「${esc((d.word || {}).query || q)}」</h2>${resolvedNote}</div>`;
+  // ── 言語の橋（入力の言語 → 検索に使う言語 → 表示の言語）。中身は fillLangBridge が後から入れる ──
+  if (!isPerson) html += `<div class="card bridge-card" id="lang-bridge" data-q="${esc(q)}"><p class="srcline muted">${jp ? "入力の言語と、検索に使う言語を確かめています…" : "Checking the input language and the languages used for search…"}</p></div>`;
 
   if (!d.found) {
     // 行き止まりにしない: 候補（通常検索が見つける記事）をクリックで辿れる形で示す（第二次戦略）
@@ -4773,7 +4775,7 @@ async function originRun(q, tok) {
     } else {
       html += `<div class="card">${noMiss(q, { lead: jp ? `「${q}」は、次の入り口から探索できます（別表記・語幹・ローマ字でも辿れます）。` : `Explore “${q}” from these entry points.` })}</div>`;
     }
-    $("origin-results").innerHTML = html; return;
+    $("origin-results").innerHTML = html; fillLangBridge(q, tok, d); return;
   }
 
   // 人物は一般語の次元へ落とさない。グラフだけでなく本文カードにも
@@ -4910,6 +4912,97 @@ async function originRun(q, tok) {
   $("origin-results").innerHTML = html;
   bindBreadthExplorer($("origin-results"));
   gDiscoverDims(q, tok);   // #1: concept-specific dimensions from the article's own structure
+  fillLangBridge(q, tok, d);
+}
+
+// ── 言語の橋（所有者 2026-10-14）──────────────────────────────────────────────
+// 「情報源を最も効果的に使うための言語の選択」と「集めた内容の表示」は別の問題である。
+// そこで三つを分けて見せる: ①入力の言語の判定（根拠・ほかの候補） ②検索に使う言語
+// （その概念について実測したヒット数の順。中心言語を固定しない＝P1） ③表示の言語
+// （利用者の言語へ戻した記事）。展開した先の語は、↩ で利用者の言語の辞書の語義へ戻せる。
+async function fillLangBridge(q, tok, od) {
+  const el = $("lang-bridge"); if (!el) return;
+  const jp = LANG === "ja";
+  const br = (od && od.language_bridge) || {};
+  // 橋を渡した語は、本文と同じ判定をもう一度引く（qid を渡すと判定をやり直さず、本文と食い違う）。
+  // 渡していない語は、本文が辿った項目について検索に使う言語だけを求める。
+  const qid = br.applied ? "" : ((od && od.qid) || "");
+  let r;
+  try { r = await api(`/api/pivot?q=${encodeURIComponent(q)}&lang=${LANG}${qid ? `&qid=${encodeURIComponent(qid)}` : ""}`); }
+  catch (e) { if (!originStale(tok)) el.remove(); return; }
+  if (originStale(tok) || !document.body.contains(el)) return;
+  const d = (r && r.data) || {};
+  const id = d.identified, cn = d.concept, disp = d.display || {};
+  // 順位は応答のヒット数で決める（画面の側でも並べ直し、固定の言語順を持ち込まない）
+  const rows = (d.retrieval || []).slice().sort((a, b) => (b.hits ?? -1) - (a.hits ?? -1));
+  const cands = d.input_candidates || [];
+  if (!cands.length && !cn) {   // 辞書に見出しの無い語（日本語の句など）は、この節を出さない
+    el.remove(); return;
+  }
+  const nf = (n) => (n == null ? "—" : Number(n).toLocaleString(jp ? "ja-JP" : "en-US"));
+  const ext = (u, t) => u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>` : "";
+  const olinkB = (t) => `<a href="/origin?q=${encodeURIComponent(t)}&lang=${LANG}"${originLinkAttr()}>${esc(t)}</a>`;
+  const applied = !!br.applied;
+  let h = `<h3>${jp ? "言語の橋 — どの言語で探し、どの言語で見せているか" : "Language bridge — which languages are searched, which one is shown"}</h3>`;
+
+  // ① 入力の言語
+  if (id) {
+    const others = cands.filter(c => c.code !== id.code).slice(0, 5);
+    h += `<div class="bridge-step"><b>① ${jp ? "あなたが入れた語" : "Your input"}</b>「${esc(q)}」 → `
+      + `<b>${esc(id.name || id.name_en)}</b>${jp ? "の語と判定" : ""} `
+      + `<span class="dim-b ${id.confirmed ? "dim-ok" : "dim-part"}">${id.confirmed ? (jp ? "照合済み" : "matched") : (jp ? "推定" : "estimated")}</span>`
+      + `<br><span class="srcline">${jp ? "根拠" : "basis"}: ${esc(id.confirmed ? (jp ? "Wikidata のこの言語のラベルが、入力した語と一致した" : "the Wikidata label in this language equals your input") : (jp ? "辞書（en.wiktionary）の見出しと語義から推定した。ラベルでは照合していない" : "estimated from the dictionary headword and senses; not matched by label"))}`
+      + ` · ${ext((d.dictionary || {}).url, "en.wiktionary")}</span>`;
+    const g = (cands.find(c => c.code === id.code) || {}).glosses || [];
+    if (g.length) h += `<br><span class="srcline">${jp ? "辞書の語義（英語）" : "dictionary senses"}: ${g.map(esc).join(" / ")}</span>`;
+    if (others.length) h += `<br><span class="srcline">${jp ? "同じ綴りの語が在るほかの言語" : "Same spelling also exists in"}: ${others.map(c => `${esc(c.name || c.name_en)}（${esc((c.glosses || [])[0] || "")}）`).join("、")}</span>`;
+    h += `</div>`;
+  }
+  // ② 概念の同定
+  if (cn) {
+    h += `<div class="bridge-step"><b>② ${jp ? "同じ概念" : "Same concept"}</b>: ${cn.label_ui ? `<b>${esc(cn.label_ui)}</b>` : ""} ${ext(cn.url, cn.qid)}`
+      + (cn.description_ui ? `<br><span class="srcline">${esc(cn.description_ui)}</span>` : "")
+      + `<br><span class="srcline">${jp ? "経路" : "routes"}: ${(cn.routes || []).map(x => x === "gloss" ? (jp ? "辞書の語義→Wikidata" : "dictionary sense→Wikidata") : x === "label" ? (jp ? "その言語のラベル→Wikidata" : "label in that language→Wikidata") : (jp ? "この画面が辿った項目" : "the item this page followed")).join("・")}`
+      + ` · ${jp ? "取得" : "retrieved"} ${esc(cn.retrieved_at || "")}</span></div>`;
+  }
+  // ③ 検索に使う言語（実測順）
+  if (rows.length) {
+    h += `<div class="bridge-step"><b>③ ${jp ? "検索に使う言語（情報源が多く応える順・実測）" : "Languages used for search (ordered by measured hits)"}</b>
+      <p class="srcline">${jp ? "この概念の記事を持つ言語ごとに、その言語の Wikipedia で語を全文検索し、ヒットした記事の数で並べています。順位は固定の言語ではなく、この概念について測った値で決まります。" : "For each language that has an article on this concept, the term is full-text searched in that language's Wikipedia; rows are ordered by the number of matching articles."}</p>
+      <table class="plain bridge-tbl"><tr><th>${jp ? "言語" : "language"}</th><th>${jp ? "その言語での語" : "term"}</th><th>${jp ? "ヒット数" : "hits"}</th><th>${jp ? "記事の長さ" : "article size"}</th><th>${jp ? "開く" : "open"}</th><th>${jp ? "↩ あなたの言語で" : "↩ in your language"}</th></tr>
+      ${rows.map(rw => `<tr><td>${esc(rw.name || rw.lang)}</td><td lang="${esc(rw.lang)}"><b>${olinkB(rw.term)}</b></td><td>${nf(rw.hits)}</td><td>${rw.bytes ? nf(rw.bytes) + " B" : "—"}</td>`
+        + `<td>${ext(rw.article_url, "Wikipedia")} ${ext(rw.wiktionary_url, "Wiktionary")}</td>`
+        + `<td>${rw.lang === LANG ? `<span class="srcline">${jp ? "（あなたの言語）" : "(your language)"}</span>` : `<details class="bridge-back" data-term="${esc(rw.term)}" data-src="${esc(rw.lang)}"><summary>↩ ${jp ? "意味" : "meaning"}</summary><div class="srcline muted">…</div></details>`}</td></tr>`).join("")}
+      </table></div>`;
+  }
+  // ④ 表示の言語
+  if (applied) {
+    h += `<div class="bridge-step"><b>④ ${jp ? "表示の言語" : "Display language"}</b>: `
+      + (br.display_is_ui_lang
+        ? (jp ? `この下の内容は、あなたの言語の記事「${olinkB(br.to)}」へ戻して表示しています（入力「${esc(q)}」→ 表示「${esc(br.to)}」）。` : `The cards below are shown from the article “${olinkB(br.to)}” in your language (input “${esc(q)}” → shown “${esc(br.to)}”).`)
+        : (jp ? `この概念には、あなたの言語の記事が見当たらないため、${esc(br.to_lang)} の記事「${esc(br.to)}」で辿っています。③の ↩ で、各語の意味をあなたの言語で確かめられます。` : `This concept has no article in your language, so it is followed through the ${esc(br.to_lang)} article “${esc(br.to)}”. Use ↩ in ③ to read each term's meaning in your language.`))
+      + `</div>`;
+  } else if (disp.title && id && !id.same_as_ui) {
+    h += `<div class="bridge-step"><b>④ ${jp ? "表示の言語" : "Display language"}</b>: ${jp ? `あなたの言語では「${olinkB(disp.title)}」です。` : `In your language: “${olinkB(disp.title)}”.`}</div>`;
+  }
+  // 別の意味の候補（選ぶと、その語で新しく探す＝P11）
+  const alts = (d.alternatives || []).filter(a => a.ui_title || a.label_ui);
+  if (alts.length) h += `<div class="bridge-step"><span class="srcline">${jp ? "別の意味で探す" : "Search another sense"}: ${alts.map(a => olinkB(a.ui_title || a.label_ui)).join("、")}</span></div>`;
+  h += `<p class="srcline muted">${jp ? "検索に使う言語（情報源をどう引くか）と、表示の言語（あなたが読む言語）は、別々に決めています。機械翻訳は使っていません（↩ の中の機械翻訳は外部へのリンクで、未確認です）。" : "The languages used to query sources and the language you read are decided separately. No machine translation is used (the machine-translation link inside ↩ is external and unverified)."}</p>`;
+  el.innerHTML = h;
+  el.querySelectorAll("details.bridge-back").forEach(dt => dt.addEventListener("toggle", async () => {
+    if (!dt.open || dt.dataset.loaded === "1") return;
+    dt.dataset.loaded = "1";
+    const box = dt.querySelector("div");
+    let g;
+    try { g = await api(`/api/backgloss?term=${encodeURIComponent(dt.dataset.term)}&src=${encodeURIComponent(dt.dataset.src)}&lang=${LANG}`); }
+    catch (e) { box.innerHTML = ext(`https://translate.google.com/?sl=${encodeURIComponent(dt.dataset.src)}&tl=${LANG}&text=${encodeURIComponent(dt.dataset.term)}&op=translate`, jp ? "機械翻訳（外部・未確認）" : "machine translation (external, unverified)"); return; }
+    const gd = (g && g.data) || {};
+    const lab = gd.gloss_lang === LANG ? (jp ? "辞書の語義" : "dictionary sense") : (jp ? "辞書の語義（英語）" : "dictionary sense (English)");
+    box.innerHTML = (gd.glosses && gd.glosses.length ? `${lab}: ${gd.glosses.map(esc).join(" / ")} ${ext(gd.dictionary_url, "Wiktionary")}<br>` : "")
+      + (gd.note ? `${esc(gd.note)}<br>` : "")
+      + ext(gd.machine_translation_url, jp ? "機械翻訳（外部・未確認）" : "machine translation (external, unverified)");
+  }));
 }
 
 // 概念固有の次元を発見する層（#1）: その概念自身の記事の節見出し＝固定でなく概念ごとに

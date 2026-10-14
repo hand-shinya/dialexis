@@ -64,6 +64,7 @@ expected_tests = [
   "tests/test_ja_wiktionary.py",
   "tests/test_kanji_variants.py",
   "tests/test_known_harms.py",
+  "tests/test_langpivot.py",
   "tests/test_ledgers.py",
   "tests/test_modern_layer.py",
   "tests/test_narrowing_hint.py",
@@ -217,6 +218,29 @@ observation = "報告が1件以上届き、そのうち1件以上に対応する
 observation_threshold = "報告 >= 1 件 かつ 対応するcommit >= 1 本"
 how_to_measure = "VPS 上で DIALEXIS_DB=... .venv/bin/python tools/read_reports.py で本文を読み（読みは通る）、git log で対応commitを数える"
 retreat = "4週間で報告が0件なら、/report と app/templates/report.html と tests/test_report.py を削除する（table は残して data を失わない）"
+status = "open"
+observed = ""
+evidence = ""
+verdict = ""
+verdict_date = ""
+retired_at = ""
+retired_commit = ""
+
+[[mechanism]]
+id = "language-bridge"
+added = "2026-10-14"
+what = "言語の橋（app/connectors/langpivot.py・GET /api/pivot・GET /api/backgloss・/origin の『言語の橋』カード）。入力の言語を辞書で判定し、概念を Wikidata で同定し、検索に使う言語を実測のヒット数で並べ、表示は利用者の言語の記事へ戻す"
+cost = "endpoint 2本・カード1枚。/api/origin は語ごとに en.wiktionary を1往復多く引く。橋を渡す語では Wikidata・Wikipedia へ最大で約20往復（1日〜7日 cache）"
+implemented_by = ["app/connectors/langpivot.py", "app/main.py:api_pivot", "app/main.py:api_backgloss",
+                  "app/main.py:_resolve_en_lemma", "app/static/app.js:fillLangBridge", "tools/pivot_probe.py"]
+deadline = "2026-12-14"
+# 「橋が在ること」は成功ではない（M0 C2）。二つを分けて測る。
+#   (1) 機械の挙動: 画面の言語と違う言語で入れた語が、正しい概念に着くか（AI が外部試験で測る・公理8）
+#   (2) 利用: 利用者が ↩（展開した先の語を自分の言語へ戻す）を実際に開いたか
+observation = "(1) 本番で tools/pivot_probe.py が 13/15 以上（導入前の同じ語の組は、日本語の画面で 自由 の1語だけが着いた）。(2) 本番の access log に、人が開いた /api/backgloss が1件以上在ること"
+observation_threshold = "landed >= 13/15 かつ /api/backgloss の 200 応答 >= 1 件"
+how_to_measure = "python3 tools/pivot_probe.py http://219.94.244.239:8000 ja の最終行／VPS 上で journalctl -u dialexis | grep -c 'GET /api/backgloss'"
+retreat = "(1) を満たさなければ、langpivot.py と /api/pivot・/api/backgloss・カード・tests/test_langpivot.py・tools/pivot_probe.py を削除し、/api/origin の橋の分岐を外す。(1) だけ満たし (2) が0件なら、↩ の列と /api/backgloss だけを削除する"
 status = "open"
 observed = ""
 evidence = ""
