@@ -27,13 +27,13 @@
   <p class="public-kicker">PUBLIC VALIDATION</p>
   <h2 id="public-release-title">第三者検証用の公開入口</h2>
   <p>このサイトはURLを知っている人が、ログインやAPIキーなしで同じ探索を再現できる公開検証版です。まずは用意した手順で、表示・遷移・失敗時の説明・スマートフォン操作を確認してください。</p>
-  <p class="public-warning"><b>共有インスタンス：</b>個人情報、非公開資料、秘密のAPIキーは入力しないでください。研究データを書き残す操作は、第三者にも見える共有環境として扱います。</p>
+  <p class="public-warning"><b>共有インスタンス：</b>個人情報、非公開資料、秘密のAPIキーは入力しないでください。書き残した台帳は、<b>非公開（既定）なら、このブラウザからだけ</b>見えます。<b>公開</b>にした台帳は、誰でも読めます（書き換えはできません）。どちらも、サーバの運営者は読めます。非公開の台帳は、このブラウザの cookie を消すと開けなくなります。</p>
   <a class="btn" href="/validation?lang=ja">第三者検証ガイドを開く</a>
   {% else %}
   <p class="public-kicker">PUBLIC VALIDATION</p>
   <h2 id="public-release-title">Public entry for third-party validation</h2>
   <p>This instance is open to anyone who knows the URL; the core walkthrough needs no login or API key. Use the reproducible guide to check rendering, transitions, failure explanations and smartphone interaction.</p>
-  <p class="public-warning"><b>Shared instance:</b> do not enter personal data, unpublished material or secret API keys. Treat anything saved here as visible to other users.</p>
+  <p class="public-warning"><b>Shared instance:</b> do not enter personal data, unpublished material or secret API keys. A ledger you save is visible <b>only from this browser while private (the default)</b>; a ledger you make <b>public</b> can be read by anyone (not edited). The server operator can read both. Clearing this browser's cookies makes private ledgers unreachable.</p>
   <a class="btn" href="/validation?lang=en">Open the validation guide</a>
   {% endif %}
 </section>

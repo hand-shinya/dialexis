@@ -2542,7 +2542,8 @@ def _history_discovery_from_sources(q: str, domain: str, lang: str,
         add_term(comp.get("part"), comp.get("lang") or "原語候補",
                  "字の辞書義（補助）" if inside else "語源的構成要素",
                  [q], comp.get("meaning") or "語源データの構成要素",
-                 "unverified" if inside else "candidate", [dict_source],
+                 "unverified" if (inside or comp.get("sense_confirmed") is False) else "candidate",
+                 [dict_source],
                  ("「{}」という単位の内側の字（語の構成要素として読むものでない）".format(in_unit)
                   if inside else "語形の候補"),
                  "概念史上の原点とは別経路", "後世の解釈を混入させない")

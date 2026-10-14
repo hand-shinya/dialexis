@@ -2539,9 +2539,10 @@ function gDimAct(dm) {
   if (!dm) return false;
   const act = dm.act || "";
   const w = (G && G.rootQ) || (($("origin-results") || {}).dataset || {}).q || "";   // この探索の中心語
-  // soon次元＝説明だけで止めない。現在語と次元名を既存の組合せ探索(実データ)へ渡し、同一操作内で実行する
-  // （新機構を作らず既存Action/APIを再利用・取得できなければ組合せ側が続行操作を出す・所有者2026-07-30）。
-  if (dm.status === "soon") { return gCombineRun(w, dm.label, "and"); }
+  // soon次元（資料の源が未接続）は押せない（所有者 2026-10-14 決裁）。以前は「語×次元名」で組合せ探索へ
+  // 渡していたが、次元名の文言そのもので検索するため、語と無関係な記事（責任×時代性→平成・浪曲）を
+  // その次元の答えに見せていた。07-30 の2つの指示の衝突は「契約を満たす源が無い区画は出さない」を採った。
+  if (dm.status === "soon") return false;
   if (act.startsWith("scroll:")) {
     const el = $(act.slice(7));
     if (el) {
@@ -3905,19 +3906,30 @@ function _compNote(a) {
     const head = jp ? "下は1字ごとの辞書義です。" : "Below are per-character dictionary glosses. ";
     const tail = jp ? "。語の意味は「意味のまとまり」の層で見てください。"
                     : ". Read the word's own meaning from the “meaningful units” layer.";
-    return `<p class="segment-note anat-compnote">${head}${bits.join(jp ? "。" : "; ")}${tail}</p>`;
+    return `<p class="segment-note anat-compnote">${head}${bits.join(jp ? "。" : "; ")}${tail}${_senseNote(p)}</p>`;
   }
+  if (p && p.unconfirmed_sense_count) return `<p class="segment-note anat-compnote">${_senseNote(p).trim()}</p>`;
   const n = (a && a.components_note) || "";
   return n ? `<p class="segment-note anat-compnote">${esc(n)}</p>` : "";
 }
+function _senseNote(p) {
+  if (!p || !p.unconfirmed_sense_count) return "";
+  return LANG === "ja"
+    ? " 1字に辞書義が複数あるときは並べて示します。この語の中でどの意味かは、辞書で確かめていない字（未確認）があります。"
+    : " Where a character has several dictionary senses, all are listed; which one applies in this word is unverified for some characters.";
+}
 // 未解決の残り（機械推定・低確度）は、意味のまとまりと同じ言い方をしない。
 function _compInUnit(c) {
-  if (!c || c.applies_to_term !== false || !c.in_unit) return "";
+  if (!c) return "";
+  // 字の辞書義が複数あり、この語の中でどの意味かを辞書で確かめていない字（2026-10-14 所有者決裁）
+  const sense = c.sense_confirmed === false
+    ? `<span class="anat-inunit anat-unverified">${LANG === "ja" ? "（この語での意味は未確認）" : "(sense in this word unverified)"}</span>` : "";
+  if (c.applies_to_term !== false || !c.in_unit) return sense;
   const jp = LANG === "ja", u = esc(c.in_unit);
   const txt = c.unit_kind === "unresolved"
     ? (jp ? `（「${u}」の内側・機械推定）` : `(inside “${u}”, machine estimate)`)
     : (jp ? `（「${u}」の内側）` : `(inside “${u}”)`);
-  return `<span class="anat-inunit">${txt}</span>`;
+  return `<span class="anat-inunit">${txt}</span>` + sense;
 }
 const _ENT_KINDS = new Set(["word", "original", "language", "related", "opposite", "author", "work", "application", "concept", "cooccurrence"]);
 // 実グラフに同じ語の実体ノードがあれば、その **stable ID** を採る（"related:"+w のような合成IDが
@@ -4790,12 +4802,14 @@ async function originRun(q, tok) {
   if (d.dimensions && d.dimensions.length) {
     const badge = (s) => s === "ok" ? `<span class="dim-b dim-ok">${jp ? "辿れる" : "ready"}</span>`
       : s === "partial" ? `<span class="dim-b dim-part">${jp ? "一部" : "partial"}</span>`
-      : `<span class="dim-b dim-soon">${jp ? "組合せで探索" : "via combine"}</span>`;   // 未接続機能の宣伝でなく、クリックで実際に起きる操作を示す
+      : `<span class="dim-b dim-soon">${jp ? "資料の源は未接続" : "no source wired"}</span>`;   // 押せない次元であることを、実際の状態のまま示す（2026-10-14）
     DIMS = d.dimensions;
     html += `<div class="card dim-card"><h3>${jp ? "探究の次元（この言葉をどこから見ていくか）" : "Dimensions of inquiry"}</h3>
-      <p class="muted">${jp ? "一つの言葉を、いくつかの次元から見ていく入口です。「辿れる」＝実データに到達する次元／「一部」＝既存機構につながる次元／「組合せで探索」＝クリックでこの語と次元名を組合せ探索（実データ）へ渡します。上は暫定の【共通次元】。その下に、この概念自身の記事構造から【概念ごとに異なる固有の切り口】を発見して示します（固定分類でない）。" : "Entry points into several dimensions of a word. ready = reaches real data; partial = wired to an existing engine; via combine = clicking runs a real combine search of this word × the dimension name. Above are COMMON dimensions; below are facets DISCOVERED from this concept's own article — different per concept."}</p>
+      <p class="muted">${jp ? "一つの言葉を、いくつかの次元から見ていく入口です。「辿れる」＝実データに到達する次元／「一部」＝既存機構につながる次元／灰色＝この次元に合う資料の源をまだつないでいない次元で、押せません（名前だけを示します）。上は暫定の【共通次元】。その下に、この概念自身の記事構造から【概念ごとに異なる固有の切り口】を発見して示します（固定分類でない）。" : "Entry points into several dimensions of a word. ready = reaches real data; partial = wired to an existing engine; grey = no source is wired for this dimension yet; it is shown by name only and cannot be clicked. Above are COMMON dimensions; below are facets DISCOVERED from this concept's own article — different per concept."}</p>
       <div class="dims">${d.dimensions.map((dm, i) =>
-        `<button type="button" class="dim${dm.status === "soon" ? " dim-x" : ""}" data-i="${i}">${esc(dm.label)} ${badge(dm.status)}</button>`).join("")}</div>
+        dm.status === "soon"
+          ? `<span class="dim-off dim-x" aria-disabled="true" title="${jp ? "この次元に合う資料の源は未接続です" : "No source is wired for this dimension yet"}">${esc(dm.label)} ${badge(dm.status)}</span>`
+          : `<button type="button" class="dim" data-i="${i}">${esc(dm.label)} ${badge(dm.status)}</button>`).join("")}</div>
       <div id="dim-discovered" class="dim-disc"><p class="srcline muted">${jp ? "この概念に固有の切り口を、記事の構造から取得中…" : "discovering concept-specific facets…"}</p></div></div>`;
   }
 

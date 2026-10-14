@@ -206,6 +206,59 @@ def semantic_layers(word):
     return _semantic_layers(word)
 
 
+_HAN_CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]")
+
+
+async def _han_senses(ch, limit=10):
+    """CJK 1文字の辞書義を、辞書に載っている順に複数拾う（2026-10-14 所有者決裁）。
+
+    第一義だけを出すと、語の中での意味と取り違える（物象化の 象＝elephant。
+    物象の象は「かたち・現れ」）。この型の誤りは4回目だった（引き継ぎ第7世代 類型D）。
+    用例行（幼象 ― young elephant）・引用（漢字を含む行）・見出しは語義として数えない。"""
+    text = await _extract(ch)
+    if not text:
+        return []
+    m = re.search(r"Definitions\s*=*\s*\n+" + re.escape(ch) + r"\s*\n+", text)
+    if not m:
+        return []
+    out = []
+    for line in text[m.end():].split("\n")[:60]:
+        line = line.strip()
+        if line.startswith("=="):
+            break
+        bare = re.sub(r"\([^)]*\)", "", line)      # (Classifier: 頭) の漢字は語義の注記で、用例ではない
+        if not line or "―" in line or _HAN_CJK.search(bare) or len(bare) > 90:
+            continue
+        if not re.match(r"^[(A-Za-z]", line):
+            continue
+        g = _clean_gloss(line)
+        # 「elephant: 🩩」のような、既に挙げた語義の記号の注記は重ねない
+        if g and any(g.startswith(x + ":") for x in out):
+            continue
+        if g and g not in out:
+            out.append(g)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _sense_confirmed(senses, word_text):
+    """この語での字の意味を、機械で確かめられるか。
+
+    確かめたことにするのは2つだけ: 字の辞書義が1つしかない（取り違えようがない）、
+    または語そのものの辞書項の本文に、字の語義の語が現れる。どちらでもなければ未確認。"""
+    if len(senses) == 1:
+        return True
+    body = (word_text or "").lower()
+    if not body:
+        return False
+    for g in senses:
+        for tok in re.findall(r"[a-z]{4,}", re.sub(r"\([^)]*\)", "", g.lower())):
+            if re.search(r"\b" + re.escape(tok) + r"\b", body):
+                return True
+    return False
+
+
 async def _han_gloss(ch):
     """CJK 1文字の英語義（构成要素の意味）を en.wiktionary Definitions から拾う。矛→spear／盾→shield。"""
     text = await _extract(ch)
@@ -272,19 +325,28 @@ async def _cjk_anatomy(word):
                                      or u.get("confidence") == "low" else "lexical")
     comps = []
     char_units = []
+    word_text = await _extract(word)
     for ch in list(dict.fromkeys(cjk))[:6]:          # 重複字は1回・最大6字
-        g = await _han_gloss(ch)
+        senses = await _han_senses(ch)
+        g = senses[0] if senses else await _han_gloss(ch)
+        if g and not senses:
+            senses = [g]
+        confirmed = _sense_confirmed(senses, word_text)
+        # 確かめられない字は、第一義だけを断定せず、辞書義を並べて示す
+        shown = g if confirmed else " / ".join(senses)
         inside = unit_of.get(ch, "")
         kind = unit_kind.get(inside, "")
-        char_units.append({"text": ch, "role": "character", "gloss": g,
+        char_units.append({"text": ch, "role": "character", "gloss": shown,
                            "children": [], "source": "Wiktionary",
                            "in_unit": inside, "unit_kind": kind,
                            "applies_to_term": not inside,
-                           "confidence": "grounded" if g else "unverified"})
+                           "senses": senses, "sense_confirmed": confirmed,
+                           "confidence": "grounded" if (g and confirmed) else "unverified"})
         if g:
-            comps.append({"part": ch, "meaning": g,
+            comps.append({"part": ch, "meaning": shown,
                           "in_unit": inside, "unit_kind": kind,
-                          "applies_to_term": not inside})
+                          "applies_to_term": not inside,
+                          "senses": senses, "sense_confirmed": confirmed})
     # F4: 文面はUI側が LANG で組めるよう、構造でも返す。
     lex = list(dict.fromkeys(c["in_unit"] for c in comps
                              if c["in_unit"] and c["unit_kind"] == "lexical"))
@@ -295,6 +357,7 @@ async def _cjk_anatomy(word):
         "lexical_units": lex,
         "unresolved_units": unres,
         "whole_is_one_unit": whole_is_one_unit,
+        "unconfirmed_sense_count": sum(1 for c in comps if not c["sense_confirmed"]),
     }
     # F5: 画面に出る文に否定表現を使わない（「ありません」は
     #     tests/e2e/aspect_no_recenter.e2e.js の禁止語で、deploy gate が落ちた）。
@@ -309,7 +372,11 @@ async def _cjk_anatomy(word):
     note = ""
     if bits:
         note = "下は1字ごとの辞書義です。" + "。".join(bits) + "。語の意味は「意味のまとまり」の層で見てください。"
-    summary = _etym_prose(await _extract(word))
+    if parts["unconfirmed_sense_count"]:
+        note = (note + " " if note else "") + (
+            "1字に辞書義が複数あるときは並べて示します。この語の中でどの意味かは、"
+            "辞書で確かめていない字（未確認）があります。")
+    summary = _etym_prose(word_text)
     return {"term": word, "chain": [], "components": comps, "summary": summary,
             "components_note": note, "components_note_parts": parts,
             "semantic_segments": semantic,

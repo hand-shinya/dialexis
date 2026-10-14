@@ -403,5 +403,62 @@ def test_the_ledger_does_not_stamp_confirmed_on_a_machine_guess():
     seg = src[i:i + 6000]
     assert '"confirmed", [dict_source], "意味のまとまりとして抽出"' not in seg
     assert '"unverified" if unresolved else "candidate"' in seg
-    assert '"unverified" if inside else "candidate"' in seg
+    # 2026-10-14: 字の意味が未確認の字（sense_confirmed=false）も unverified に入れる（より厳しくした）
+    assert '"unverified" if (inside or comp.get("sense_confirmed") is False) else "candidate"' in seg
     assert "字の辞書義（補助）" in seg
+
+
+# ---- 2026-10-14 字の第一義を、語の中での意味として断定しない（所有者決裁） ----------
+# 物象化 で 象＝elephant が「この語に当てはまる」印つきで出ていた（実測 10-14 18:2x）。
+# 物象の象は「かたち・現れ」。同じ型の誤りは4回目（引き継ぎ第7世代 類型D）。
+
+ZOU_TEXT = ("Definitions ====\n\n象\n\nelephant (Classifier: 頭)\n幼象  ―  yòu xiàng  ―  young elephant\n"
+            "來獻其琛：元龜象齒 [Pre-Classical Chinese]\nshape; form; appearance\nimage; phenomenon\n"
+            "to imitate\n==== Compounds ====\n")
+MAO_TEXT = "Definitions ===\n矛\n\nspear; lance\n\n\n==== Compounds ====\n"
+
+
+def _senses_of(text, monkeypatch, ch):
+    async def fake_extract(term):
+        return text
+    monkeypatch.setattr(etymology, "_extract", fake_extract)
+    return asyncio.run(etymology._han_senses(ch))
+
+
+def test_character_senses_are_listed_in_dictionary_order_without_examples(monkeypatch):
+    s = _senses_of(ZOU_TEXT, monkeypatch, "象")
+    assert s[0].startswith("elephant")
+    assert any("shape" in x for x in s) and any("image" in x for x in s)
+    assert not any("―" in x or "young" in x for x in s)        # 用例行は語義でない
+
+
+def test_a_single_sense_character_counts_as_confirmed():
+    assert etymology._sense_confirmed(["spear; lance"], "") is True
+
+
+def test_several_senses_without_the_words_entry_are_unverified():
+    assert etymology._sense_confirmed(["elephant", "shape; form", "image"], "") is False
+
+
+def test_the_words_own_entry_can_confirm_a_sense():
+    body = "Noun: objective form or shape of things; reification"
+    assert etymology._sense_confirmed(["elephant", "shape; form"], body) is True
+
+
+def test_bukshouka_does_not_assert_elephant(monkeypatch):
+    texts = {"象": ZOU_TEXT, "物": "Definitions ===\n物\n\nthing, matter\nsubstance, content\n==",
+             "化": "Definitions ====\n化\n\nto change; to transform\nto become\n=="}
+
+    async def fake_extract(term):
+        return texts.get(term, "")
+
+    async def fake_gloss(ch):
+        return ""
+    monkeypatch.setattr(etymology, "_extract", fake_extract)
+    monkeypatch.setattr(etymology, "_han_gloss", fake_gloss)
+    r = asyncio.run(etymology.anatomy("物象化", [], "ja"))
+    zou = {c["part"]: c for c in r["components"]}["象"]
+    assert zou["sense_confirmed"] is False
+    assert zou["meaning"] != "elephant" and "shape" in zou["meaning"]
+    assert r["components_note_parts"]["unconfirmed_sense_count"] == 3
+    assert "未確認" in r["components_note"]

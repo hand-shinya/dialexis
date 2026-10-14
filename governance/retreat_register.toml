@@ -254,6 +254,15 @@ retired_commit = ""
 # ---------------------------------------------------------------------------
 
 [[correction]]
+id = "anatomy-char-first-sense-not-asserted"
+fixed = "2026-10-14"
+what = """/api/anatomy が CJK の1字の辞書の第一義だけを、語の中での意味として出していた。
+物象化 で 象＝elephant が applies_to_term=true つきで出た（物象の象は「かたち・現れ」）。
+同じ型の誤りは4回目（引き継ぎ第7世代 類型D）。所有者決裁 2026-10-14「推奨どおり」。"""
+how_fixed = "字の辞書義を辞書の順に複数並べ、語の中での意味を機械で確かめられない字に sense_confirmed=false と『この語での意味は未確認』を付ける。確かめたとするのは、辞書義が1つの字と、語の辞書項の本文に語義の語が現れる字だけ"
+guarded_by = "tests/test_known_harms.py"
+
+[[correction]]
 id = "anatomy-char-gloss-not-term-gloss"
 fixed = "2026-10-09"
 what = """/api/anatomy が返す1字ごとの辞書義を、語の意味の構成要素として読める形で出していた。

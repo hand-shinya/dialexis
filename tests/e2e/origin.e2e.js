@@ -164,11 +164,10 @@ function log(name, ok, detail) { results.push({ name, ok, detail }); console.log
   }
   log("dim '批判・異論' → counter panel", crit);
   await page.evaluate(() => { const p = document.getElementById("graph-panel"); if (p) p.remove(); });
-  // 4c. click a 'soon' dim (時代性) → note panel
-  let soon = false;
-  const soonBtn = page.locator(".dim", { hasText: "時代性" });
-  if (await soonBtn.count()) { await soonBtn.first().click(); await page.waitForTimeout(300); soon = await page.locator("#graph-panel").count() > 0; }
-  log("dim '時代性'(soon) → note panel", soon);
+  // 4c. 'soon' の次元（時代性）は押せない札として名前だけを示す（所有者 2026-10-14 決裁）
+  const soonOff = await page.locator(".dim-off", { hasText: "時代性" }).count();
+  const soonBtn = await page.locator("button.dim", { hasText: "時代性" }).count();
+  log("dim '時代性'(soon) は押せない札として示される", soonOff >= 1 && soonBtn === 0);
 
   // #1 concept-specific DISCOVERED dimensions (from the concept's own article)
   let discCount = 0, discSpecific = false;

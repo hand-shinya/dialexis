@@ -510,6 +510,7 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
   padding: .45rem .7rem; display: inline-flex; align-items: center; gap: .4rem; }
 .dim:hover { border-color: var(--accent2); }
 .dim-x { opacity: .72; }
+.dim-off { display: inline-block; padding: .3em .6em; margin: .15em; border: 1px dashed var(--muted); border-radius: 6px; color: var(--muted); cursor: default; }
 .dim-b { font-size: .66rem; padding: .05rem .4rem; border-radius: 999px; font-family: system-ui, sans-serif; }
 .dim-ok { background: #e2f4e8; color: var(--ok); }
 .dim-part { background: #fdf1d7; color: var(--warn); }
