@@ -875,6 +875,57 @@ async def _language_bridge(q: str, lang: str, defs: dict | None = None,
                                   force_qid=force_qid)
 
 
+async def _bridge_decision(q: str, lang: str, defs: dict | None = None,
+                           cd: dict | None = None):
+    """言語の橋を渡すかを決め、渡すなら行き先の記事で concept.node を引く。
+
+    返り値: (bridge_note, 行き先の concept.node の応答 or None, 行き先の言語)。
+    入力語そのもので画面の言語の記事に正しく着いた語は渡さない。入力が画面の言語の語で、
+    Wikidata のラベルで照合できないときも差し替えない（主体 → 語義 main → マイン川 を実測）。"""
+    if defs is None:
+        defs = await langpivot.definitions(q)
+    if cd is None:
+        cn0 = await concept.node(q, lang)
+        cd = cn0["data"] if not cn0["error"] else {}
+    if not langpivot.needs_bridge(defs, cd, lang):
+        return {"applied": False}, None, lang
+    br = await _language_bridge(q, lang, defs=defs)
+    bd = br.get("data") or {}
+    disp = bd.get("display") or {}
+    concept_b = bd.get("concept") or {}
+    ident = bd.get("identified") or {}
+    same_lang_unconfirmed = ident.get("code") == lang and not ident.get("confirmed")
+    if concept_b.get("qid") and not same_lang_unconfirmed:
+        route_title, route_lang = disp.get("title"), lang
+        if not route_title:
+            # 画面の言語にこの概念の記事が無い: 検索に使う言語の首位の記事で辿り、その旨を示す
+            top = next(iter(bd.get("retrieval") or []), None)
+            if top:
+                route_title, route_lang = top["article_title"], top["lang"]
+        if route_title:
+            cn2 = await concept.node(route_title, route_lang)
+            return ({"applied": True, "from": q, "to": route_title, "to_lang": route_lang,
+                     "display_is_ui_lang": route_lang == lang,
+                     "qid": concept_b.get("qid"), "input_lang": ident.get("code"),
+                     "input_lang_name_en": ident.get("name_en"),
+                     "confirmed": ident.get("confirmed"), "basis": ident.get("basis"),
+                     "retrieved_at": br.get("retrieved_at")}, cn2, route_lang)
+    return ({"applied": False, "attempted": True,
+             "why": ("画面の言語の語で、Wikidata のラベルの照合が取れなかったため、既存の解決を保った"
+                     if same_lang_unconfirmed else
+                     next((s_["note"] for s_ in bd.get("steps", []) if not s_.get("ok")),
+                          "概念の項目に着かなかった"))}, None, lang)
+
+
+async def _bridged_term(q: str, lang: str) -> tuple[str, dict]:
+    """グラフ・切り口・解剖が使う「この画面で辿る語」。橋を渡す語では、利用者の言語の記事名
+    （uhuru → 自由）を返す。渡さない語・画面の言語の記事が無い語では、入力語をそのまま返す。"""
+    note, _, route_lang = await _bridge_decision(q, lang)
+    if note.get("applied") and route_lang == lang and note.get("to"):
+        return note["to"], note
+    return q, note
+
+
 @app.get("/api/pivot")
 async def api_pivot(q: str, lang: str = "ja", qid: str = ""):
     """言語の橋: 入力の言語の判定・検索に使う言語（実測順）・表示の言語を返す。"""
@@ -932,50 +983,16 @@ async def api_origin(q: str, lang: str = "ja"):
     td = tr["data"] if not tr["error"] else {}
     cd = cn["data"] if not cn["error"] else {}
 
-    # 言語の橋（2026-10-14）: 入力語を画面の言語の記事名として引いて着かなかったとき
-    # （候補止まり・別の語へのずれ・曖昧さ回避）、または辞書がその語を画面の言語の語として
-    # 載せていないときは、入力の言語を辞書で判定し、概念を Wikidata で同定してから、
-    # 画面の言語の記事へ戻して辿り直す。入力語そのもので正しく着いた語は変えない。
-    bridge_note = {"applied": False}
-    if langpivot.needs_bridge(defs, cd, lang):
-        br = await _language_bridge(q, lang, defs=defs)
-        bd = br.get("data") or {}
-        disp = bd.get("display") or {}
-        concept_b = bd.get("concept") or {}
-        ident = bd.get("identified") or {}
-        # 入力が画面の言語の語のときは、ラベルで照合できた場合だけ差し替える。
-        # 照合なしで差し替えると、日本語の語が英語の語義を経て別物へずれる
-        # （主体 → 語義 main → マイン川 を 2026-10-14 の回帰比較で実測）。
-        same_lang_unconfirmed = ident.get("code") == lang and not ident.get("confirmed")
-        if concept_b.get("qid") and not same_lang_unconfirmed:
-            route_title, route_lang = disp.get("title"), lang
-            if not route_title:
-                # 画面の言語にこの概念の記事が無い: 検索に使う言語の首位の記事で辿り、その旨を示す
-                top = next(iter(bd.get("retrieval") or []), None)
-                if top:
-                    route_title, route_lang = top["article_title"], top["lang"]
-            if route_title:
-                cn2, tr2 = await asyncio.gather(
-                    concept.node(route_title, route_lang),
-                    wiktionary.trace(q, ident.get("name_en") or section_lang))
-                if not cn2["error"] and (cn2["data"] or {}).get("found"):
-                    cn, cd = cn2, dict(cn2["data"])
-                    cd["resolved_from"] = None
-                if not tr2["error"]:
-                    tr, td = tr2, tr2["data"]
-                bridge_note = {
-                    "applied": True, "from": q, "to": route_title, "to_lang": route_lang,
-                    "display_is_ui_lang": route_lang == lang,
-                    "qid": concept_b.get("qid"), "input_lang": ident.get("code"),
-                    "input_lang_name_en": ident.get("name_en"),
-                    "confirmed": ident.get("confirmed"), "basis": ident.get("basis"),
-                    "retrieved_at": br.get("retrieved_at")}
-        if not bridge_note["applied"]:
-            bridge_note = {"applied": False, "attempted": True,
-                           "why": ("画面の言語の語で、Wikidata のラベルの照合が取れなかったため、既存の解決を保った"
-                                   if same_lang_unconfirmed else
-                                   next((s_["note"] for s_ in bd.get("steps", []) if not s_.get("ok")),
-                                        "概念の項目に着かなかった"))}
+    # 言語の橋（2026-10-14）: 判定は _bridge_decision に一本化し、本文・グラフ・切り口・解剖が
+    # 同じ判定を通る（P11 作用の普遍性。本番で グラフだけが UBURU を描いた実例による）。
+    bridge_note, cn2, route_lang = await _bridge_decision(q, lang, defs, cd)
+    if bridge_note.get("applied"):
+        tr2 = await wiktionary.trace(q, bridge_note.get("input_lang_name_en") or section_lang)
+        if cn2 is not None and not cn2["error"] and (cn2["data"] or {}).get("found"):
+            cn, cd = cn2, dict(cn2["data"])
+            cd["resolved_from"] = None
+        if not tr2["error"]:
+            tr, td = tr2, tr2["data"]
 
     # 記事経路の解決が「弱い」ときだけ是正する。強いとき（辿った記事名が問いと表記を
     # 共有しているとき）は一切触らない。実測（基準値42語・2026-09-28）で弱かったのは
@@ -3858,15 +3875,19 @@ async def api_origin_graph(q: str, lang: str = "ja"):
     if person:
         return _person_graph(person, q, lang)
     await wiktionary.ensure_langnames(lang)   # 全言語コード→日本語名を用意（生コード表示の解消）
-    cn = await concept.node(q, lang)
+    # 言語の橋: 本文（/api/origin）と同じ判定で、この画面で辿る語を決める（P11）
+    qb, bnote = await _bridged_term(q, lang)
+    cn = await concept.node(qb, lang)
     cd = cn["data"] if not cn["error"] else {}
     _sec = {"ja": "Japanese", "en": "English", "de": "German", "zh": "Chinese"}.get(lang, "Japanese")
+    if bnote.get("applied") and bnote.get("input_lang_name_en"):
+        _sec = bnote["input_lang_name_en"]   # 入力語そのものの語源は、判定した言語の節で辿る
     tr = await wiktionary.trace(q, _sec)   # 語源trace＝ja記事に無い原語(διά等)でも辿れる（section名で渡す）
     td = tr["data"] if not tr["error"] else {}
-    gen = await wiktionary.ja_senses(q) if lang == "ja" else None
+    gen = await wiktionary.ja_senses(qb) if lang == "ja" else None
     senses = (gen["data"]["senses"] if gen and not gen["error"] and gen.get("data") else [])
-    cluster = _orig_cluster(q, None)
-    lineage = _author_lineage(q, None)
+    cluster = _orig_cluster(qb, None) or _orig_cluster(q, None)
+    lineage = _author_lineage(qb, None) or _author_lineage(q, None)
 
     nodes, edges, seen = [], [], set()
 
@@ -4522,7 +4543,8 @@ async def api_anatomy(q: str, lang: str = "ja", own: int = 0):
     if own:
         cands = []   # 訳語候補を使わない＝語そのもの→(自身のページ)→CJK構成文字、の順で語自身の来歴を取る
     else:
-        v = await concept.variants(q, lang)
+        qb, _bnote = await _bridged_term(q, lang)   # 言語の橋: 訳語候補は本文と同じ概念から取る（P11）
+        v = await concept.variants(qb, lang)
         labels = (v["data"] if not v["error"] else {}).get("labels", {})
         cands = [labels.get("en"), labels.get("la"), labels.get("de"), labels.get("grc"), labels.get("fr")]
     r = await etymology.anatomy(q, cands, lang)
@@ -4548,6 +4570,7 @@ async def api_dimensions(q: str, lang: str = "ja"):
     if not q.strip():
         raise HTTPException(400, "empty query")
     WP = f"https://{lang}.wikipedia.org/w/api.php"
+    q, _bnote = await _bridged_term(q.strip(), lang)   # 言語の橋: 本文と同じ記事の節を見る（P11）
     try:
         sb, _, _ = await cached_get_json(WP, {"action": "query", "list": "search",
                                               "srsearch": q, "srlimit": 1, "format": "json"})

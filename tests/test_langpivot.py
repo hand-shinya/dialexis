@@ -197,3 +197,54 @@ def test_script_alone_gives_a_candidate_only_when_the_script_is_unique():
 
 def test_no_dictionary_entry_but_unique_script_still_bridges():
     assert lp.needs_bridge(_defs([], "아름다움"), {"found": False}, "ja")
+
+
+def test_graph_dimensions_and_anatomy_follow_the_same_bridge(monkeypatch):
+    """本番で、本文は「自由」へ渡ったのにグラフだけが UBURU・ウエマツヨシキを描いた（2026-10-14）。
+    本文・グラフ・切り口・解剖は、同じ判定（_bridged_term）を通らなければならない（P11）。"""
+    import asyncio
+    from app import main
+    from app.connectors import concept, wiktionary
+
+    async def bridged(q, lang):
+        return ("自由", {"applied": True, "to": "自由", "input_lang_name_en": "Swahili"})
+    seen = {"node": [], "variants": [], "search": []}
+
+    async def node(word, lang="ja"):
+        seen["node"].append(word)
+        return {"source": "concept-node", "retrieved_at": "t", "error": None,
+                "data": {"found": True, "qid": "Q2979", "title": word}}
+
+    async def variants(word, lang="ja"):
+        seen["variants"].append(word)
+        return {"source": "concept-variants", "retrieved_at": "t", "error": None, "data": {"labels": {}}}
+
+    async def trace(word, sec=""):
+        return {"source": "wiktionary:trace", "retrieved_at": "t", "error": None, "data": {}}
+
+    async def none(*a, **k):
+        return None
+
+    async def nothing(*a, **k):
+        return {"source": "wiktionary:ja", "retrieved_at": "t", "error": None, "data": {"senses": []}}
+
+    async def fake_get(url, params=None, **k):
+        seen["search"].append((params or {}).get("srsearch") or (params or {}).get("page"))
+        return {"query": {"search": []}}, "t", True
+    monkeypatch.setattr(main, "_bridged_term", bridged)
+    monkeypatch.setattr(main, "_person_profile_for_query_async", none)
+    monkeypatch.setattr(concept, "node", node)
+    monkeypatch.setattr(concept, "variants", variants)
+    monkeypatch.setattr(wiktionary, "trace", trace)
+    monkeypatch.setattr(wiktionary, "ja_senses", nothing)
+    monkeypatch.setattr(main, "cached_get_json", fake_get)
+
+    async def no_anatomy(q, cands, lang):
+        return {}
+    monkeypatch.setattr(main.etymology, "anatomy", no_anatomy)
+    asyncio.run(main.api_origin_graph("uhuru", "ja"))
+    asyncio.run(main.api_dimensions("uhuru", "ja"))
+    asyncio.run(main.api_anatomy("uhuru", "ja", 0))
+    assert seen["node"] and seen["node"][0] == "自由"
+    assert seen["search"] and seen["search"][0] == "自由"
+    assert seen["variants"] == ["自由"]
