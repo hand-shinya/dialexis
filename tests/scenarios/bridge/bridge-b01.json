@@ -1,0 +1,38 @@
+{
+ "input_langs": [],
+ "max_steps": 12,
+ "situation_lang": "ja",
+ "writer": {
+  "can_type": true,
+  "max_len": 40,
+  "scripts": [
+   "any"
+  ],
+  "typo_rate": 0.0
+ },
+ "id": "bridge-b01",
+ "group": "bridge",
+ "concept_pool": [
+  "B01"
+ ],
+ "situation": {
+  "B01": "人間関係がモノのようになってしまう現象が気になっている。この現象を哲学ではどう考えてきたのか、その起源を知りたい。"
+ },
+ "reader": {
+  "scripts": [
+   "any"
+  ],
+  "unknown_words": [
+   "物象化",
+   "Verdinglichung",
+   "Reification",
+   "物神性",
+   "疎外",
+   "物化"
+  ]
+ },
+ "success": {
+  "url_re": "q=(物象化|疎外|物化|Verdinglichung|Reification|reification)",
+  "text_re": "物象化|疎外|物化"
+ }
+}

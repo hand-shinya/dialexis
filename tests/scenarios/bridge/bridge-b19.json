@@ -1,0 +1,37 @@
+{
+ "input_langs": [],
+ "max_steps": 12,
+ "situation_lang": "ja",
+ "writer": {
+  "can_type": true,
+  "max_len": 40,
+  "scripts": [
+   "any"
+  ],
+  "typo_rate": 0.0
+ },
+ "id": "bridge-b19",
+ "group": "bridge",
+ "concept_pool": [
+  "B19"
+ ],
+ "situation": {
+  "B19": "自分の決断は前から決まっていたのでは、と考えると落ち着かない。哲学ではどう考えてきたのか知りたい。"
+ },
+ "reader": {
+  "scripts": [
+   "any"
+  ],
+  "unknown_words": [
+   "決定論",
+   "自由意志",
+   "両立論",
+   "運命論",
+   "非決定論"
+  ]
+ },
+ "success": {
+  "url_re": "q=(決定論|自由意志|両立論|運命論|非決定論)",
+  "text_re": "決定論|自由意志|両立論|運命論"
+ }
+}

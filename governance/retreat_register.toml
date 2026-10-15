@@ -51,6 +51,7 @@ max_horizon_days = 90
 expected_tests = [
   "tests/test_action_registry_coverage.py",
   "tests/test_arguments.py",
+  "tests/test_bridge_ground.py",
   "tests/test_canon_chain_fixture.py",
   "tests/test_canon_endpoint_integration.py",
   "tests/test_canon_override.py",

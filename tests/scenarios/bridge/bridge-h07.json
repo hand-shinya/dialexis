@@ -1,0 +1,38 @@
+{
+ "input_langs": [],
+ "max_steps": 12,
+ "situation_lang": "ja",
+ "writer": {
+  "can_type": true,
+  "max_len": 40,
+  "scripts": [
+   "any"
+  ],
+  "typo_rate": 0.0
+ },
+ "id": "bridge-h07",
+ "group": "bridge",
+ "concept_pool": [
+  "H07"
+ ],
+ "situation": {
+  "H07": "嘘をついてもいい時はあるのか、ずっと気になっている。哲学ではどう考えられてきたのか知りたい。"
+ },
+ "reader": {
+  "scripts": [
+   "any"
+  ],
+  "unknown_words": [
+   "義務論",
+   "功利主義",
+   "帰結主義",
+   "定言命法",
+   "カント",
+   "ミル"
+  ]
+ },
+ "success": {
+  "url_re": "q=(義務論|功利主義|帰結主義|定言命法)",
+  "text_re": "義務論|功利主義|帰結主義|定言命法"
+ }
+}

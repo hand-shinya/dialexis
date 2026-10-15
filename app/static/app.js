@@ -4798,6 +4798,16 @@ async function originRun(q, tok) {
   // ── 言語の橋（入力の言語 → 検索に使う言語 → 表示の言語）。中身は fillLangBridge が後から入れる ──
   if (!isPerson) html += `<div class="card bridge-card" id="lang-bridge" data-q="${esc(q)}"><p class="srcline muted">${jp ? "入力の言語と、検索に使う言語を確かめています…" : "Checking the input language and the languages used for search…"}</p></div>`;
 
+  // 文 → 哲学概念の候補（2026-10-15 隔離試作）。実在の項目に接地できたものだけを出所つきで示す。
+  // 着かなかったときと、仮名を含む文が別の記事へずれて着いたとき（人をモノとして扱う → 別記事）に出す。
+  const sentenceLike = /[ぁ-ん]/.test(q) && q.length >= 6;
+  if (!d.found || (sentenceLike && d.resolved_from)) {
+    // 置き場所は検索欄のすぐ下（地図より上）。本文の下に置いたら、ADIP の擬似利用者
+    // 18本のうち候補を押した走行は0本で、全員が上部の地図とメニューだけを操作した（2026-10-15）。
+    $("origin-status").innerHTML = `<div class="card bridge-cands" id="bridge-cands"><p class="srcline muted">${jp ? "この文から考えられる哲学の概念を探しています…" : "Looking for philosophical concepts behind this sentence…"}</p></div>`;
+    setTimeout(() => fillBridgeCands(q, tok), 0);
+  }
+
   if (!d.found) {
     // 行き止まりにしない: 候補（通常検索が見つける記事）をクリックで辿れる形で示す（第二次戦略）
     const sg = d.suggestions || [];
@@ -4947,6 +4957,28 @@ async function originRun(q, tok) {
   bindBreadthExplorer($("origin-results"));
   gDiscoverDims(q, tok);   // #1: concept-specific dimensions from the article's own structure
   fillLangBridge(q, tok, d);
+}
+
+async function fillBridgeCands(q, tok) {
+  const el = $("bridge-cands"); if (!el) return;
+  const jp = LANG === "ja";
+  let r; try { r = await api(`/api/bridge?q=${encodeURIComponent(q)}`); } catch (e) { if (!originStale(tok)) el.remove(); return; }
+  if (originStale(tok) || !document.body.contains(el)) return;
+  // 同じ項目を両方の経路が出したら、出所をまとめて両方の札を並べる（独立した経路の一致は情報である）
+  const byQ = new Map();
+  for (const x of [...(r.llm || []), ...(r.keyless || [])]) {
+    const y = byQ.get(x.qid);
+    if (!y) byQ.set(x.qid, { ...x, levels: [x.level], sources: [...(x.sources || [])] });
+    else { if (!y.levels.includes(x.level)) y.levels.push(x.level); y.sources.push(...(x.sources || [])); if (!y.why && x.why) y.why = x.why; }
+  }
+  const uniq = [...byQ.values()].slice(0, 10);
+  if (!uniq.length) { el.remove(); return; }
+  el.innerHTML = `<h3>${jp ? "この文から考えられる哲学の概念（候補）" : "Philosophical concepts this sentence may point to (candidates)"}</h3>
+    <p class="srcline">${jp ? "どれも候補です。押すと、その概念から新しく探します。理由と出所を添えています。" : "All are candidates. Click one to explore from it. Reasons and sources are shown."}</p>
+    <ul class="bridge-list">${uniq.map(x => `<li><a class="bridge-cand" href="/origin?q=${encodeURIComponent(x.title)}&lang=${LANG}"${originLinkAttr()}><b>${esc(x.title)}</b></a>`
+      + x.levels.map(lv => ` <span class="dim-b ${lv === 2 ? "dim-part" : "dim-ok"}">${lv === 2 ? (jp ? "あなたのLLMの提案・実在を確認済み" : "your LLM, grounded") : (jp ? "鍵不要の検索" : "keyless search")}</span>`).join("")
+      + (x.why ? `<br><span class="srcline">${esc(x.why)}</span>` : "")
+      + `<br><span class="srcline muted">${jp ? "出所" : "sources"}: ${[...new Set(x.sources || [])].map(esc).join("・")} · <a href="https://www.wikidata.org/wiki/${esc(x.qid)}" target="_blank" rel="noopener">${esc(x.qid)}</a></span></li>`).join("")}</ul>`;
 }
 
 // ── 言語の橋（所有者 2026-10-14）──────────────────────────────────────────────

@@ -37,6 +37,7 @@ from .connectors import translation_edge  # 訳語辺（2026-10-02）
 from .connectors import ja_wiktionary, ndl_fulltext  # 辞書層と用例層（2026-10-05）
 from .connectors import tetsugaku_jii  # 訳語史層・1881年の訳語対応（2026-10-07）
 from .connectors import langpivot  # 言語の橋・入力/検索/表示の言語を分ける（2026-10-14）
+from .connectors import bridge as bridge_c  # 文→概念の候補（2026-10-15 隔離試作）
 from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept, searxng, etymology
 from .connectors.base import cached_get_json, cached_get_text
 from . import citations as cites
@@ -924,6 +925,14 @@ async def _bridged_term(q: str, lang: str) -> tuple[str, dict]:
     if note.get("applied") and route_lang == lang and note.get("to"):
         return note["to"], note
     return q, note
+
+
+@app.get("/api/bridge")
+async def api_bridge(q: str):
+    """文 → 哲学概念の候補（隔離試作・本番に入れていない）。接地できた項目だけを返す。"""
+    if not q.strip():
+        raise HTTPException(400, "empty query")
+    return await bridge_c.candidates(q.strip()[:200])
 
 
 @app.get("/api/pivot")
