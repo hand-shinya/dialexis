@@ -33,7 +33,7 @@ import time
 import urllib.parse
 import urllib.request
 
-UA = {"User-Agent": "Dialexis-eval/0.1 (+https://github.com/hand-shinya/dialexis; bridge evaluation)"}
+UA = {"User-Agent": "Dialexis-eval/0.1 (bridge evaluation; research use)"}
 
 # 評価仕様（2026-10-14・暫定）の20問。期待する概念は検索上の候補で、一意な正解ではない。
 QUESTIONS = [
