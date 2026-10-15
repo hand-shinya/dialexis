@@ -3987,6 +3987,26 @@ function _panoRelations(d, cx) {   // 関係・対立・運動
   // 「対立」「近い概念」「関連」は**区分名（B）**＝リンクにしない。語だけがエンティティ（C）。
   const row = (lbl, arr, kind) => arr.length ? `<p class="pano-lbl">${lbl}</p><p class="pano-terms">`
     + arr.map(w => _entLink(w, kind, kind + ":" + w)).join("　") + `</p>` : "";
+  const typed = Array.isArray(o.relations_typed) ? o.relations_typed : null;
+  if (typed && typed.length) {
+    // 型・向き・宣言元を保った表示（2026-10-15 試作）。「近い概念」の1箱にまとめない。
+    // 逆向きの行は「相手の項目の言明」であり、この項目の言明として読ませない。
+    const me = esc(cx.term || o.query || "");
+    const who = (r) => r.declared_by === "this" ? "Wikidata（この項目の言明）"
+      : r.declared_by === "other" ? "Wikidata（相手の項目の言明）" : "記事の関連項目";
+    const order = { out: 0, in: 1 };
+    const rows = typed.slice().sort((a, b) => (order[a.direction] - order[b.direction])).slice(0, 16);
+    h += `<p class="pano-lbl">関係（型と向き・宣言元つき）</p><ul class="pano-typed">`
+      + rows.map(r => {
+        const other = _entLink(r.label, r.rel === "P461" || r.rel === "P1889" ? "opposite" : "related",
+          (r.rel === "P461" || r.rel === "P1889" ? "opposite:" : "related:") + r.label);
+        const txt = esc(r.reading || "{a} と {b}").replace("{a}", `<b>${me}</b>`).replace("{b}", other);
+        return `<li class="rel-typed" data-rel="${esc(r.rel)}" data-dir="${esc(r.direction)}">${txt}`
+          + ` <a class="srcline" href="${esc(r.source)}" target="_blank" rel="noopener">${who(r)}</a></li>`;
+      }).join("") + `</ul>`;
+    h += row("関連", concepts, "related");
+    return h;
+  }
   h += row("対立", opp, "opposite") + row("近い概念", near, "related") + row("関連", concepts, "related");
   return h || "";   // 実データが無ければ節を出さない
 }

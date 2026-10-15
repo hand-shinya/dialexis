@@ -48,9 +48,11 @@ async def _resolve(qids, lang="ja"):
         for q, e in body.get("entities", {}).items():
             lab = e.get("labels", {})
             name = (lab.get(lang) or lab.get("en") or {}).get("value")
+            name_in_lang = bool(lab.get(lang))
             claims = e.get("claims", {})
             p31 = _claim_qids(claims, "P31")
-            out[q] = {"qid": q, "label": name, "is_person": "Q5" in p31, "p31": p31,
+            out[q] = {"qid": q, "label": name, "label_in_lang": name_in_lang,
+                      "is_person": "Q5" in p31, "p31": p31,
                       "nclaims": sum(len(v) for v in claims.values()),  # 重要度の代理（言明数）
                       "influenced_by": _claim_qids(claims, "P737")}     # 影響を受けた（関係線用）
     return out
@@ -138,6 +140,67 @@ _ABBREV = {
 # 属性で。概念自身のclaim＝偏りなく決定論的。人物は含めない（思想家レンズの領分）。
 _REL_NEAR = ["P460", "P1269", "P279", "P361", "P527"]   # 同一視/facet/上位/一部/部分
 _REL_OPP = ["P461", "P1889"]                            # 対義/別物
+
+# 型と向きを保った関係（2026-10-14〜15・隔離試作）。
+# near/opposite は既存の利用者（7か所）があるので変えない。それとは別に、
+# 「どの属性で」「どちらの項目が宣言したか」を落とさない欄を足す。
+# 向きのある関係（P279 上位・P361 全体・P527 部分）は、相手側から見た言い方を別に持つ。
+# 逆向きの関係は「相手の項目がこの項目について宣言したもの」であり、この項目の言明ではない。
+REL_TYPES = {
+    #       自分が宣言（out）したときの読み          相手が宣言（in）したときの読み        対称
+    "P279": ("{a} は {b} の下位概念",              "{b} は {a} の下位概念",              False),
+    "P361": ("{a} は {b} の一部",                  "{b} は {a} の一部",                  False),
+    "P527": ("{a} は {b} を部分に持つ",            "{b} は {a} を部分に持つ",            False),
+    "P460": ("{a} は {b} と同じとされることがある", "{b} は {a} と同じとされることがある", True),
+    "P1269": ("{a} は {b} の一側面",               "{b} は {a} の一側面",                False),
+    "P461": ("{a} は {b} と対立する",              "{b} は {a} と対立する",              True),
+    "P1889": ("{a} は {b} と別物",                 "{b} は {a} と別物",                  True),
+}
+
+
+async def _incoming(qid, props=tuple(REL_TYPES)):
+    """相手の項目が qid について宣言している関係（haswbstatement 検索・属性ごと最大20件）。"""
+    out = []
+    for p in props:
+        try:
+            d, _, _ = await cached_get_json(WD_API, {
+                "action": "query", "list": "search", "srsearch": f"haswbstatement:{p}={qid}",
+                "srlimit": 20, "srnamespace": 0, "format": "json"}, ttl=86400)
+        except Exception:
+            continue
+        out += [(p, h["title"]) for h in (d.get("query") or {}).get("search", [])
+                if str(h.get("title", "")).startswith("Q")]
+    return out
+
+
+def typed_relations(qid, claims, incoming, res, seealso_q, title, lang):
+    """型・向き・宣言元・出典を持つ関係の一覧。人物と自分自身は除く（星座と同じ）。"""
+    rows, seen = [], set()
+
+    def add(other, prop, direction, declared_by, source):
+        r = res.get(other)
+        if not r or not r.get("label") or r.get("is_person") or other == qid:
+            return
+        key = (other, prop, direction)
+        if key in seen:
+            return
+        seen.add(key)
+        out_t, in_t, sym = REL_TYPES.get(prop, ("{a} と {b} は関連する", "{b} と {a} は関連する", True))
+        rows.append({"qid": other, "label": r["label"], "rel": prop, "direction": direction,
+                     "symmetric": sym, "declared_by": declared_by,
+                     "reading": out_t if direction == "out" else in_t,
+                     "source": source})
+    for p in REL_TYPES:
+        for o in _claim_qids(claims, p):
+            add(o, p, "out", "this", f"https://www.wikidata.org/wiki/{qid}#{p}")
+    for p, o in incoming:
+        # 相手側の宣言は数が多く雑音も多い（物象化 ← red-tagging in the Philippines）。
+        # 画面の言語のラベルを持つ項目だけを出す（その言語圏で項目として整えられているもの）。
+        if (res.get(o) or {}).get("label_in_lang"):
+            add(o, p, "in", "other", f"https://www.wikidata.org/wiki/{o}#{p}")
+    for o in seealso_q:
+        add(o, "seealso", "out", "article", f"https://{lang}.wikipedia.org/wiki/{title}")
+    return rows
 
 
 async def _seealso_qids(word, lang):
@@ -286,6 +349,7 @@ async def node(word: str, lang: str = "ja") -> dict:
 
         labels, originators, named_after, associated = {}, [], [], []
         relations = {"near": [], "opposite": []}
+        relations_typed = []
         if qid:
             eb, _, _ = await cached_get_json(ENTITY.format(qid=qid), ttl=86400)
             ent = eb.get("entities", {}).get(qid, {})
@@ -298,7 +362,9 @@ async def node(word: str, lang: str = "ja") -> dict:
             near_q = [x for p in _REL_NEAR for x in _claim_qids(claims, p)]  # 近い/類する
             opp_q = [x for p in _REL_OPP for x in _claim_qids(claims, p)]    # 対立/区別
             seealso_q = await _seealso_qids(title, lang)                     # 記事の関連項目で補完
-            res = await _resolve(orig_q + na_q + near_q + opp_q + seealso_q, lang)
+            incoming = await _incoming(qid)                                  # 相手側の宣言（型つき欄だけで使う）
+            res = await _resolve(orig_q + na_q + near_q + opp_q + seealso_q
+                                 + [o for _, o in incoming], lang)
             originators = [res[q] for q in dict.fromkeys(orig_q) if q in res and res[q]["is_person"]]
             named_after = [res[q] for q in dict.fromkeys(na_q) if q in res]
             # 関連する思想家（再現向上）: P50/P61が無い概念でも記事が言及する人物を重要度順に。
@@ -310,6 +376,7 @@ async def node(word: str, lang: str = "ja") -> dict:
             opp = [res[q] for q in dict.fromkeys(opp_q)
                    if q in res and res[q]["label"] and not res[q]["is_person"] and q != qid]
             relations = {"near": near[:10], "opposite": opp[:6]}
+            relations_typed = typed_relations(qid, claims, incoming, res, seealso_q, title, lang)
 
         return ok("concept-node", ts, cached, {
             "word": word, "found": True, "qid": qid,
@@ -322,6 +389,7 @@ async def node(word: str, lang: str = "ja") -> dict:
             "associated": associated,          # 関連する思想家（記事言及・重要度順・再現向上）
             "named_after": named_after,        # 語形の由来（P138・語源であって概念の原点でない）
             "relations": relations,            # 類語・対義の星座（近い/対立・人物除外・決定論）
+            "relations_typed": relations_typed,  # 型・向き・宣言元・出典つき（2026-10-15 試作）
             "breadth_labels": labels,          # 多言語breadth（Wikidata全ラベル）
             "breadth_count": len(labels),
             "extract": extract[:500],

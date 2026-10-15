@@ -92,6 +92,7 @@ expected_tests = [
   "tests/test_topic_ranking.py",
   "tests/test_translation_edge.py",
   "tests/test_translation_history.py",
+  "tests/test_typed_relations.py",
   "tests/test_wordspace_endpoint.py",
   "tests/test_workspace_boundary.py",
 ]
