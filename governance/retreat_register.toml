@@ -229,6 +229,26 @@ retired_at = ""
 retired_commit = ""
 
 [[mechanism]]
+id = "preview-sentence-and-typed-relations"
+added = "2026-10-17"
+what = "プレビュー表示（?preview=1）でだけ出る試作: 文→哲学概念の候補カード（GET /api/bridge・鍵不要の方式C。LLM の方式D は VPS では動かない）と、型・向き・宣言元つきの関係（relations_typed）"
+cost = "endpoint 1本・カード1枚・帯1本。プレビュー時は /api/origin が1概念あたり最大7回、/api/bridge が1文あたり約10回、外部へ多く問い合わせる（Wikimedia の利用上限に近づく）"
+implemented_by = ["app/connectors/bridge.py", "app/main.py:api_bridge", "app/connectors/concept.py:typed_relations", "app/static/app.js:fillBridgeCands", "app/static/app.js:DX_PREVIEW"]
+deadline = "2026-12-14"
+# 試作を見せること自体は成功ではない。所有者が採否を決める材料になったか、で測る。
+observation = "所有者が、プレビューの2機能それぞれについて「本採用」「作り直し」「撤去」のいずれかを決めたこと"
+observation_threshold = "2機能とも判断が記録されている（開発台帳 §2）"
+how_to_measure = "grep -n 'preview-sentence-and-typed-relations' Main/論考/哲学DESK/_AI/開発台帳.md（Vault 内）で 2026-10-17 以降の判断の行を数える"
+retreat = "期日までに判断が無ければ、bridge.py・/api/bridge・fillBridgeCands・DX_PREVIEW・relations_typed の欄と試験（test_bridge_ground・test_typed_relations・bridge_cands.e2e）を削除する"
+status = "open"
+observed = ""
+evidence = ""
+verdict = ""
+verdict_date = ""
+retired_at = ""
+retired_commit = ""
+
+[[mechanism]]
 id = "language-bridge"
 added = "2026-10-14"
 what = "言語の橋（app/connectors/langpivot.py・GET /api/pivot・GET /api/backgloss・/origin の『言語の橋』カード）。入力の言語を辞書で判定し、概念を Wikidata で同定し、検索に使う言語を実測のヒット数で並べ、表示は利用者の言語の記事へ戻す"

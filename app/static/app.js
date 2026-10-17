@@ -3,6 +3,21 @@
    they are never persisted across browser restarts. */
 
 const LANG = window.DIALEXIS_LANG || "en";
+// プレビュー表示（2026-10-17・所有者「推奨どおり」）: 試作中の機能（文から概念の候補・型つきの関係）は
+// ?preview=1 で入ったときだけ出す。同じブラウザでは続き、?preview=0 で抜ける。通常の画面は変えない。
+const DX_PREVIEW = (() => {
+  let v = null; try { v = new URLSearchParams(location.search).get("preview"); } catch (e) {}
+  try { if (v === "1") localStorage.setItem("dx_preview", "1"); if (v === "0") localStorage.removeItem("dx_preview");
+        return localStorage.getItem("dx_preview") === "1"; } catch (e) { return v === "1"; }
+})();
+const PV = DX_PREVIEW ? "&preview=1" : "";
+if (DX_PREVIEW) document.addEventListener("DOMContentLoaded", () => {
+  const u = new URL(location.href); u.searchParams.set("preview", "0");
+  const bar = document.createElement("div"); bar.className = "preview-bar"; bar.id = "preview-bar";
+  bar.innerHTML = (LANG === "ja" ? "試作中の機能を表示しています（プレビュー）。" : "Showing features under trial (preview). ")
+    + `<a href="${u.pathname + u.search}">${LANG === "ja" ? "通常の表示に戻す" : "Back to the normal view"}</a>`;
+  document.body.prepend(bar);
+});
 const T = {
   ja: { retrieved: "取得", live: "ライブ", cached: "キャッシュ", error: "情報源エラー（沈黙させず表示）",
         loading: "世界中の学術情報源へ照会中…", none: "結果なし", del: "削除", open: "開く",
@@ -1781,7 +1796,7 @@ async function autoFallback(word, kind, body) {
         const a = await api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`);
         html = altFromAnatomy(a, word); provider = _providerLabel("anatomy", a); retrieved = (a && a.queried_at) || "";
       } else {
-        const o = await api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}`);
+        const o = await api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}${PV}`);
         html = altFromOrigin(o, word); provider = _providerLabel("origin", o); retrieved = (o && o.queried_at) || "";
       }
       outcome = html ? "success" : "empty";
@@ -2956,7 +2971,7 @@ async function gWordAspect(word, aspect) {
   const title = { meaning: jp ? "この語の意味：" : "Meaning: ", breadth: jp ? "多言語での言い方：" : "Languages: ",
                   collapse: jp ? "埋没した原語：" : "Buried originals: " }[aspect] || "";
   const p = gPanel(title + word, `<p class="muted">${jp ? "取得中…" : "loading…"}</p>`, word);
-  let d; try { d = await api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}`); }
+  let d; try { d = await api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}${PV}`); }
   catch (e) { console.error(e); await autoFallback(word, aspect, p.querySelector(".gp-body")); return; }   // A3: 別源を実走行
   const body = p.querySelector(".gp-body"); let h = "";
   if (aspect === "meaning") {
@@ -3322,7 +3337,7 @@ async function gContrastPanel(word) {
   const jp = LANG === "ja";
   const p = gPanel((jp ? "訳語と原語の意味を並べて比べる：" : "Contrast: ") + word, `<p class="muted">${jp ? "日本語訳の意味と、原語の意味を並べて取得中…" : "…"}</p>`, word);
   let o = {}, a = {};
-  try { [o, a] = await Promise.all([api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}`), api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`)]); } catch (e) {}
+  try { [o, a] = await Promise.all([api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}${PV}`), api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`)]); } catch (e) {}
   const anatomyLayers = Array.isArray(a.segment_layers) ? a.segment_layers : [];
   const anatomyHasContent = anatomyLayers.some(x => x && Array.isArray(x.units) && x.units.length)
     || (Array.isArray(a.components) && a.components.length)
@@ -3797,7 +3812,7 @@ const _PANO_CACHE = {};   // term → { origin, anatomy }（区画間で共有�
 async function panoData(term) {
   if (_PANO_CACHE[term]) return _PANO_CACHE[term];
   const [o, a] = await Promise.allSettled([
-    api(`/api/origin?q=${encodeURIComponent(term)}&lang=${LANG}`),
+    api(`/api/origin?q=${encodeURIComponent(term)}&lang=${LANG}${PV}`),
     api(`/api/anatomy?q=${encodeURIComponent(term)}&lang=${LANG}&own=1`),   // S2は「語そのものの来歴」＝訳語でなく語自身（矛盾→矛+盾/韓非子）
   ]);
   const rec = { origin: o.status === "fulfilled" ? o.value : null, anatomy: a.status === "fulfilled" ? a.value : null };
@@ -4382,7 +4397,7 @@ function gPlayPanel() {
   p.querySelector("#play-quiz").addEventListener("click", async () => {
     const out = p.querySelector("#play-out"); if (!cur) { out.innerHTML = `<p class="muted">${jp ? "先に語を選んでください。" : "pick a word first."}</p>`; return; }
     out.innerHTML = `<p class="muted">${jp ? "出題準備中…" : "…"}</p>`;
-    let d; try { d = await api(`/api/origin?q=${encodeURIComponent(cur)}&lang=${LANG}`); } catch (e) { out.innerHTML = `<p class="srcline">${jp ? "出題データの取得を見送りました。" : "Question data was deferred."}</p>${noMiss(cur)}`; return; }   // 否定表示を出さず建設的代替へ
+    let d; try { d = await api(`/api/origin?q=${encodeURIComponent(cur)}&lang=${LANG}${PV}`); } catch (e) { out.innerHTML = `<p class="srcline">${jp ? "出題データの取得を見送りました。" : "Question data was deferred."}</p>${noMiss(cur)}`; return; }   // 否定表示を出さず建設的代替へ
     const opp = ((d.relations && d.relations.opposite) || [])[0], org = (d.originators || [])[0],
           assoc = (d.associated || [])[0], na = (d.named_after || [])[0];
     let qtext, ans;
@@ -4522,7 +4537,7 @@ async function gColloc(term) {
   let deTerm = term;
   if (!/[A-Za-zÀ-ɏ]/.test(term)) {
     try {
-      const od = await api(`/api/origin?q=${encodeURIComponent(term)}&lang=${LANG}`);
+      const od = await api(`/api/origin?q=${encodeURIComponent(term)}&lang=${LANG}${PV}`);
       const g = (od.concept_origin || []).find(o => o.name === "ドイツ語");
       if (!g) { await autoFallback(term, "colloc", p.querySelector(".gp-body")); return; }   // A3: 独語原語が無い→別源を実走行
       deTerm = g.term;
@@ -4777,7 +4792,7 @@ async function originRun(q, tok) {
   resultShell.innerHTML = `<div class="card word-card origin-loading-card"><p class="srcline">${jp ? "現在の語を中心に構成中…" : "Constructing the current term…"}</p><h2 class="theword">「${esc(q)}」</h2><p class="muted" aria-live="polite">${jp ? "意味・原語・著作・受容のカードを準備しています。" : "Preparing meaning, original-language, works and reception cards."}</p></div>`;
   const linkAttr = originLinkAttr();
   let d;
-  try { d = await api(`/api/origin?q=${encodeURIComponent(q)}&lang=${LANG}`); }
+  try { d = await api(`/api/origin?q=${encodeURIComponent(q)}&lang=${LANG}${PV}`); }
   catch (e) { console.error(e); if (!originStale(tok)) $("origin-status").innerHTML = `<div class="card">${noMiss(q)}</div>`; return; }   // 生エラーを出さず建設的代替へ
   if (originStale(tok)) return;            // 古い語の応答＝現在の語のカードを上書きしない（stale破棄）
   if (d.qid) OZ.qid = d.qid;               // 既存qidを単一真実源へ伝播
@@ -4801,7 +4816,7 @@ async function originRun(q, tok) {
   // 文 → 哲学概念の候補（2026-10-15 隔離試作）。実在の項目に接地できたものだけを出所つきで示す。
   // 着かなかったときと、仮名を含む文が別の記事へずれて着いたとき（人をモノとして扱う → 別記事）に出す。
   const sentenceLike = /[ぁ-ん]/.test(q) && q.length >= 6;
-  if (!d.found || (sentenceLike && d.resolved_from)) {
+  if (DX_PREVIEW && (!d.found || (sentenceLike && d.resolved_from))) {
     // 置き場所は検索欄のすぐ下（地図より上）。本文の下に置いたら、ADIP の擬似利用者
     // 18本のうち候補を押した走行は0本で、全員が上部の地図とメニューだけを操作した（2026-10-15）。
     $("origin-status").innerHTML = `<div class="card bridge-cands" id="bridge-cands"><p class="srcline muted">${jp ? "この文から考えられる哲学の概念を探しています…" : "Looking for philosophical concepts behind this sentence…"}</p></div>`;
@@ -4972,9 +4987,15 @@ async function fillBridgeCands(q, tok) {
     else { if (!y.levels.includes(x.level)) y.levels.push(x.level); y.sources.push(...(x.sources || [])); if (!y.why && x.why) y.why = x.why; }
   }
   const uniq = [...byQ.values()].slice(0, 10);
-  if (!uniq.length) { el.remove(); return; }
+  const errN = (r.source_errors || []).length;
+  if (!uniq.length) {
+    // 0件が「該当なし」なのか「確かめられなかった」なのかを分けて示す（失敗を沈黙させない）
+    if (errN) el.innerHTML = `<p class="srcline muted">${jp ? `候補を集める情報源のうち ${errN} 件が応答を返さなかったため、今回は候補を出していません。少し時間をおいて開き直すと出ることがあります。` : `${errN} source request(s) did not respond, so no candidates are shown this time. Reopening later may show them.`}</p>`;
+    else el.remove();
+    return;
+  }
   el.innerHTML = `<h3>${jp ? "この文から考えられる哲学の概念（候補）" : "Philosophical concepts this sentence may point to (candidates)"}</h3>
-    <p class="srcline">${jp ? "どれも候補です。押すと、その概念から新しく探します。理由と出所を添えています。" : "All are candidates. Click one to explore from it. Reasons and sources are shown."}</p>
+    <p class="srcline">${jp ? "どれも候補です。押すと、その概念から新しく探します。理由と出所を添えています。" : "All are candidates. Click one to explore from it. Reasons and sources are shown."}${errN ? (jp ? `（情報源の ${errN} 件は応答を返さなかったので、その分は含まれていません）` : ` (${errN} source request(s) did not respond and are not included)`) : ""}</p>
     <ul class="bridge-list">${uniq.map(x => `<li><a class="bridge-cand" href="/origin?q=${encodeURIComponent(x.title)}&lang=${LANG}"${originLinkAttr()}><b>${esc(x.title)}</b></a>`
       + x.levels.map(lv => ` <span class="dim-b ${lv === 2 ? "dim-part" : "dim-ok"}">${lv === 2 ? (jp ? "あなたのLLMの提案・実在を確認済み" : "your LLM, grounded") : (jp ? "鍵不要の検索" : "keyless search")}</span>`).join("")
       + (x.why ? `<br><span class="srcline">${esc(x.why)}</span>` : "")

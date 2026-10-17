@@ -2,6 +2,7 @@
 // 守ること: ①文が着かない／別の記事へずれたときにカードが出る ②候補は押すとその概念で新しく探す（P11）
 // ③鍵不要の検索と、利用者の LLM の提案を札で区別する ④出所（Wikidata の項目）を示す
 // ⑤候補が0件ならカードを残さない ⑥ふつうの語（自由）ではカードを出さない
+// ⑦プレビュー（?preview=1）でないときは出さない ⑧情報源が応答しなかったことを黙らない
 const { chromium } = require("playwright-core");
 const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const BASE = process.argv[2] || "http://127.0.0.1:8099";
@@ -22,16 +23,22 @@ const ORIGIN = (q, found, rf) => ({ query: q, lang: "ja", queried_at: "t", word:
   await p.route(/\/api\/bridge\?/, r => {
     bridgeCalls++;
     const q = new URL(r.request().url()).searchParams.get("q");
-    const body = q === "何もない文です" ? { keyless: [], llm: [] } : {
+    const body = q === "何もない文です" ? { keyless: [], llm: [], source_errors: [] }
+      : q === "応答の無い文です" ? { keyless: [], llm: [], source_errors: ["fulltext", "vector"] } : {
       keyless: [{ qid: "Q545825", title: "疎外", why: "辞書の説明", sources: ["意味検索（概念）"], level: 0 }],
       llm: [{ qid: "Q863448", title: "物象化", why: "人と人の関係が物の関係として現れる", sources: ["あなたの LLM（接地済み）"], level: 2 },
             { qid: "Q545825", title: "疎外", why: "重複", sources: ["あなたの LLM（接地済み）"], level: 2 }] };
     r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
   });
-  const open = async (q) => { await p.goto(`${BASE}/origin?q=${encodeURIComponent(q)}&lang=ja`, { waitUntil: "domcontentloaded" });
+  const open = async (q, pv = "") => { await p.goto(`${BASE}/origin?q=${encodeURIComponent(q)}&lang=ja${pv}`, { waitUntil: "domcontentloaded" });
     await p.waitForSelector(".word-card", { timeout: 15000 }).catch(() => {}); await p.waitForTimeout(1500); };
 
-  await open("人間関係がモノのようになる");
+  // 0. プレビューでない通常の表示では、カードも問い合わせも出さない（2026-10-17 プレビュー化）
+  await open("人間関係がモノのようになる", "&preview=0");
+  ok("通常の表示ではカードを出さず /api/bridge も呼ばない", !(await p.$("#bridge-cands")) && bridgeCalls === 0, String(bridgeCalls));
+
+  await open("人間関係がモノのようになる", "&preview=1");
+  ok("プレビュー中であることを帯で示す", !!(await p.$("#preview-bar")));
   const items = await p.$$eval("#bridge-cands .bridge-cand", as => as.map(a => ({ t: a.textContent.trim(), h: a.getAttribute("href") })));
   ok("着かない文で候補カードが出る", items.length > 0, JSON.stringify(items));
   ok("候補は押すとその概念で新しく探すリンク（P11）", items.every(x => /^\/origin\?q=/.test(x.h)));
@@ -42,10 +49,16 @@ const ORIGIN = (q, found, rf) => ({ query: q, lang: "ja", queried_at: "t", word:
   ok("候補であることを明示する", /候補/.test(txt));
 
   await open("人をモノとして扱う");
-  ok("文が別の記事へずれて着いたときもカードが出る", !!(await p.$("#bridge-cands .bridge-cand")));
+  // 記事に着いた場合は他の表示の準備が先に走り、カードは約3秒後に出る（2026-10-17 実測）
+  ok("文が別の記事へずれて着いたときもカードが出る",
+    !!(await p.waitForSelector("#bridge-cands .bridge-cand", { timeout: 8000 }).catch(() => null)));
 
   await open("何もない文です");
   ok("候補が0件ならカードを残さない", !(await p.$("#bridge-cands")));
+
+  await open("応答の無い文です");
+  const errTxt = await p.$eval("#bridge-cands", e => e.innerText).catch(() => "");
+  ok("情報源が応答しなかったときは、0件を「該当なし」と装わずにそう示す", /応答を返さなかった/.test(errTxt), errTxt.slice(0, 60));
 
   const before = bridgeCalls;
   await open("自由");

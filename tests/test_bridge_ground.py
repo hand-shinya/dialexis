@@ -32,3 +32,18 @@ def test_persons_and_works_are_never_concepts():
     assert not bridge.conceptish({"p31": ["Q5"], "desc": "哲学者"})
     assert not bridge.conceptish({"p31": ["Q11424"], "desc": "哲学的な映画"})
     assert bridge.conceptish({"p31": ["Q151885"], "desc": ""})
+
+
+def test_a_failed_lookup_is_reported_as_unchecked_not_as_absent(monkeypatch):
+    """Wikimedia の利用上限で問い合わせが失敗したとき、実在する「幸福」まで落ちた（2026-10-15）。
+    失敗した名前は「無い」とせず、source_errors に unchecked として返す。"""
+    import asyncio
+
+    async def failing_get(url, params=None, **k):
+        raise RuntimeError("429 Too Many Requests")
+    monkeypatch.setattr(bridge, "cached_get_json", failing_get)
+    monkeypatch.setattr(bridge, "_lab_cli", lambda prompt: '[{"title": "幸福", "reason": "x"}]')
+    errs = []
+    out, ung = asyncio.run(bridge.llm("幸せとは何か", errs=errs))
+    assert out == [] and ung == []
+    assert "unchecked:幸福" in errs

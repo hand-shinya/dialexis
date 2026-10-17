@@ -40,7 +40,8 @@ def terms(q):
     return [x for x in dict.fromkeys(t) if x not in STOP]
 
 
-async def _titles_to_qids(titles):
+async def _titles_to_qids(titles, errs=None):
+    """記事名 → 項目。問い合わせが失敗した記事名は errs に入れる（失敗を「存在しない」と扱わない）。"""
     out = {}
     for i in range(0, len(titles), 20):
         chunk = titles[i:i + 20]
@@ -49,6 +50,8 @@ async def _titles_to_qids(titles):
                                                  "titles": "|".join(chunk), "redirects": 1,
                                                  "format": "json"}, ttl=86400)
         except Exception:
+            if errs is not None:
+                errs.extend(chunk)
             continue
         q = d.get("query", {})
         norm = {x["from"]: x["to"] for x in q.get("normalized", [])}
@@ -61,25 +64,29 @@ async def _titles_to_qids(titles):
     return out
 
 
-async def _opensearch(t, n=3):
+async def _opensearch(t, n=3, errs=None):
     try:
         d, _, _ = await cached_get_json(WP, {"action": "opensearch", "search": t, "limit": n,
                                              "namespace": 0, "format": "json"}, ttl=86400)
         return (d[1] if isinstance(d, list) and len(d) > 1 else [])[:n]
     except Exception:
+        if errs is not None:
+            errs.append("opensearch:" + t)
         return []
 
 
-async def _fulltext(q):
+async def _fulltext(q, errs=None):
     try:
         d, _, _ = await cached_get_json(WP, {"action": "query", "list": "search", "srsearch": q,
                                              "srlimit": 10, "format": "json"}, ttl=86400)
         return [x["title"] for x in d.get("query", {}).get("search", [])]
     except Exception:
+        if errs is not None:
+            errs.append("fulltext")
         return []
 
 
-async def _vector(q, instanceof=None):
+async def _vector(q, instanceof=None, errs=None):
     p = {"query": q, "lang": "ja", "K": 10}
     if instanceof:
         p["instanceof"] = instanceof
@@ -87,10 +94,12 @@ async def _vector(q, instanceof=None):
         d, _, _ = await cached_get_json(VDB, p, ttl=86400)
         return [x["QID"] for x in d][:10]
     except Exception:
+        if errs is not None:
+            errs.append("vector" + (":" + instanceof if instanceof else ""))
         return []
 
 
-async def _info(qids):
+async def _info(qids, errs=None):
     out = {}
     for i in range(0, len(qids), 50):
         try:
@@ -99,6 +108,8 @@ async def _info(qids):
                 "props": "claims|labels|descriptions|sitelinks", "languages": "ja|en",
                 "format": "json"}, ttl=86400)
         except Exception:
+            if errs is not None:
+                errs.append("wikidata-entities")
             continue
         for q, e in (d.get("entities") or {}).items():
             p31 = [((c.get("mainsnak") or {}).get("datavalue") or {}).get("value", {}).get("id")
@@ -135,17 +146,19 @@ def conceptish(inf):
     return bool(p31 & CONCEPT_CLASSES) or bool(CONCEPT_DESC.search(inf["desc"]))
 
 
-async def keyless(q, limit=8):
+async def keyless(q, limit=8, errs=None):
+    errs = errs if errs is not None else []
     ts = terms(q)
-    os_lists = await asyncio.gather(*[_opensearch(t) for t in ts])
+    os_lists = await asyncio.gather(*[_opensearch(t, errs=errs) for t in ts])
     os_titles = list(dict.fromkeys(x for lst in os_lists for x in lst))
-    ft_titles, v1, v2 = await asyncio.gather(_fulltext(q), _vector(q), _vector(q, "Q151885"))
-    tq = await _titles_to_qids(os_titles + ft_titles)
+    ft_titles, v1, v2 = await asyncio.gather(_fulltext(q, errs), _vector(q, errs=errs),
+                                             _vector(q, "Q151885", errs=errs))
+    tq = await _titles_to_qids(os_titles + ft_titles, errs)
     pools = {"語の候補": [tq[t] for t in os_titles if tq.get(t)],
              "全文検索": [tq[t] for t in ft_titles if tq.get(t)],
              "意味検索": v1, "意味検索（概念）": v2}
     allq = list(dict.fromkeys(x for v in pools.values() for x in v))
-    inf = await _info(allq) if allq else {}
+    inf = await _info(allq, errs) if allq else {}
     votes = {}
     for src, lst in pools.items():
         for rank, x in enumerate(lst):
@@ -178,7 +191,7 @@ def _lab_cli(prompt):
         return r.stdout
 
 
-async def llm(q, limit=8):
+async def llm(q, limit=8, errs=None):
     text = await asyncio.to_thread(_lab_cli, PROMPT.format(q=q))
     if not text:
         return [], "llm_unavailable"
@@ -189,17 +202,29 @@ async def llm(q, limit=8):
         arr = []
     names = [(str(x.get("title", "")).strip(), str(x.get("reason", ""))) for x in arr
              if isinstance(x, dict) and x.get("title")][:limit]
-    tq = await _titles_to_qids([n for n, _ in names])
+    lookup_errs = []
+    tq = await _titles_to_qids([n for n, _ in names], lookup_errs)
     out, ung = [], []
     for n, why in names:
         qid = tq.get(n)
+        if not qid and n in lookup_errs:
+            # 問い合わせが失敗した名前は「無い」と決めない。確かめられなかったものとして返す
+            if errs is not None:
+                errs.append("unchecked:" + n)
+            continue
         if not qid:
             # 引き直しは、表記がほぼ一致し、先が概念らしいときだけ（2026-10-15: 引き直し18件中6件が別物
             # だった。カント倫理学→カントー大学・白い嘘→白い巨塔・持続（哲学）→持続可能な開発目標）
             alt = await _opensearch(n, 1)
             if alt and _close(n, alt[0]):
-                q2 = (await _titles_to_qids(alt)).get(alt[0])
-                if q2 and conceptish((await _info([q2])).get(q2)):
+                e2 = []
+                q2 = (await _titles_to_qids(alt, e2)).get(alt[0])
+                inf2 = (await _info([q2], e2)).get(q2) if q2 else None
+                if e2:
+                    if errs is not None:
+                        errs.append("unchecked:" + n)
+                    continue
+                if q2 and conceptish(inf2):
                     qid, n = q2, alt[0]
         if qid:
             out.append({"qid": qid, "title": n, "label": n, "why": why,
@@ -210,7 +235,10 @@ async def llm(q, limit=8):
 
 
 async def candidates(q):
-    k, (l, ung) = await asyncio.gather(keyless(q), llm(q))
+    errs = []
+    k, (l, ung) = await asyncio.gather(keyless(q, errs=errs), llm(q, errs=errs))
     return {"query": q, "queried_at": now(), "keyless": k, "llm": l,
             "llm_ungrounded": ung if isinstance(ung, list) else [],
-            "llm_status": ung if isinstance(ung, str) else "ok"}
+            "llm_status": ung if isinstance(ung, str) else "ok",
+            # 応答を返さなかった問い合わせ（0件の候補が「該当なし」なのか「確かめられなかった」なのかを分ける）
+            "source_errors": errs}

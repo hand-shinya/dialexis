@@ -877,7 +877,7 @@ async def _language_bridge(q: str, lang: str, defs: dict | None = None,
 
 
 async def _bridge_decision(q: str, lang: str, defs: dict | None = None,
-                           cd: dict | None = None):
+                           cd: dict | None = None, typed: bool = False):
     """言語の橋を渡すかを決め、渡すなら行き先の記事で concept.node を引く。
 
     返り値: (bridge_note, 行き先の concept.node の応答 or None, 行き先の言語)。
@@ -904,7 +904,7 @@ async def _bridge_decision(q: str, lang: str, defs: dict | None = None,
             if top:
                 route_title, route_lang = top["article_title"], top["lang"]
         if route_title:
-            cn2 = await concept.node(route_title, route_lang)
+            cn2 = await concept.node(route_title, route_lang, typed=typed)
             return ({"applied": True, "from": q, "to": route_title, "to_lang": route_lang,
                      "display_is_ui_lang": route_lang == lang,
                      "qid": concept_b.get("qid"), "input_lang": ident.get("code"),
@@ -963,7 +963,7 @@ async def api_backgloss(term: str, src: str = "", lang: str = "ja"):
 
 
 @app.get("/api/origin")
-async def api_origin(q: str, lang: str = "ja"):
+async def api_origin(q: str, lang: str = "ja", preview: int = 0):
     """原語による探求 — 無中心の原点エンジン。どの言語の語からでも、Wiktionaryを
     語キーに、その概念が生まれた言語（入力言語自身のこともある）を辿り、通ってきた
     言語と語形の連鎖（翻訳による変容＝宿痾を可視化）と、その語を担う言語の広がりを
@@ -988,13 +988,13 @@ async def api_origin(q: str, lang: str = "ja"):
     #    縁起→梵) and the multilingual WORD fan (the concept in N languages).
     #  ・語経路 wiktionary.trace — the word's linguistic etymology (空→梵 śūnyatā).
     tr, cn, defs = await asyncio.gather(
-        wiktionary.trace(q, section_lang), concept.node(q, lang), langpivot.definitions(q))
+        wiktionary.trace(q, section_lang), concept.node(q, lang, typed=bool(preview)), langpivot.definitions(q))
     td = tr["data"] if not tr["error"] else {}
     cd = cn["data"] if not cn["error"] else {}
 
     # 言語の橋（2026-10-14）: 判定は _bridge_decision に一本化し、本文・グラフ・切り口・解剖が
     # 同じ判定を通る（P11 作用の普遍性。本番で グラフだけが UBURU を描いた実例による）。
-    bridge_note, cn2, route_lang = await _bridge_decision(q, lang, defs, cd)
+    bridge_note, cn2, route_lang = await _bridge_decision(q, lang, defs, cd, typed=bool(preview))
     if bridge_note.get("applied"):
         tr2 = await wiktionary.trace(q, bridge_note.get("input_lang_name_en") or section_lang)
         if cn2 is not None and not cn2["error"] and (cn2["data"] or {}).get("found"):

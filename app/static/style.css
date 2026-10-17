@@ -711,3 +711,7 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .breadth-chip { font-family: system-ui, sans-serif; font-size: .82rem; padding: .2rem .55rem;
   border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
 .breadth-chip a { color: var(--accent2); text-decoration: none; }
+
+/* プレビュー表示の帯（2026-10-17） */
+.preview-bar { background: #fff4d6; color: #5a4300; border-bottom: 1px solid #e0c46c; padding: .4em max(16px, env(safe-area-inset-left, 0px)); font-size: .9em; }
+@media (prefers-color-scheme: dark) { .preview-bar { background: #3a3014; color: #f3dc9a; border-color: #6b5a22; } }

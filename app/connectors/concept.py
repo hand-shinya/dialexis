@@ -297,7 +297,7 @@ async def variants(word: str, lang: str = "ja") -> dict:
         return err("concept-variants", e)
 
 
-async def node(word: str, lang: str = "ja") -> dict:
+async def node(word: str, lang: str = "ja", typed: bool = False) -> dict:
     try:
         page, ts, cached = await _fetch_article(word, lang)
         title = word
@@ -362,7 +362,9 @@ async def node(word: str, lang: str = "ja") -> dict:
             near_q = [x for p in _REL_NEAR for x in _claim_qids(claims, p)]  # 近い/類する
             opp_q = [x for p in _REL_OPP for x in _claim_qids(claims, p)]    # 対立/区別
             seealso_q = await _seealso_qids(title, lang)                     # 記事の関連項目で補完
-            incoming = await _incoming(qid)                                  # 相手側の宣言（型つき欄だけで使う）
+            # 相手側の宣言は型つき欄だけで使う。1概念あたり最大7回の検索が増えるので、
+            # 求められたとき（プレビュー表示）だけ引く（Wikimedia の利用回数上限・2026-10-17）
+            incoming = await _incoming(qid) if typed else []
             res = await _resolve(orig_q + na_q + near_q + opp_q + seealso_q
                                  + [o for _, o in incoming], lang)
             originators = [res[q] for q in dict.fromkeys(orig_q) if q in res and res[q]["is_person"]]
@@ -376,7 +378,8 @@ async def node(word: str, lang: str = "ja") -> dict:
             opp = [res[q] for q in dict.fromkeys(opp_q)
                    if q in res and res[q]["label"] and not res[q]["is_person"] and q != qid]
             relations = {"near": near[:10], "opposite": opp[:6]}
-            relations_typed = typed_relations(qid, claims, incoming, res, seealso_q, title, lang)
+            relations_typed = (typed_relations(qid, claims, incoming, res, seealso_q, title, lang)
+                               if typed else [])
 
         return ok("concept-node", ts, cached, {
             "word": word, "found": True, "qid": qid,
