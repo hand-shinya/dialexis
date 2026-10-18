@@ -2132,6 +2132,8 @@ const ACTIONS = {
   focus:        { label: "この分岐を中心に", effect: "map", run: (t, ctx) => gFocusSubtree(ctx.nodeIdx) },
   hl:           { label: "経路を強調", effect: "map", run: (t, ctx) => { G.hl = gHl(ctx.nodeIdx); gDraw(); } },
   resetFocus:   { label: "全体に戻す", effect: "map", run: () => { if (G) return originGraph(G.rootQ); } },
+  // 中心を変えずに、その語の先（子・孫）をその場に枝として生やす（所有者 2026-10-19 提案・プレビュー）
+  expand:       { label: "その場で広げる", effect: "map", run: (t, ctx) => gExpandInPlace(ctx && ctx.nodeIdx, t.term) },
 };
 // 各表示面が使う Action ID の宣言（テストが registry と照合し「未宣言のユーザー操作」を0にする）。
 // 実装側の各面はこの定義を参照する（文言から推測しない・面ごとに作用を再実装しない）。
@@ -2142,6 +2144,7 @@ const UI_ACTION_MAP = {
 const UI_ACTION_IDS = {
   topbar:      null,   // gActions（中心語）— 実行時に列挙
   popup:       null,   // gActions（選択ノード）— 実行時に列挙
+  radial:      null,   // 円形メニュー（gActions と同じ項目を円に並べる・プレビュー）— 実行時に列挙
   edge:        ["hl", "focus", "combine", "deepsearch", "handoff", "center", "resetFocus"],
   node:        ["panorama", "handoff"],
   panelFooter: Object.values(UI_ACTION_MAP.panelFooter),
@@ -2412,12 +2415,20 @@ function renderTopMenu(d) {
   el._items = items; el._word = d.query;
   el.innerHTML = `<span class="tm-label" title="${jp ? "この中心語のメニュー。どのノードをクリックしても同じ操作が出ます（普遍）。" : "menu of the centre word; every node offers the same"}">◉ ${esc(d.query)}</span>`
     + `<button type="button" class="tm-view" id="tm-view" title="${jp ? "今この地図を描いている見方（menu）。クリックで別の見方に切り替え。" : "the view this map is drawn from; click to switch"}"></button>`
-    + items.map((it, i) => `<button type="button" class="tm-chip" data-i="${i}" title="${esc(it.t)}">${esc(it.s || it.t)}</button>`).join("");
+    + (DX_PREVIEW
+      // プレビュー: 文字ボタンの列をやめ、操作は語のまわりの円形メニューに一本化する（所有者 2026-10-19）
+      ? `<button type="button" class="tm-radial" id="tm-radial">${jp ? "◉ この語の操作を開く" : "◉ Actions for this word"}</button>`
+        + `<span class="tm-hint">${jp ? "地図の語にマウスを乗せるか押すと、その語の操作が円形に開きます" : "Hover or click any word on the map to open its actions"}</span>`
+      : items.map((it, i) => `<button type="button" class="tm-chip" data-i="${i}" title="${esc(it.t)}">${esc(it.s || it.t)}</button>`).join(""));
   el.querySelectorAll(".tm-chip").forEach(b => b.addEventListener("click", () => {
     const it = el._items[+b.dataset.i]; if (!it) return;
     dispatchAction(it.action, it.target, currentViewState(), { surface: "topbar", ...(it.ctx || {}) });
   }));
   const vb = $("tm-view"); if (vb) vb.addEventListener("click", () => dispatchAction("lens", { term: el._word }, currentViewState(), { surface: "topbar" }));
+  const rb = $("tm-radial"); if (rb) rb.addEventListener("click", () => {
+    const rootN = G && G.nodes && (G.nodes.find(x => x.id === "root") || G.nodes[0]);
+    if (rootN) gRadialOpen(rootN);
+  });
   updateViewBadge(G_lens);   // 現在の見方を表示（初期は俯瞰）
 }
 
@@ -3598,6 +3609,7 @@ function gActions(n) {
       ...(relationInfo ? [{ s: "🧭 中心命題との関係", t: `🧭 「${n.label}」と中心命題との関係を展開する（著作・思想・歴史・受容）`, action: "relationship", ctx: { relation: relationInfo, node: relationInfo.node } }] : []),
       // 第一候補＝この語の全体像（概念全景）。派生ノードからも全景へ進める（所有者2026-08-01）
       { s: "🖼 全体像を見る", t: "🖼 この語の全体像を見る（概念全景）", action: "panorama", ctx: { node: n } },
+      ...(DX_PREVIEW && idx >= 0 ? [{ s: "🌿 その場で広げる", t: "🌿 中心を変えずに、この語の先（子・孫）をその場に広げる", action: "expand", ctx: { nodeIdx: idx } }] : []),
       { s: "🎯 中心に据える", t: "🎯 これを地図の中心に据え直す（グラフを再構成）", action: "center" },
       { s: "🔗 組み合わせ", t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", action: "combine" },
       { s: "👓 見方", t: "👓 見方を選ぶ（この地図の切り口）", action: "lens" },
@@ -3750,7 +3762,8 @@ function gShowMenu(cx, cy, title, items) {
   SURF.menuCloser = (ev) => { if (!ev.target.closest("#graph-menu")) gMenuClose(); };
   setTimeout(() => { if (SURF.menuCloser) document.addEventListener("pointerdown", SURF.menuCloser); }, 0);
 }
-function gMenuClose() { surfDestroy("menu"); }
+function gMenuClose() {
+  if (typeof gRadialClose === "function") gRadialClose(); surfDestroy("menu"); }
 // dismissible overlay panel (for menu actions that show their own content)
 // 語に関するパネルには term を渡す。すると下部に「この語で続ける」普遍フッターが必ず付き、
 // 空状態・失敗（例: 解剖で原語が特定できない）でも行き止まりにならず探索を続けられる（根源的・全パネル共通）。
@@ -4619,7 +4632,8 @@ function gBind() {
     const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
     if (!G.press) {
       const n = gNodeAt(mx, my);
-      if (n) { G.hover = n; G.hl = gHl(G.nodes.indexOf(n)); cv.style.cursor = "pointer"; gMenuRetarget(n); }
+      if (n) { G.hover = n; G.hl = gHl(G.nodes.indexOf(n)); cv.style.cursor = "pointer"; gMenuRetarget(n);
+        if (DX_PREVIEW) gRadialHover(n, e.clientX, e.clientY); }
       else {
         const ei = gEdgeAt(mx, my);
         if (ei >= 0) { G.hover = null; const e2 = G.edges[ei]; const child = G.nodes[e2.a].layer >= G.nodes[e2.b].layer ? e2.a : e2.b; G.hl = gHl(child); cv.style.cursor = "pointer"; }
@@ -4654,7 +4668,8 @@ function gBind() {
           dispatchAction("panorama", { term: (G && G.rootQ) || n.label, label: n.label, kind: n.kind, id: n.id, layer: n.layer },
             currentViewState(), { surface: "node", node: null, secHint });
         } else {
-          gMenu(e.clientX, e.clientY, n);   // 既存popup（Action ID＋単一Dispatcher・無作用0）
+          if (DX_PREVIEW) gRadialOpen(n);      // プレビュー: 語のまわりに円形メニュー（2026-10-19）
+          else gMenu(e.clientX, e.clientY, n);   // 既存popup（Action ID＋単一Dispatcher・無作用0）
         }
       } else if (p.ei >= 0) gMenuEdge(e.clientX, e.clientY, p.ei);
     } else gLoopKick();
@@ -5168,3 +5183,145 @@ try {
 // The page-specific inline bootstrap scripts run after app.js, so install the
 // boundary only after every global operation has been declared.
 installUiErrorBoundary();
+
+
+// ── 円形メニュー（所有者 2026-10-19 提案・プレビュー ?preview=1 でだけ働く）──────────────────
+// 地図の語にマウスを乗せる（約0.4秒）か押すと、その語のまわりに操作が円形に並ぶ。項目は gActions と同じ
+// （縦の一覧と食い違わない）。主な操作を内側の輪に、残りを「その他」で開く外側の輪に置く。
+// どの項目も dispatchAction を通る（単一の受け口・1操作1履歴）。中心に据え直さずに、どの語からでも選べる。
+const RADIAL_PRIMARY = ["meaning", "anatomy", "multilingual", "collapse", "expand", "panorama", "center",
+                        "author", "authorNote", "focus", "resetFocus", "hl"];
+const RADIAL_GLYPH = { meaning: "意", anatomy: "源", multilingual: "言", collapse: "埋", expand: "枝", panorama: "全",
+  center: "◎", author: "人", authorNote: "系", translationHistory: "訳", relationship: "命", combine: "合", lens: "見",
+  contrast: "並", colloc: "共", external: "外", shelf: "棚", deepsearch: "深", handoff: "出", newtab: "↗",
+  focus: "焦", hl: "線", resetFocus: "戻", pairTranslationHistory: "訳" };
+const RADIAL_SHORT = { meaning: "意味", anatomy: "源をたどる", multilingual: "多言語", collapse: "埋もれた原語",
+  expand: "その場で広げる", panorama: "全体像", center: "中心に", author: "人物を調べる", authorNote: "系譜",
+  translationHistory: "翻訳・受容史", relationship: "中心との関係", combine: "組み合わせ", lens: "見方", contrast: "並置",
+  colloc: "共起", external: "外部で調べる", shelf: "棚へ", deepsearch: "深掘り", handoff: "持ち出す", newtab: "新タブ",
+  focus: "この分岐を中心", hl: "経路を強調", resetFocus: "全体に戻す", pairTranslationHistory: "2人の受容史" };
+const RADIAL_EN = { meaning: "Meaning", anatomy: "Trace origin", multilingual: "Languages", collapse: "Hidden originals",
+  expand: "Grow here", panorama: "Overview", center: "Center", author: "Person", authorNote: "Lineage",
+  translationHistory: "Translation history", relationship: "Relation", combine: "Combine", lens: "Views", contrast: "Compare",
+  colloc: "Collocation", external: "External", shelf: "Shelf", deepsearch: "Deep dive", handoff: "Take out", newtab: "New tab",
+  focus: "Focus branch", hl: "Highlight", resetFocus: "Reset", pairTranslationHistory: "Pair history" };
+let _radial = null, _radialHoverT = 0, _radialLeaveT = 0, _radialHoverNode = null;
+function gRadialClose() {
+  clearTimeout(_radialHoverT); clearTimeout(_radialLeaveT);
+  if (_radial) { _radial.remove(); _radial = null; }
+}
+function gRadialHover(n, x, y) {
+  if (_radial && _radial._node === n) { clearTimeout(_radialLeaveT); return; }
+  if (_radialHoverNode === n) return;
+  _radialHoverNode = n; clearTimeout(_radialHoverT);
+  _radialHoverT = setTimeout(() => { if (G && G.hover === n && !G.press) gRadialOpen(n); }, 420);
+}
+function _radialItems(n) {
+  const all = gActions(n);
+  const prim = [], more = [];
+  all.forEach(it => (RADIAL_PRIMARY.includes(it.action) && prim.length < 7 ? prim : more).push(it));
+  return { prim, more };
+}
+function gRadialOpen(n) {
+  if (!G || !n) return;
+  gRadialClose();
+  if (typeof surfEl === "function" && surfEl("menu")) { try { gMenuClose(); } catch (e) {} }
+  const jp = LANG === "ja";
+  const r = G.cv.getBoundingClientRect(), s = gToScreen(n);
+  const cx = r.left + s.x, cy = r.top + s.y;
+  const { prim, more } = _radialItems(n);
+  const el = document.createElement("div");
+  el.className = "radial"; el.id = "radial-menu"; el.setAttribute("role", "menu");
+  el.setAttribute("aria-label", (jp ? "操作：" : "Actions: ") + n.label);
+  el._node = n; el._items = [...prim, ...more];
+  const label = (it) => jp ? (RADIAL_SHORT[it.action] || it.s || it.t) : (RADIAL_EN[it.action] || it.action);
+  const ring = (list, R, cls, offset) => list.map((it, k) => {
+    const a = -Math.PI / 2 + (Math.PI * 2 * k / Math.max(1, list.length)) + (offset || 0);
+    const x = Math.round(R * Math.cos(a)), y = Math.round(R * Math.sin(a));
+    const i = el._items.indexOf(it);
+    return `<button type="button" role="menuitem" class="rad-item ${cls}" data-i="${i}" data-action="${esc(it.action)}" style="--x:${x}px;--y:${y}px" title="${esc(it.t || label(it))}">`
+      + `<span class="rad-glyph" aria-hidden="true">${esc(RADIAL_GLYPH[it.action] || "・")}</span><span class="rad-label">${esc(label(it))}</span></button>`;
+  }).join("");
+  const moreBtn = more.length ? `<button type="button" role="menuitem" class="rad-item rad-more" data-more="1" style="--x:0px;--y:${Math.round(-0)}px" aria-expanded="false">`
+    + `<span class="rad-glyph" aria-hidden="true">…</span><span class="rad-label">${jp ? "その他" : "More"}</span></button>` : "";
+  el.innerHTML = `<div class="rad-disc" aria-hidden="true"></div>`
+    + `<div class="rad-center"><span class="rad-word">${esc(n.label)}</span>${moreBtn}</div>`
+    + ring(prim, 104, "rad-in")
+    + `<div class="rad-outer" hidden>${ring(more, 178, "rad-out", Math.PI / Math.max(2, more.length))}</div>`
+    + `<button type="button" class="rad-list" data-list="1">${jp ? "一覧で表示" : "Show as list"}</button>`;
+  // 画面の端で切れないように、中心を内側へ寄せる
+  const pad = 190, vw = window.innerWidth, vh = window.innerHeight;
+  el.style.left = Math.max(pad, Math.min(vw - pad, cx)) + "px";
+  el.style.top = Math.max(pad, Math.min(vh - pad, cy)) + "px";
+  document.body.appendChild(el);
+  _radial = el;
+  el.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+  el.addEventListener("pointerenter", () => clearTimeout(_radialLeaveT));
+  el.addEventListener("pointerleave", () => { _radialLeaveT = setTimeout(gRadialClose, 700); });
+  el.addEventListener("keydown", (ev) => { if (ev.key === "Escape") { gRadialClose(); } });
+  el.addEventListener("click", async (ev) => {
+    if (ev.target.closest(".rad-more")) {
+      const o = el.querySelector(".rad-outer"), b = el.querySelector(".rad-more");
+      o.hidden = !o.hidden; b.setAttribute("aria-expanded", String(!o.hidden)); el.classList.toggle("rad-open", !o.hidden);
+      return;
+    }
+    if (ev.target.closest(".rad-list")) { const nn = el._node; gRadialClose(); gMenu(cx, cy, nn); return; }
+    const b = ev.target.closest(".rad-item"); if (!b || b.dataset.i == null) return;
+    const it = el._items[Number(b.dataset.i)]; if (!it) return;
+    gRadialClose();
+    await dispatchAction(it.action, it.target, currentViewState(), { surface: "radial", ...(it.ctx || {}) });
+  });
+  const first = el.querySelector(".rad-in"); if (first) first.focus({ preventScroll: true });
+}
+document.addEventListener("pointerdown", (e) => { if (_radial && !e.target.closest("#radial-menu")) gRadialClose(); });
+window.addEventListener("scroll", () => { if (_radial) gRadialClose(); }, { passive: true });
+
+// ── その場で広げる（中心を変えずに、選んだ語の先を枝として生やす）──
+async function gExpandInPlace(nodeIdx, term) {
+  if (!G || nodeIdx == null || !G.nodes[nodeIdx]) return false;
+  const base = G.nodes[nodeIdx], root = G.rootQ;
+  let d; try { d = await api(`/api/origin/graph?q=${encodeURIComponent(term)}&lang=${LANG}`); } catch (e) { return false; }
+  if (!G || G.rootQ !== root || G.nodes[nodeIdx] !== base) return false;   // 古い応答で別の地図を書き換えない
+  const key = (x) => String(x.q || x.label || "").toLowerCase();
+  const have = new Set(G.nodes.map(key));
+  const pick = (d.nodes || []).filter(x => x.id !== "root" && x.kind !== "domain" && key(x) && !have.has(key(x)))
+    .sort((a, b) => (Number(b.weight) || 1) - (Number(a.weight) || 1)).slice(0, 10);
+  base.grownCount = pick.length;
+  const already = (d.nodes || []).filter(x => x.id !== "root" && x.kind !== "domain" && key(x) && have.has(key(x))).length;
+  gGrowNote(LANG === "ja"
+    ? `「${base.label}」の先に ${pick.length} 語を広げました` + (already ? `（ほかの ${already} 語は、すでにこの地図にあります）` : "")
+    : `Grew ${pick.length} word(s) from “${base.label}”` + (already ? ` (${already} more are already on this map)` : ""));
+  if (!pick.length) { gDraw(); return true; }   // 新しく足す語が無い（既に地図に在る）ことも成功として扱う
+  const ang0 = base.layoutAngle != null ? base.layoutAngle : Math.atan2(base.y - G.cy, base.x - G.cx);
+  const span = Math.min(Math.PI * 1.2, Math.max(0.9, (base.layoutSpan || 0.6) * 2.2));
+  pick.forEach((x, k) => {
+    const a = ang0 - span / 2 + span * (k + .5) / pick.length, dist = 96 + (k % 2) * 26;
+    const node = { ...x, id: "grow:" + base.id + ":" + x.id, layer: (Number(base.layer) || 1) + 1, grown: true,
+      x: base.x, y: base.y, vx: 0, vy: 0, r: 5 + (Number(x.weight) || 1) * 3.5,
+      idealX: base.x + dist * Math.cos(a), idealY: base.y + dist * Math.sin(a), layoutAngle: a, layoutSpan: span / pick.length };
+    const i = G.nodes.push(node) - 1;
+    G.edges.push({ a: nodeIdx, b: i, s: 1 });
+    (G.children[nodeIdx] = G.children[nodeIdx] || []).push(i);
+    G.parent[i] = nodeIdx;
+  });
+  G.alpha = 1; gLoop(140);
+  return true;
+}
+
+// ── 地図を最初の画面に（プレビュー）: 注意書きと後編の欄を地図の下へ移す ──
+if (DX_PREVIEW) document.addEventListener("DOMContentLoaded", () => {
+  const results = document.getElementById("origin-results");
+  const sb = document.getElementById("scope-boundary"), lt = document.getElementById("long-text-entry");
+  if (results && results.parentNode) {
+    if (lt) results.parentNode.insertBefore(lt, results.nextSibling);
+    if (sb) { sb.classList.add("scope-after-map"); results.parentNode.insertBefore(sb, results.nextSibling); }
+  }
+});
+
+// 「その場で広げる」の結果の一言（既存の gToast とは別の要素。gToast を上書きしない・2026-10-19）
+function gGrowNote(text) {
+  let t = document.getElementById("dx-grow-note");
+  if (!t) { t = document.createElement("div"); t.id = "dx-grow-note"; t.className = "dx-grow-note"; t.setAttribute("role", "status"); document.body.appendChild(t); }
+  t.textContent = text; t.hidden = false;
+  clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, 6000);
+}
