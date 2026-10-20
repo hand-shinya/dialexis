@@ -778,3 +778,15 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .pair-rel { margin-left: .6em; font-size: .8em; border: 1px solid var(--line); border-radius: 999px; padding: .05em .6em; color: var(--accent2); }
 .pair-solo, .gp-radial { border: 1px solid var(--accent2); background: #fff; color: var(--accent2); border-radius: 999px; padding: .25em .9em; cursor: pointer; font: inherit; font-size: .9em; }
 .gp-cont-radial { display: flex; justify-content: center; }
+/* ── メニューの結果の価値（2026-10-21・プレビュー） ── */
+.redirect-note { margin: .5em 0 0; padding: .45em .7em; border-left: 3px solid var(--warn); background: #fff8ec; font-size: .88em; line-height: 1.6; }
+.empty-aspect { line-height: 1.7; }
+.empty-alts { display: flex; flex-wrap: wrap; gap: .4em; }
+.empty-alt { border: 1px solid var(--accent2); background: #fff; color: var(--accent2); border-radius: 999px; padding: .2em .8em; font: inherit; font-size: .88em; cursor: pointer; }
+.bg-h { font-weight: 600; margin: .3em 0 .1em; }
+.bg-n { display: inline-block; min-width: 1.4em; padding: 0 .35em; border-radius: 999px; background: #eef2f6; color: var(--accent2); font-size: .8em; text-align: center; }
+.bg-more { margin-top: .5em; }
+.bg-more summary { cursor: pointer; color: var(--muted); font-size: .9em; }
+.rad-item.rad-empty { opacity: .38; }
+.rad-count { position: absolute; top: -4px; right: 50%; transform: translateX(26px); min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: #c2410c; color: #fff; font: 600 11px/18px system-ui, sans-serif; text-align: center; pointer-events: none; }
+.typed-rel-list li { margin: .2em 0; }

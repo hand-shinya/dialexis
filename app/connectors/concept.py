@@ -297,11 +297,20 @@ async def variants(word: str, lang: str = "ja") -> dict:
         return err("concept-variants", e)
 
 
+# 概念の記事として辿らない種類（P31）。main.NONCONCEPT_P31 の一部と同じ考え方（循環 import を避けて置く）。
+_CREATIVE_P31 = frozenset({"Q11424", "Q5398426", "Q7366", "Q134556", "Q482994", "Q105543609", "Q215380",
+                           "Q101352", "Q202444", "Q7725634", "Q571", "Q47461344", "Q24862", "Q506240"})
+
+
 async def node(word: str, lang: str = "ja", typed: bool = False) -> dict:
     try:
         page, ts, cached = await _fetch_article(word, lang)
         title = word
         resolved_from = None
+        # Wikipedia の転送（実存 → 実存主義）を黙って辿らない。実際の記事名を持ち、画面で明示する（2026-10-21）
+        redirected_to = None
+        if "missing" not in page and page.get("title") and page["title"] != word:
+            redirected_to = title = page["title"]
         if "missing" in page:
             # 通常検索が見つけるものは必ず辿る（一次結果0を作らない）。変種を吸収して再取得。
             cands = await _opensearch(word, lang)
@@ -357,6 +366,11 @@ async def node(word: str, lang: str = "ja", typed: bool = False) -> dict:
             # 概念を立てた/著した人: P50 著者（資本論→マルクス）／P61 発見者・考案者／P112 創始者。
             # 決定論・高精度。ただし P50/P61 等が無い概念（資本主義）も多い＝これだけでは低再現。
             claims = ent.get("claims", {})
+            # 記事が無い語で、通常検索が別の記事を返したとき、それが映画・曲・人名などなら概念として辿らない
+            # （親密性 → 2012年の映画『親密さ』に着き、出演者を「思想家」として出していた・2026-10-21）
+            if resolved_from and set(_claim_qids(claims, "P31")) & _CREATIVE_P31:
+                return ok("concept-node", ts, cached, {"word": word, "found": False,
+                                                       "suggestions": [title], "rejected_article": title})
             orig_q = _claim_qids(claims, "P50") + _claim_qids(claims, "P61") + _claim_qids(claims, "P112")
             na_q = _claim_qids(claims, "P138")  # named after＝語形の由来（rhizome←根茎:植物）
             near_q = [x for p in _REL_NEAR for x in _claim_qids(claims, p)]  # 近い/類する
@@ -387,6 +401,7 @@ async def node(word: str, lang: str = "ja", typed: bool = False) -> dict:
             "disambiguation": "disambiguation" in (page.get("pageprops") or {}),
             "title": title,                    # 実際に辿った記事名（間主観→間主観性）
             "resolved_from": resolved_from,    # 入力語と異なる記事へ解決した場合の元語
+            "redirected_to": redirected_to,    # Wikipedia が入力語を別の記事へ転送したとき、その記事名
             "original_terms": origs,          # 概念-翻訳-原点の候補（記事が明示・LEAD）
             "originators": originators,        # 立てた/著した人（P50/P61/P112・決定論・人物のみ）
             "associated": associated,          # 関連する思想家（記事言及・重要度順・再現向上）

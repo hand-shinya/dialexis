@@ -1787,6 +1787,7 @@ function _providerLabel(ep, data) {
 // 否定Outcome時に実走行する自動代替。body（パネル本体）へ実データ＋実提供元+取得時刻を書き、続行フッターも残す。
 // 未試行の第三経路が無い kind（contrast）は、虚偽の切替文言を出さず、既存の続行操作を直ちに表示する（P6）。
 async function autoFallback(word, kind, body) {
+  if (DX_PREVIEW) return gEmptyAspect(word, kind, body);   // プレビュー: 別の欄の中身を写さず、0件と、データのある見方を示す
   const jp = LANG === "ja";
   const ep = _ALT_FOR.hasOwnProperty(kind) ? _ALT_FOR[kind] : "origin";
   let html = "", outcome = ep ? "empty" : "no-alt", provider = "", retrieved = "";
@@ -2152,6 +2153,7 @@ const UI_ACTION_IDS = {
   trail:       null,   // 探求の軌跡（記録した操作をそのまま再実行する・プレビュー）— 実行時に列挙
   decomp:      ["split"],   // 語の分解の帯（プレビュー）。各部分の操作は円形メニュー（radial）
   colloc:      ["pair", "center"],   // 共起の表（プレビュー: 組で読む）
+  emptyPanel:  null,   // 0件の見方から、データの在る見方へ（プレビュー）— 実行時に列挙
   edge:        ["hl", "focus", "combine", "deepsearch", "handoff", "center", "resetFocus"],
   node:        ["panorama", "handoff"],
   panelFooter: Object.values(UI_ACTION_MAP.panelFooter),
@@ -3005,13 +3007,15 @@ async function gWordAspect(word, aspect) {
   const body = p.querySelector(".gp-body"); let h = "";
   if (aspect === "meaning") {
     const gm = d.general_meaning || [];
+    if (DX_PREVIEW) h += _redirectNoteHtml(d, word);
     if (gm.length) h += `<ul class="gp-ul">${gm.map(s => `<li>${esc(s)}</li>`).join("")}</ul>`;
-    h += segmentLayersHtml(d.segment_layers, { includeCharacter: true });
+    if (DX_PREVIEW) h += _typedRelHtml(d);
+    h += segmentLayersHtml(d.segment_layers, { includeCharacter: !DX_PREVIEW });
     const wo = d.word_origin, co = d.concept_origin || [];
     if (wo && wo.name) h += `<p class="srcline">${jp ? "語源の原点（推定）：" : "origin: "}${esc(wo.name)}</p>`;
     if (co.length) h += `<p class="srcline">${jp ? "原語の候補：" : "original: "}${co.map(o => `<a href="#" class="ext-term" data-w="${esc(o.term)}">${esc(o.term)}</a>${o.name ? "（" + esc(o.name) + "）" : ""}`).join("　")}</p>`;
   } else if (aspect === "breadth") {
-    const br = d.breadth || [];
+    const br = (d.breadth || []).filter(b => !DX_PREVIEW || b.term);   // プレビュー: 語の無い言語名だけの行で枠を作らない
     if (br.length) h += `<p class="muted">${jp ? "この概念を担う世界の言語とその語（必要な言語だけ開いて探せます）。" : "World languages carrying this concept; open the full list only when useful."}</p>${_breadthExplorerHtml(br)}`;
   } else if (aspect === "collapse") {
     const cw = d.collapse_warning;
@@ -3226,14 +3230,14 @@ function _thResponseHtml(d) {
       + `</ul></details>`;
 
   h += `<section class="th-section"><h3>原語・翻訳語の対応</h3><p class="muted">一つの日本語にまとめず、原語・翻訳・保存／欠損／追加を別々に表示します。</p><div class="th-term-grid">`
-    + (ds.term_map || []).map(t => `<article class="th-term-card">
+    + (ds.term_map || []).filter(t => !(DX_PREVIEW && isDiscovery && /字の辞書義|多言語表記|意味のまとまり|語源的構成要素/.test(t.kind || ""))).map(t => `<article class="th-term-card">
       <div class="th-card-top"><code>${esc(t.source_term || "")}</code><span>${esc(t.language || "")}</span>${_thLevel(t.evidence, levels)}</div>
       <p class="th-kind">${esc(t.kind || "")}</p>
       <p><b>日本語候補：</b>${esc((t.japanese_candidates || []).join(" ／ "))}</p>
       <p class="th-distinction">${esc(t.distinction || "")}</p>
-      <dl class="th-dl">${_thField("保存", t.preserved)}${_thField("欠損・変形", t.lost_or_shifted)}${_thField("付加", t.added)}</dl>
+      ${(DX_PREVIEW && isDiscovery) ? "" : `<dl class="th-dl">${_thField("保存", t.preserved)}${_thField("欠損・変形", t.lost_or_shifted)}${_thField("付加", t.added)}</dl>`}
       ${_thSourceLine(t.source_ids, sources)}
-    </article>`).join("") + `</div></section>`;
+    </article>`).join("") + `</div>${(DX_PREVIEW && isDiscovery) ? `<p class="srcline muted">自動の予備整理では、字の辞書義・多言語の綴り・定型の「保存／欠損／付加」欄は省いています（原典で確かめた台帳ではないため）。</p>` : ""}</section>`;
 
   h += `<section class="th-section"><h3>時系列 5W1H</h3><div class="th-timeline">`
     + (ds.timeline || []).map(t => `<article class="th-timeline-card">
@@ -3367,6 +3371,10 @@ async function gContrastPanel(word) {
   const p = gPanel((jp ? "訳語と原語の意味を並べて比べる：" : "Contrast: ") + word, `<p class="muted">${jp ? "日本語訳の意味と、原語の意味を並べて取得中…" : "…"}</p>`, word);
   let o = {}, a = {};
   try { [o, a] = await Promise.all([api(`/api/origin?q=${encodeURIComponent(word)}&lang=${LANG}${PV}`), api(`/api/anatomy?q=${encodeURIComponent(word)}&lang=${LANG}`)]); } catch (e) {}
+  if (DX_PREVIEW && !((o.general_meaning || []).length && (o.concept_origin || []).length)) {
+    _availCache.set(word, Promise.resolve(o));
+    return gEmptyAspect(word, "contrast", p.querySelector(".gp-body"));   // 片側しか無いと「並べる」にならない
+  }
   const anatomyLayers = Array.isArray(a.segment_layers) ? a.segment_layers : [];
   const anatomyHasContent = anatomyLayers.some(x => x && Array.isArray(x.units) && x.units.length)
     || (Array.isArray(a.components) && a.components.length)
@@ -3879,7 +3887,7 @@ function _panoLead(d, cx) {
   const ctxLine = (cx.parentTerm && cx.parentTerm !== cx.term)
     ? `<p class="pano-ctx">この探索（${esc(cx.rootQ || "")}）の文脈で——「${esc(cx.parentTerm)}」から辿った——「${esc(cx.term)}」。</p>` : "";
   return `<div class="pano-lead"><p class="pano-eyebrow">この場所での意味</p>${ctxLine}`
-    + `<p class="pano-lead-body">${esc((gm[0] || "").slice(0, 200))}</p></div>`;
+    + `<p class="pano-lead-body">${esc((gm[0] || "").slice(0, 200))}</p>${DX_PREVIEW ? _redirectNoteHtml(d.origin || {}, cx.term) : ""}</div>`;
 }
 // 「この語で見落としやすいこと」＝取得データに**両側の焦点が明示**されている時だけ出す（所有者2026-07-31）。
 // 必要条件（すべて取得データから確認）: ①日本語側＝同一の訳語へ統合されたことが collapses_to に明示され、
@@ -4778,6 +4786,7 @@ function _breadthItemHtml(b, extraClass = "breadth-filter-item") {
 function _breadthExplorerHtml(entries, opts = {}) {
   const br = (Array.isArray(entries) ? entries : []).filter(Boolean);
   if (!br.length) return "";
+  if (DX_PREVIEW && br.some(b => b.kind)) return _breadthGroupedHtml(br);
   const representative = Math.max(1, Number(opts.representative || 8));
   const rep = br.slice(0, representative).map(b => _breadthItemHtml(b, "blang breadth-summary-item")).join("");
   const langs = [...new Set(br.map(b => String((b && b.name) || "表記").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, LANG === "ja" ? "ja" : undefined));
@@ -4849,7 +4858,7 @@ async function originRun(q, tok) {
   if (originStale(tok)) return;            // 古い語の応答＝現在の語のカードを上書きしない（stale破棄）
   if (d.qid) OZ.qid = d.qid;               // 既存qidを単一真実源へ伝播
   $("origin-status").innerHTML = "";
-  if (DX_PREVIEW) { renderDecomp(q, d.segment_layers); trailPush("center", { term: q, label: q, kind: "word" }); }
+  if (DX_PREVIEW) { renderDecomp(q, d.segment_layers); trailPush("center", { term: q, label: q, kind: "word" }); _availCache.set(q, Promise.resolve(d)); _availData.set(q, d); }
   const olink = (t) => `<a href="/origin?q=${encodeURIComponent(t)}&lang=${LANG}"${linkAttr}>${esc(t)}</a>`;
   let html = "";
 
@@ -4862,7 +4871,7 @@ async function originRun(q, tok) {
   const isPerson = d.subject_kind === "person" && d.person_profile;
   html += `<div class="card word-card">
     <p class="srcline">${isPerson ? (jp ? "この探求は、まず人物の同定と著作から始まります" : "This inquiry begins with identifying the person and their works") : (jp ? "この探求は、まず言葉そのものから始まります" : "This inquiry begins with the word itself")}</p>
-    <h2 class="theword">「${esc((d.word || {}).query || q)}」</h2>${resolvedNote}</div>`;
+    <h2 class="theword">「${esc((d.word || {}).query || q)}」</h2>${resolvedNote}${_redirectNoteHtml(d, q)}</div>`;
   // ── 言語の橋（入力の言語 → 検索に使う言語 → 表示の言語）。中身は fillLangBridge が後から入れる ──
   if (!isPerson) html += `<div class="card bridge-card" id="lang-bridge" data-q="${esc(q)}"><p class="srcline muted">${jp ? "入力の言語と、検索に使う言語を確かめています…" : "Checking the input language and the languages used for search…"}</p></div>`;
 
@@ -5252,12 +5261,17 @@ function gRadialHover(n, x, y) {
   if (_radial && _radial._node === n) { clearTimeout(_radialLeaveT); return; }
   if (_radialHoverNode === n) return;
   _radialHoverNode = n; clearTimeout(_radialHoverT);
+  if (DX_PREVIEW && n && n.kind !== "domain" && !n._avail) _availFetch(n.q || n.label).then(d => { n._avail = d; });   // 開く前に数を取り始める
   _radialHoverT = setTimeout(() => { if (G && G.hover === n && !G.press) gRadialOpen(n); }, 420);
 }
 function _radialItems(n) {
   const all = gActions(n);
   const prim = [], more = [];
-  all.forEach(it => (RADIAL_PRIMARY.includes(it.action) && prim.length < 7 ? prim : more).push(it));
+  const c = DX_PREVIEW ? _availCounts(n && (n._avail || _availData.get(n.q || n.label)), n) : null;   // 数が分かっていれば、0件の見方は内側の輪に置かない
+  all.forEach(it => {
+    const empty = c && AVAIL_HIDE_WHEN_ZERO.has(it.action) && c[it.action] === 0;
+    (RADIAL_PRIMARY.includes(it.action) && prim.length < 7 && !empty ? prim : more).push(it);
+  });
   return { prim, more };
 }
 function gRadialOpen(n, at) {
@@ -5293,7 +5307,7 @@ function gRadialOpen(n, at) {
   el.style.left = Math.max(pad, Math.min(vw - pad, cx)) + "px";
   el.style.top = Math.max(pad, Math.min(vh - pad, cy)) + "px";
   document.body.appendChild(el);
-  _radial = el;
+  _radial = el; el._scrollY = scrollY;
   el.addEventListener("pointerdown", (ev) => ev.stopPropagation());
   el.addEventListener("pointerenter", () => clearTimeout(_radialLeaveT));
   el.addEventListener("pointerleave", () => { _radialLeaveT = setTimeout(gRadialClose, 700); });
@@ -5311,9 +5325,11 @@ function gRadialOpen(n, at) {
     await dispatchAction(it.action, it.target, currentViewState(), { surface: "radial", ...(it.ctx || {}) });
   });
   const first = el.querySelector(".rad-in"); if (first) first.focus({ preventScroll: true });
+  if (DX_PREVIEW) _radialAvail(el, n);
 }
 document.addEventListener("pointerdown", (e) => { if (_radial && !e.target.closest("#radial-menu")) gRadialClose(); });
-window.addEventListener("scroll", () => { if (_radial) gRadialClose(); }, { passive: true });
+// 少しのスクロール（クリック時のブラウザの位置合わせ・慣性の残り）では閉じない。語が画面上で動いた時だけ閉じる
+window.addEventListener("scroll", () => { if (_radial && Math.abs(scrollY - (_radial._scrollY || 0)) > 40) gRadialClose(); }, { passive: true });
 
 // ── その場で広げる（中心を変えずに、選んだ語の先を枝として生やす）──
 async function gExpandInPlace(nodeIdx, term) {
@@ -5612,3 +5628,105 @@ if (DX_PREVIEW) document.addEventListener("DOMContentLoaded", () => {
   if (gt) gt.textContent = LANG === "ja" ? "言語空間の重力分布（語にマウスを乗せるか押すと操作が円形に開く／背景ドラッグで移動／ホイールで拡大縮小）" : "Gravity map (hover or click a word for actions · drag to pan · wheel to zoom)";
   trailRender();
 });
+
+// ══ メニューの結果の価値（所有者 2026-10-21・プレビュー）═══════════════════════════════
+// 所有者: 「選んだメニューの結果が伴っていない。意味不明な新しいボックスが開き、フランス語などの展開が
+// 多いが価値が認められない。何がユーザーにとって最も利益があり、知的好奇心が拡大するかに絞って考えよ」。
+// 本番で全メニュー（4つの地図・7つの語・55回）を実行して見た事実:
+//  ・データが無いとき「埋没した原語」「共起」が「解剖」と同じ中身を写していた（3つのメニューが同じ結果）
+//  ・漢字1字の辞書義（親＝paternal relatives / to kiss）で欄を埋めていた
+//  ・多言語は英語名のアルファベット順で、同じ綴りの借用ばかりが先頭に並んでいた
+//  ・翻訳・受容史の自動台帳は17,000字の多くが定型文（保存／欠損・変形／付加）の繰り返しだった
+//  ・実存は Wikipedia の転送で実存主義に、親密性は映画『親密さ』の記事に着いたまま、それを示していなかった
+// 方針: ①結果の無い見方に人を行かせない（数を先に見せる）②0件のときは0件と、データの在る見方を示す
+//       ③同じ綴りの並びより「その言語が自分の言葉で言い直したもの」を先に ④着いた記事がずれたら必ず示す
+
+function _redirectNoteHtml(d, q) {
+  if (!d) return "";
+  if (d.redirected_to && d.redirected_to !== q) {
+    const g = (d.dict_gloss_en || [])[0];
+    return `<p class="redirect-note">日本語版 Wikipedia では「${esc(q)}」は記事「${esc(d.redirected_to)}」に転送されています。`
+      + `地図・多言語・原語の多くは「${esc(d.redirected_to)}」の記事と項目のデータです。`
+      + (g ? `辞書（en.wiktionary）では「${esc(q)}」＝ <b lang="en">${esc(g)}</b>。<a href="/origin?q=${encodeURIComponent(g)}&lang=${LANG}${DX_PREVIEW ? "&preview=1" : ""}">${esc(g)} として探る</a>` : "")
+      + `</p>`;
+  }
+  if (d.rejected_article) {
+    return `<p class="redirect-note">「${esc(q)}」の記事は日本語版 Wikipedia に無く、通常の検索が返した「${esc(d.rejected_article)}」は映画・作品などの記事だったため、概念のデータとして使っていません。</p>`;
+  }
+  return "";
+}
+function _typedRelHtml(d) {
+  const rs = (d && d.relations_typed) || [];
+  if (!rs.length) return "";
+  const me = (d.word && d.word.query) || d.query || "";
+  const li = rs.slice(0, 12).map(r => {
+    // 全体像（_panoRelations）と同じ: {a}＝この語、{b}＝相手。向きは reading の文がすでに表している
+    const a = `<b>${esc(me)}</b>`, b = `<a href="#" class="ext-term" data-w="${esc(r.label)}">${esc(r.label)}</a>`;
+    return `<li>${esc(r.reading || "{a} — {b}").replace("{a}", a).replace("{b}", b)}${r.declared_by === "other" ? ` <span class="srcline">（相手の項目の言明）</span>` : ""}</li>`;
+  }).join("");
+  return `<p class="rel-ev-lead">何の一部か・何と区別されるか（Wikidata の言明）</p><ul class="gp-ul typed-rel-list">${li}</ul>`
+    + (rs.length > 12 ? `<p class="srcline">ほか ${rs.length - 12} 件は「全体像」で見られます。</p>` : "");
+}
+function _breadthGroupedHtml(br) {
+  const jp = LANG === "ja";
+  const own = br.filter(b => b.kind === "own" && b.term), unk = br.filter(b => b.kind === "unknown" && b.term), loan = br.filter(b => b.kind === "loan" && b.term);
+  const item = (b) => _breadthItemHtml(b, "blang breadth-summary-item");
+  return `<div class="breadth-explorer breadth-grouped" data-breadth-explorer>`
+    + (own.length ? `<p class="bg-h">その言語の言葉で言い直した語 <span class="bg-n">${own.length}</span></p><p class="srcline">綴りが原語から遠い語です。その言語がこの概念を自分の語彙でどう捉え直したかが見えます（意味の同一性は確かめていません）。</p><div class="breadth">${own.map(item).join("")}</div>` : "")
+    + (unk.length ? `<details class="bg-more"><summary>文字が違うため綴りを比べていない語 <span class="bg-n">${unk.length}</span></summary><div class="breadth">${unk.map(item).join("")}</div></details>` : "")
+    + (loan.length ? `<details class="bg-more"><summary>原語とほぼ同じ綴りの語（借用・同語源） <span class="bg-n">${loan.length}</span></summary><div class="breadth">${loan.map(item).join("")}</div></details>` : "")
+    + `<p class="srcline muted">${jp ? "並べ方：綴りの近さだけで分けています（Wikidata のラベル・機械の判定。意味は判定していません）。" : ""}</p></div>`;
+}
+
+// ── 各メニューの「結果の数」（その語の /api/origin から数える。サーバは7日 cache） ──
+const _availCache = new Map(), _availData = new Map();   // 取得中の約束／取得済みの中身（円形メニューを組む時に同期で使う）
+function _availFetch(term) {
+  if (!term) return Promise.resolve(null);
+  if (!_availCache.has(term)) _availCache.set(term, api(`/api/origin?q=${encodeURIComponent(term)}&lang=${LANG}${PV}`)
+    .then(d => { _availData.set(term, d); return d; }).catch(() => null));
+  return _availCache.get(term);
+}
+function _availCounts(d, n) {
+  if (!d) return null;
+  const co = d.concept_origin || [], gm = d.general_meaning || [], rt = d.relations_typed || [];
+  const cw = d.collapse_warning, ownBr = (d.breadth || []).filter(b => b.term).length;
+  const isLatin = /[A-Za-zÀ-ɏ]/.test(String((n && (n.q || n.label)) || ""));
+  return {
+    meaning: gm.length + rt.length,
+    collapse: (cw && cw.lemmas) ? cw.lemmas.length : 0,
+    colloc: (co.some(o => o.name === "ドイツ語") || isLatin) ? 1 : 0,
+    multilingual: ownBr,
+    contrast: (gm.length && co.length) ? co.length : 0,
+    anatomy: co.length + (d.word_origin ? 1 : 0) + (d.chain || []).length,
+  };
+}
+const AVAIL_HIDE_WHEN_ZERO = new Set(["collapse", "colloc", "contrast", "multilingual", "meaning"]);
+const AVAIL_LABEL = { meaning: "意味と関係", collapse: "埋もれた原語", colloc: "共起", multilingual: "多言語", contrast: "並置", anatomy: "源" };
+async function gEmptyAspect(word, kind, body) {
+  const jp = LANG === "ja";
+  const what = AVAIL_LABEL[kind] || (ACTIONS[kind] || {}).label || kind;
+  body.innerHTML = `<p class="muted">${jp ? "この語で使えるデータを数えています…" : "…"}</p>`;
+  const d = await _availFetch(word);
+  const c = _availCounts(d, { q: word }) || {};
+  const alts = Object.keys(c).filter(k => k !== kind && c[k] > 0);
+  body.innerHTML = `<p class="empty-aspect">「${esc(word)}」には、<b>${esc(what)}</b> のデータは今回 0 件でした。別の欄の中身で埋めることはしていません。</p>`
+    + (alts.length ? `<p class="rel-ev-lead">データの在る見方</p><p class="empty-alts">${alts.map(k => `<button type="button" class="empty-alt" data-a="${esc(k)}">${esc(AVAIL_LABEL[k] || k)} <span class="bg-n">${k === "colloc" ? "" : c[k]}</span></button>`).join("")}</p>` : "")
+    + (d ? _redirectNoteHtml(d, word) : "");
+  body.querySelectorAll(".empty-alt").forEach(b => b.addEventListener("click", () =>
+    dispatchAction(b.dataset.a, { term: word, label: word, kind: "word" }, currentViewState(), { surface: "emptyPanel" })));
+  return false;
+}
+// 円形メニューに結果の数を付け、0件の見方は薄くして「その他」へ回す
+async function _radialAvail(el, n) {
+  const term = n && (n.q || n.label); if (!el || !term || n.kind === "domain" || n.kind === "author" || n.kind === "work") return;
+  const d = await _availFetch(term);
+  n._avail = d;
+  if (!el.isConnected || el._node !== n) return;
+  const c = _availCounts(d, n); if (!c) return;
+  el.querySelectorAll(".rad-item[data-action]").forEach(b => {
+    const k = b.dataset.action; if (!(k in c)) return;
+    b.classList.toggle("rad-empty", c[k] === 0);
+    if (k !== "colloc" && c[k] > 0) { let s = b.querySelector(".rad-count"); if (!s) { s = document.createElement("span"); s.className = "rad-count"; b.appendChild(s); } s.textContent = c[k]; }
+    if (c[k] === 0) b.title = `${b.title}（この語では 0 件）`;
+  });
+}

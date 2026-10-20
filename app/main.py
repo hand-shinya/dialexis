@@ -504,6 +504,29 @@ def _has_latin(s: str) -> bool:
 # words and defeat the token-overlap SEP gate (freedom → 'Freedom (Beyoncé
 # song)' shares the token 'freedom' with SEP's 'Divine Freedom'; 徳 → given
 # name 'De'). Small, verified against real entities — not exhaustive.
+_CYR = dict(zip("абвгдеёжзийклмнопрстуфхцчшщъыьэюяіїєґў",
+                ["a","b","v","g","d","e","e","zh","z","i","i","k","l","m","n","o","p","r","s","t","u","f","kh","ts","ch","sh","shch","","y","","e","yu","ya","i","i","e","g","u"]))
+_GRK = dict(zip("αβγδεζηθικλμνξοπρσςτυφχψω", ["a","b","g","d","e","z","e","th","i","k","l","m","n","x","o","p","r","s","s","t","y","ph","ch","ps","o"]))
+
+
+def _spelling_kind(term: str, refs: list) -> str:
+    """多言語の語が、元の語（原語・英独仏羅のラベル）の綴りを借りたものか、その言語の言い方か。
+    綴りの近さだけを見る（意味は判定しない）。ラテン・キリル・ギリシア文字の語だけを比べる。"""
+    import difflib
+    t = unicodedata.normalize("NFKD", (term or "").lower())
+    t = "".join(_CYR.get(c, _GRK.get(c, c)) for c in t if not unicodedata.combining(c))
+    if not t or not re.fullmatch(r"[a-z\s'’\-]+", t):
+        return "unknown"
+    best = 0.0
+    for r in refs or []:
+        r2 = "".join(c for c in unicodedata.normalize("NFKD", r.lower()) if not unicodedata.combining(c))
+        if re.fullmatch(r"[a-z\s'’\-]+", r2 or ""):
+            best = max(best, difflib.SequenceMatcher(None, t, r2).ratio())
+    if not refs or best == 0.0:
+        return "unknown"
+    return "loan" if best >= 0.6 else "own"
+
+
 NONCONCEPT_P31 = frozenset({
     "Q101352",     # family name
     "Q202444",     # given name
@@ -1087,6 +1110,14 @@ async def api_origin(q: str, lang: str = "ja", preview: int = 0):
     for s in td.get("sections", []):
         if s != "Translingual":
             breadth.setdefault(s, {"name": s, "term": "", "via": "wiktionary"})
+    # 並べ方（2026-10-21 所有者指摘: 英語名のアルファベット順で Belarusian (Taraškievica…) が先頭に来て、
+    # 同じ綴りの借用ばかりが並び価値が無い）。綴りが元の語から遠い「その言語の言い方」を先に、
+    # 綴りの近い借用を後に置く。比べられない文字は「判定していない」として間に置く。意味の判定はしない。
+    _refs = [o.get("term") for o in (cd.get("original_terms") or []) if o.get("term")]
+    _refs += [v for k, v in (cd.get("breadth_labels") or {}).items() if k in ("en", "de", "fr", "la") and v]
+    for b in breadth.values():
+        b["kind"] = _spelling_kind(b.get("term") or "", _refs)
+    _korder = {"own": 0, "unknown": 1, "loan": 2}
 
     # polysemy: the two paths may resolve different SENSES of a word (空 →『sky』
     # via the article vs 『śūnyatā/梵』via the Buddhist etymology). We show both
@@ -1121,6 +1152,11 @@ async def api_origin(q: str, lang: str = "ja", preview: int = 0):
         "found": td.get("found", False) or cd.get("found", False),
         "resolved_from": cd.get("resolved_from"),   # 間主観→間主観性 と辿った場合の元語
         "resolved_to": cd.get("title"),             # 実際に辿った記事名
+        "redirected_to": cd.get("redirected_to"),   # Wikipedia の転送先（実存 → 実存主義）。画面で明示する
+        "rejected_article": cd.get("rejected_article"),   # 通常検索が返したが概念でない記事（映画など）
+        # 辞書（en.wiktionary）がこの語に与える英語の言い換え（転送で別の概念に着いたとき、辞書の意味へ戻る道）
+        "dict_gloss_en": next((c.get("en_lemmas") or [] for c in ((defs.get("data") or {}).get("candidates") or [])
+                               if c.get("code") == lang), [])[:3],
         "suggestions": cd.get("suggestions") or [],  # 見つからない時の候補（行き止まりにしない）
         "dimensions": dimensions,                # 探究の次元（どの語からも辿れる路）
         "general_meaning": gen_senses,           # 広く共有されている意味（入力言語）
@@ -1137,7 +1173,7 @@ async def api_origin(q: str, lang: str = "ja", preview: int = 0):
         "chain": td.get("origin_chain", []),     # 変容の連鎖（言語＋語形・全表示）
         "senses": td.get("senses", []),
         "polysemy": polysemy,
-        "breadth": sorted(breadth.values(), key=lambda x: x["name"]),
+        "breadth": sorted(breadth.values(), key=lambda x: (_korder.get(x.get("kind"), 1), not x.get("term"), x["name"])),
         "breadth_count": len(breadth),
         "qid": cd.get("qid"),
         # 典拠経路（2026-09-28）。原語表記と哲学典拠の候補。既存fieldを置き換えず併記する。
