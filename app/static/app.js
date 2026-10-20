@@ -5514,6 +5514,7 @@ function renderDecomp(q, layers) {
     + units.map((u, i) => `${i ? `<span class="ds-plus">＋</span>` : ""}<button type="button" class="ds-part" data-i="${i}" title="${jp ? "押すと、このまとまりの操作が円形に開きます" : "open actions for this part"}"><b>${esc(u.text)}</b>${u.gloss ? `<small>${esc(u.gloss)}</small>` : ""}${u.role === "unresolved_unit" ? `<small>${jp ? "辞書で未確認" : "unconfirmed"}</small>` : ""}</button>`).join("")
     + `<span class="ds-note">${esc(src)}${jp ? "。各まとまりを押すと、その語の操作が開きます。地図にも枝として並べています。" : "."}</span>`;
   el._units = units;
+  const sm = $("dx-small-map"); if (sm) sm.remove();   // 地図が本文より先に届くと「小さめ」が先に出る。複合語はまとまりから進める
   el.querySelectorAll(".ds-part").forEach(b => b.addEventListener("click", () => {
     const u = el._units[+b.dataset.i]; if (!u) return;
     const r = b.getBoundingClientRect();

@@ -11,7 +11,8 @@
 const { chromium } = require("playwright-core");
 const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const BASE = process.argv[2] || "http://127.0.0.1:8099";
-const SEG = { "哲学草稿": [{ text: "哲学", role: "lexical_unit", gloss: "", source: "ja.wiktionary" }, { text: "草稿", role: "lexical_unit", gloss: "", source: "ja.wiktionary" }] };
+const SEG = { "非有機的肉体": [{ text: "非", role: "prefix", gloss: "否定・非〜" }, { text: "有機的", role: "lexical_unit" }, { text: "肉体", role: "lexical_unit" }],
+  "哲学草稿": [{ text: "哲学", role: "lexical_unit", gloss: "", source: "ja.wiktionary" }, { text: "草稿", role: "lexical_unit", gloss: "", source: "ja.wiktionary" }] };
 const ORIGIN = (q) => ({ query: q, lang: "ja", queried_at: "t", word: { query: q }, found: q !== "哲学草稿", resolved_from: null, resolved_to: q,
   suggestions: [], dimensions: [], general_meaning: ["意味"], concept_origin: q === "中心語" ? [{ name: "ドイツ語", term: "Zentralwort" }] : [],
   segment_layers: SEG[q] ? [{ level: "whole", units: [{ text: q }] }, { level: "semantic", label: "意味のまとまり", units: SEG[q] }] : [],
@@ -25,6 +26,10 @@ const GRAPH = {
     { id: "r1", label: "概念分析方法", kind: "related", layer: 3, weight: 1, q: "概念分析方法" },
     { id: "r2", label: "別の語", kind: "related", layer: 3, weight: 1, q: "別の語" }],
     edges: [{ from: "root", to: "d1" }, { from: "d1", to: "a1" }, { from: "d1", to: "r1" }, { from: "d1", to: "r2" }] },
+  "非有機的肉体": { query: "非有機的肉体", note: "fx", nodes: [   // 語の少ない地図（語3つ）の複合語
+    { id: "root", label: "非有機的肉体", kind: "word", layer: 1, weight: 3, q: "非有機的肉体" },
+    { id: "o1", label: "Leib", kind: "original", layer: 2, weight: 1, q: "Leib" }, { id: "o2", label: "Körper", kind: "original", layer: 2, weight: 1, q: "Körper" }],
+    edges: [{ from: "root", to: "o1" }, { from: "root", to: "o2" }] },
   "ひとり語": { query: "ひとり語", note: "fx", nodes: [
     { id: "root", label: "ひとり語", kind: "word", layer: 1, weight: 3, q: "ひとり語" },
     { id: "l1", label: "German", kind: "language", layer: 2, weight: 1 }], edges: [{ from: "root", to: "l1" }] },
@@ -42,7 +47,11 @@ const PAIR = { a: "Zentralwort", b: "ひとり語", lang: "de", total: 5, retrie
     p.on("pageerror", e => console.log("pageerror", e.message.slice(0, 200)));
     const json = (r, o, status) => r.fulfill({ status: status || 200, contentType: "application/json", body: JSON.stringify(o) });
     await p.route(/\/api\/origin\/graph\?/, r => { const q = new URL(r.request().url()).searchParams.get("q"); return GRAPH[q] ? json(r, GRAPH[q]) : json(r, { detail: "x" }, 500); });
-    await p.route(/\/api\/origin\?/, r => json(r, ORIGIN(new URL(r.request().url()).searchParams.get("q"))));
+    await p.route(/\/api\/origin\?/, async r => {
+      const q = new URL(r.request().url()).searchParams.get("q");
+      if (q === "非有機的肉体") await new Promise(res => setTimeout(res, 2500));   // 地図が本文より先に届く順序を再現する（本番 10/20 で起きた）
+      return json(r, ORIGIN(q));
+    });
     await p.route(/\/api\/relation\?/, r => json(r, REL));
     await p.route(/\/api\/pair\?/, r => json(r, PAIR));
     await p.route(/\/api\/collocations\?/, r => json(r, { term: "Zentralwort", relations: { "hat Objekt": [{ word: "ひとり語", freq: 9 }] }, note: "fx" }));
@@ -121,6 +130,12 @@ const PAIR = { a: "Zentralwort", b: "ひとり語", lang: "de", total: 5, retrie
   ok("⑤ 語の地図が作れない語でも、分けたまとまりを並べた地図から始められる", mapParts.join() === "哲学,草稿" && await p.evaluate(() => getComputedStyle(document.getElementById("origin-graph-wrap")).display) !== "none", JSON.stringify(mapParts));
   await p.click("#decomp-strip .ds-part");
   ok("⑤ 分けたまとまりを押すと、その語の円形メニューが開く", !!(await p.waitForSelector("#radial-menu .rad-in", { timeout: 3000 }).catch(() => null)));
+  // 地図が本文より先に届いても、複合語には「地図は小さめ」を残さない（まとまりから進める）
+  await p.goto(`${BASE}/origin?q=${encodeURIComponent("非有機的肉体")}&lang=ja&preview=1`, { waitUntil: "domcontentloaded" });
+  await p.waitForFunction(() => window.__dx && window.__dx.G && window.__dx.G.nodes.some(x => x.part), null, { timeout: 15000 }).catch(() => {});
+  await p.waitForTimeout(800);
+  const parts2 = await p.evaluate(() => window.__dx.G ? window.__dx.G.nodes.filter(x => x.part).map(x => x.label) : []);
+  ok("⑤ 地図が先に届いた複合語でも、まとまりが並び「地図は小さめ」は残らない", parts2.join() === "非,有機的,肉体" && !(await p.$("#dx-small-map")), JSON.stringify(parts2));
   await ctx.close();
 
   // ⑦ 通常表示
