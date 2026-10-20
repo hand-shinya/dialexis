@@ -2134,6 +2134,10 @@ const ACTIONS = {
   resetFocus:   { label: "全体に戻す", effect: "map", run: () => { if (G) return originGraph(G.rootQ); } },
   // 中心を変えずに、その語の先（子・孫）をその場に枝として生やす（所有者 2026-10-19 提案・プレビュー）
   expand:       { label: "その場で広げる", effect: "map", run: (t, ctx) => gExpandInPlace(ctx && ctx.nodeIdx, t.term) },
+  // 複合語を意味のまとまりに分け、地図にその場で並べる（所有者 2026-10-20 提案・プレビュー）
+  split:        { label: "語を分ける", effect: "map", run: (t, ctx) => gSplitInPlace(ctx && ctx.nodeIdx, t.term) },
+  // 共起語を、元の語との組のまま読む（単独の検索で行き止まりにしない・2026-10-20 プレビュー）
+  pair:         { label: "語の組で読む", effect: "action", run: (t, ctx) => gPairPanel((ctx && ctx.a) || "", t.term, ctx || {}) },
 };
 // 各表示面が使う Action ID の宣言（テストが registry と照合し「未宣言のユーザー操作」を0にする）。
 // 実装側の各面はこの定義を参照する（文言から推測しない・面ごとに作用を再実装しない）。
@@ -2145,6 +2149,9 @@ const UI_ACTION_IDS = {
   topbar:      null,   // gActions（中心語）— 実行時に列挙
   popup:       null,   // gActions（選択ノード）— 実行時に列挙
   radial:      null,   // 円形メニュー（gActions と同じ項目を円に並べる・プレビュー）— 実行時に列挙
+  trail:       null,   // 探求の軌跡（記録した操作をそのまま再実行する・プレビュー）— 実行時に列挙
+  decomp:      ["split"],   // 語の分解の帯（プレビュー）。各部分の操作は円形メニュー（radial）
+  colloc:      ["pair", "center"],   // 共起の表（プレビュー: 組で読む）
   edge:        ["hl", "focus", "combine", "deepsearch", "handoff", "center", "resetFocus"],
   node:        ["panorama", "handoff"],
   panelFooter: Object.values(UI_ACTION_MAP.panelFooter),
@@ -2260,6 +2267,10 @@ async function dispatchAction(actionId, target, currentState, surfaceContext) {
     gBusy(true, processingLabel, anchor.x != null ? anchor.x : (G && G.lastX), anchor.y != null ? anchor.y : (G && G.lastY));
     gActionBusy(true, processingLabel);
   }
+  if (DX_PREVIEW && actionId === "center" && G && G.rootQ && G.rootQ !== t.term) {
+    _centerFrom = { to: t.term, from: G.rootQ };   // 地図の中から移った元（軌跡・行き止まりの回避）
+    trailPush("center", t, ctx);                   // 読み込みの途中で次の操作をしても、移ったことは軌跡に残す
+  }
   NAV.txn = true;
   let ok = true, runResult;
   try { runResult = await a.run(t, ctx); }
@@ -2290,6 +2301,7 @@ async function dispatchAction(actionId, target, currentState, surfaceContext) {
     gToast(LANG === "ja" ? `「${a.label}」を実行しました。` : `“${a.label}” executed.`);
     return { ok: true, outcome: "success", actionId, target: t };  // 棚・新タブ・外部リンク集は状態遷移でない
   }
+  if (DX_PREVIEW) trailPush(actionId, t, ctx);      // 探求の軌跡（プレビュー）
   navCommit(currentViewState());                   // 1ユーザー操作＝1回のcommit（確定状態）
   gToast(LANG === "ja" ? `「${a.label}」を実行しました。次の操作を選べます。` : `“${a.label}” executed. Choose the next action.`);
   return { ok: true, outcome: "success", actionId, target: t };
@@ -2317,7 +2329,7 @@ async function surfaceContextFor(term, node) {
 
 /* ---------- 言語空間の重力グラフ（canvas force-directed・階層/展開/俯瞰） ---------- */
 const GKIND = { word: "#1d2430", domain: "#2e5c7a", original: "#7a5c2e",
-  author: "#b45309", work: "#9a7b52", language: "#4a7fa5",
+  author: "#b45309", work: "#9a7b52", language: "#4a7fa5", part: "#7b4fa0",
   related: "#3a7d44", opposite: "#a03b3b", appdomain: "#5b4b8a", application: "#8a6d3b",
   // 検索で両語に一致した語。関係を測ってはいないので、related とは別の色にする。
   cooccurrence: "#6b7280" };
@@ -2648,6 +2660,7 @@ function gApplyGraph(d) {
     const pd = applyLens(d, G_lens);
     const note = $("graph-note"); if (note) note.textContent = pd.note || d.note || "";
     gBuild(pd);
+    if (DX_PREVIEW) { _applyPendingParts(); if ((d.nodes || []).length > 1) smallMapNote(d.query); else { const sm = $("dx-small-map"); if (sm) sm.remove(); } }
     return null;
   }
   return applyLensBuild(G_lens);   // region/応用/使用例/時代変遷は新しい語で再描画（遅延取得は語ごとキャッシュ）
@@ -2661,6 +2674,7 @@ async function originGraph(q, tok) {
   originShellShow(q);   // 取得の成否に関わらず、まず操作帯（ナビ＋共通メニュー）を出す
   const res = await originResolveGraph(q, tok);
   if (originStale(tok)) return false;      // 古い語の応答＝現在の語のグラフを壊さない（stale破棄）
+  if (!res && DX_PREVIEW && _partsPending && _partsPending.q === q) { _partsOnlyMap(q, _partsPending.units); return true; }   // 複合語は分けたまとまりから始める
   if (!res) { graphThin(jp ? `「${q}」は、上の入口からこの語のまま探索を続けられます。` : `Continue exploring “${q}” from the entry points above.`, q); return false; }
   graphThin(null);   // グラフ本体を表示（薄い/失敗表示を隠す）
   await gApplyGraph(res.data);
@@ -2812,6 +2826,10 @@ function gDraw() {
     ctx.fillStyle = isRoot ? "#c2410c" : (GKIND[n.kind] || "#888"); ctx.fill();
     if (isRoot) { ctx.lineWidth = 3 / view.k; ctx.strokeStyle = "#7c2d12"; ctx.stroke(); }
     else if (isHover) { ctx.lineWidth = 3 / view.k; ctx.strokeStyle = "#111"; ctx.stroke(); }
+    if (DX_PREVIEW && !isRoot && _trailSet.has(n.label)) {   // 探求の軌跡で通った語（破線の輪）
+      ctx.beginPath(); ctx.arc(n.x, n.y, r + 5, 0, 7); ctx.setLineDash([4 / view.k, 3 / view.k]);
+      ctx.lineWidth = 2 / view.k; ctx.strokeStyle = "#c2410c"; ctx.stroke(); ctx.setLineDash([]);
+    }
     const bold = isRoot || isHover;
     ctx.font = (bold ? "bold " : "") + (isRoot ? 18 : Math.round(10 + n.weight * 1.4)) + "px system-ui, sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "bottom";
@@ -3481,7 +3499,8 @@ function _relationInfo(node) {
     summary: `中心命題「${center}」から派生した「${node.label}」を、同じ意味の語としてではなく、著作・思想・歴史・受容の接続として確認する。`,
     evidence: "candidate", record: null, work: null,
     node: { term: node.q || node.label, label: node.label, kind: node.kind, id: node.id, lang: node.lang, layer: node.layer,
-      original_title: node.original_title, year: node.year, person_id: node.person_id },
+      original_title: node.original_title, year: node.year, person_id: node.person_id,
+      work: node.work, term_de: node.term_de, qid: node.qid, search: node.search },
     sourceIds: []
   };
   if (profile) {
@@ -3547,11 +3566,13 @@ function gRelationshipPanel(term, relation, node) {
   const p = gPanel(`🧭 中心命題との関係：${info.target}`,
     `<div class="rel-hero"><p class="rel-route"><span>中心命題</span><b>${esc(info.center)}</b><span>→</span><span>派生項目</span><b>${esc(info.target)}</b></p><p>${esc(info.summary)}</p></div>
       <section class="rel-section"><h4>この地図での接続</h4><dl class="rel-dl"><dt>位置</dt><dd>${esc(relationText)}</dd><dt>対象の種類</dt><dd>${esc(info.targetKind || "項目")}</dd><dt>証拠階層</dt><dd><span class="rel-evidence">${esc(_relationEvidenceLabel(info.evidence))}</span></dd></dl><p class="rel-detail">${esc(detail)}</p></section>
-      <section class="rel-section"><h4>ここで分けて読むこと</h4><ul class="rel-list"><li>中心命題そのものの主張と、派生項目の著作・思想・受容上の位置を混同しない。</li><li>人物名の表記差、著作題名の翻訳差、引用・影響関係を別々の証拠単位で確認する。</li><li>「調査候補」は入口であり、本文・版・標準ロケータの照合後に確定度を更新する。</li></ul></section>
+      ${DX_PREVIEW ? `${_relFactsHtml(info.node)}<section class="rel-section rel-evidence-sec"><h4>なぜつながっているか（本文の文）</h4><div class="rel-ev" aria-live="polite"><p class="srcline muted">Wikipedia の本文から、2つの語が一緒に出てくる文を探しています…</p></div></section>`
+        : `<section class="rel-section"><h4>ここで分けて読むこと</h4><ul class="rel-list"><li>中心命題そのものの主張と、派生項目の著作・思想・受容上の位置を混同しない。</li><li>人物名の表記差、著作題名の翻訳差、引用・影響関係を別々の証拠単位で確認する。</li><li>「調査候補」は入口であり、本文・版・標準ロケータの照合後に確定度を更新する。</li></ul></section>`}
       <section class="rel-section"><h4>次に広げる</h4><div class="rel-next">${next.map((x, i) => `<button type="button" class="rel-next-btn" data-i="${i}">${esc(x.label)}</button>`).join("")}</div></section>
       ${sources.length ? `<section class="rel-section"><h4>確認入口</h4><div class="rel-sources">${sources.map(s => s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id)}</a>` : `<span>${esc(s.label || s.id)}</span>`).join(" ")}</div></section>` : `<p class="srcline">この接続は探索レンズとして提示しています。本文・版・引用箇所を追加すれば証拠単位へ更新できます。</p>`}`,
     term);
   if (!p) return false;
+  if (DX_PREVIEW) _relFillEvidence(p, info.centerTerm || info.center, info.target, info.node);
   p._relNext = next;
   p.querySelectorAll(".rel-next-btn").forEach(btn => btn.addEventListener("click", () => {
     const item = p._relNext[Number(btn.dataset.i)]; if (!item) return;
@@ -3610,6 +3631,7 @@ function gActions(n) {
       // 第一候補＝この語の全体像（概念全景）。派生ノードからも全景へ進める（所有者2026-08-01）
       { s: "🖼 全体像を見る", t: "🖼 この語の全体像を見る（概念全景）", action: "panorama", ctx: { node: n } },
       ...(DX_PREVIEW && idx >= 0 ? [{ s: "🌿 その場で広げる", t: "🌿 中心を変えずに、この語の先（子・孫）をその場に広げる", action: "expand", ctx: { nodeIdx: idx } }] : []),
+      ...(DX_PREVIEW && idx >= 0 && isCompoundTerm(n.q || n.label) && !n.part ? [{ s: "✂ 語を分ける", t: "✂ この語を意味のまとまりに分け、地図にその場で並べる（哲学草稿 → 哲学＋草稿）", action: "split", ctx: { nodeIdx: idx } }] : []),
       { s: "🎯 中心に据える", t: "🎯 これを地図の中心に据え直す（グラフを再構成）", action: "center" },
       { s: "🔗 組み合わせ", t: "🔗 別の語と組み合わせる（AND／意味／除外／比較）", action: "combine" },
       { s: "👓 見方", t: "👓 見方を選ぶ（この地図の切り口）", action: "lens" },
@@ -3772,7 +3794,9 @@ function gPanel(title, bodyHtml, term) {
   const continueTerm = _activeTerm(term);
   const back = (_panelFromMenu && MENUCTX);   // ノードのメニューから開いた＝別メニューへ戻れるようにする
   const p = document.createElement("div");
-  const foot = continueTerm ? `<div class="gp-cont"><span class="gp-cont-h">🧭 ${jp ? `「${esc(continueTerm)}」で続ける` : `continue with “${esc(continueTerm)}”`}：</span>` + [
+  const foot = (continueTerm && DX_PREVIEW)
+    ? `<div class="gp-cont gp-cont-radial"><button type="button" class="gp-radial" data-term="${esc(continueTerm)}">◉ ${jp ? `「${esc(continueTerm)}」の操作を開く` : `Actions for “${esc(continueTerm)}”`}</button></div>`
+    : continueTerm ? `<div class="gp-cont"><span class="gp-cont-h">🧭 ${jp ? `「${esc(continueTerm)}」で続ける` : `continue with “${esc(continueTerm)}”`}：</span>` + [
     ["center", "🎯 " + (jp ? "中心に据える" : "centre")],
     ["lens", "👓 " + (jp ? "見方" : "views")],
     ["lang", "🌍 " + (jp ? "多言語" : "languages")],
@@ -3794,6 +3818,12 @@ function gPanel(title, bodyHtml, term) {
   const bb = p.querySelector(".gp-back");
   if (bb) bb.addEventListener("click", () => { closePanel(); gReopenMenu(); });
   const FMAP = UI_ACTION_MAP.panelFooter;   // 面ごとに作用を再実装しない（registry宣言と同一）
+  const gr = p.querySelector(".gp-radial");
+  if (gr) gr.addEventListener("click", () => {   // プレビュー: 文字ボタンの列の代わりに、その語の円形メニュー
+    const t = gr.dataset.term, r = gr.getBoundingClientRect();
+    const live = G && G.nodes ? G.nodes.find(x => (x.q || x.label) === t || x.label === t) : null;
+    gRadialOpen(live || { kind: "word", label: t, q: t, id: "panel:" + t }, { x: r.left + r.width / 2, y: r.top - 150 });
+  });
   p.querySelectorAll(".gp-cont-b").forEach(btn => btn.addEventListener("click", async () => {
     const a = FMAP[btn.dataset.a]; if (!a) return;
     const footEl = btn.closest(".gp-cont");
@@ -4566,11 +4596,18 @@ async function gColloc(term) {
   } else {
     html = `<p class="muted">${jp ? "この原語が、原語コーパスで共に使われる語（文法関係別・頻度つき）。クリックでその語へ。" : "Words this term lives with in its own corpus."}</p>
       <table class="plain orig-collo">` + keys.map(rel =>
-      `<tr><td class="srcline">${esc(jp ? (REL_JP[rel] || rel) : rel)}</td><td>${rels[rel].map(w =>
-        `<a href="/origin?q=${encodeURIComponent(w.word)}&lang=${LANG}"${originLinkAttr()} lang="de">${esc(w.word)}</a> <span class="srcline">${w.freq}</span>`).join("　")}</td></tr>`).join("") + `</table>`;
+      `<tr><td class="srcline">${esc(jp ? (REL_JP[rel] || rel) : rel)}</td><td>${rels[rel].map(w => DX_PREVIEW
+        ? `<a href="#" class="colloc-pair" data-w="${esc(w.word)}" data-rel="${esc(rel)}" lang="de" title="${jp ? `「${esc(deTerm)} × ${esc(w.word)}」を組のまま読む（実際の用例文）` : "read as a pair"}">${esc(w.word)}</a> <span class="srcline">${w.freq}</span>`
+        : `<a href="/origin?q=${encodeURIComponent(w.word)}&lang=${LANG}"${originLinkAttr()} lang="de">${esc(w.word)}</a> <span class="srcline">${w.freq}</span>`).join("　")}</td></tr>`).join("") + `</table>`;
+    if (DX_PREVIEW) html = html.replace(jp ? "クリックでその語へ。" : "", jp ? "語を押すと、この原語との組のまま、実際の用例文で読めます。" : "");
   }
   if (d.note && keys.length) html += `<p class="srcline muted">${esc(d.note)}</p>`;
   p.querySelector(".gp-body").innerHTML = html;
+  p.querySelectorAll(".colloc-pair").forEach(a => a.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    dispatchAction("pair", { term: a.dataset.w, label: a.dataset.w, kind: "word" }, currentViewState(),
+      { surface: "colloc", a: deTerm, aLabel: term, rel: a.dataset.rel, lang: "de" });
+  }));
 }
 
 // scroll to a result card; if it isn't present for the current word, recenter
@@ -4812,6 +4849,7 @@ async function originRun(q, tok) {
   if (originStale(tok)) return;            // 古い語の応答＝現在の語のカードを上書きしない（stale破棄）
   if (d.qid) OZ.qid = d.qid;               // 既存qidを単一真実源へ伝播
   $("origin-status").innerHTML = "";
+  if (DX_PREVIEW) { renderDecomp(q, d.segment_layers); trailPush("center", { term: q, label: q, kind: "word" }); }
   const olink = (t) => `<a href="/origin?q=${encodeURIComponent(t)}&lang=${LANG}"${linkAttr}>${esc(t)}</a>`;
   let html = "";
 
@@ -5189,22 +5227,22 @@ installUiErrorBoundary();
 // 地図の語にマウスを乗せる（約0.4秒）か押すと、その語のまわりに操作が円形に並ぶ。項目は gActions と同じ
 // （縦の一覧と食い違わない）。主な操作を内側の輪に、残りを「その他」で開く外側の輪に置く。
 // どの項目も dispatchAction を通る（単一の受け口・1操作1履歴）。中心に据え直さずに、どの語からでも選べる。
-const RADIAL_PRIMARY = ["meaning", "anatomy", "multilingual", "collapse", "expand", "panorama", "center",
+const RADIAL_PRIMARY = ["relationship", "split", "meaning", "anatomy", "multilingual", "collapse", "expand", "panorama", "center",
                         "author", "authorNote", "focus", "resetFocus", "hl"];
 const RADIAL_GLYPH = { meaning: "意", anatomy: "源", multilingual: "言", collapse: "埋", expand: "枝", panorama: "全",
   center: "◎", author: "人", authorNote: "系", translationHistory: "訳", relationship: "命", combine: "合", lens: "見",
   contrast: "並", colloc: "共", external: "外", shelf: "棚", deepsearch: "深", handoff: "出", newtab: "↗",
-  focus: "焦", hl: "線", resetFocus: "戻", pairTranslationHistory: "訳" };
+  focus: "焦", hl: "線", resetFocus: "戻", pairTranslationHistory: "訳", split: "分", pair: "組" };
 const RADIAL_SHORT = { meaning: "意味", anatomy: "源をたどる", multilingual: "多言語", collapse: "埋もれた原語",
   expand: "その場で広げる", panorama: "全体像", center: "中心に", author: "人物を調べる", authorNote: "系譜",
   translationHistory: "翻訳・受容史", relationship: "中心との関係", combine: "組み合わせ", lens: "見方", contrast: "並置",
   colloc: "共起", external: "外部で調べる", shelf: "棚へ", deepsearch: "深掘り", handoff: "持ち出す", newtab: "新タブ",
-  focus: "この分岐を中心", hl: "経路を強調", resetFocus: "全体に戻す", pairTranslationHistory: "2人の受容史" };
+  focus: "この分岐を中心", hl: "経路を強調", resetFocus: "全体に戻す", pairTranslationHistory: "2人の受容史", split: "語を分ける", pair: "組で読む" };
 const RADIAL_EN = { meaning: "Meaning", anatomy: "Trace origin", multilingual: "Languages", collapse: "Hidden originals",
   expand: "Grow here", panorama: "Overview", center: "Center", author: "Person", authorNote: "Lineage",
   translationHistory: "Translation history", relationship: "Relation", combine: "Combine", lens: "Views", contrast: "Compare",
   colloc: "Collocation", external: "External", shelf: "Shelf", deepsearch: "Deep dive", handoff: "Take out", newtab: "New tab",
-  focus: "Focus branch", hl: "Highlight", resetFocus: "Reset", pairTranslationHistory: "Pair history" };
+  focus: "Focus branch", hl: "Highlight", resetFocus: "Reset", pairTranslationHistory: "Pair history", split: "Split", pair: "Read as pair" };
 let _radial = null, _radialHoverT = 0, _radialLeaveT = 0, _radialHoverNode = null;
 function gRadialClose() {
   clearTimeout(_radialHoverT); clearTimeout(_radialLeaveT);
@@ -5222,13 +5260,14 @@ function _radialItems(n) {
   all.forEach(it => (RADIAL_PRIMARY.includes(it.action) && prim.length < 7 ? prim : more).push(it));
   return { prim, more };
 }
-function gRadialOpen(n) {
-  if (!G || !n) return;
+function gRadialOpen(n, at) {
+  if (!n || (!G && !at)) return;
   gRadialClose();
   if (typeof surfEl === "function" && surfEl("menu")) { try { gMenuClose(); } catch (e) {} }
   const jp = LANG === "ja";
-  const r = G.cv.getBoundingClientRect(), s = gToScreen(n);
-  const cx = r.left + s.x, cy = r.top + s.y;
+  let cx, cy;
+  if (at) { cx = at.x; cy = at.y; }   // 地図の外（分解の帯など）から開く
+  else { const r = G.cv.getBoundingClientRect(), s = gToScreen(n); cx = r.left + s.x; cy = r.top + s.y; }
   const { prim, more } = _radialItems(n);
   const el = document.createElement("div");
   el.className = "radial"; el.id = "radial-menu"; el.setAttribute("role", "menu");
@@ -5325,3 +5364,250 @@ function gGrowNote(text) {
   t.textContent = text; t.hidden = false;
   clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, 6000);
 }
+
+// ══ 第1段（所有者 2026-10-20 承認・プレビュー）: 探求の経路 ══════════════════════════════
+// 所有者の操作記録（10/20 15:28〜15:32）: ヘーゲル→定型文／経済学・哲学草稿→同じ定型文／
+// 共起語 entgegenwirken→語3つの行き止まり。どこから・なぜ・どこへ進んだかが残らなかった。
+// ここでは ①つながりの根拠の文 ②共起語を組のまま読む ③探求の軌跡 ④行き止まりの回避
+// ⑤複合語を意味のまとまりに分ける（所有者提案: 哲学草稿→哲学＋草稿、非有機的肉体→非＋有機的＋肉体）。
+// 意味は生成しない（D16・D36）。文はすべて実在の記事から抜き出し、出所と取得時刻を付ける。
+
+function isCompoundTerm(t) {
+  t = String(t || "").trim();
+  return /[㐀-鿿]/.test(t) && (t.replace(/[^㐀-鿿぀-ヿ]/g, "").length >= 3 || /[・･]/.test(t));
+}
+
+// ── ①つながりの根拠 ──
+function _relFactsHtml(node) {
+  if (!node) return "";
+  const bits = [];
+  if (node.work) bits.push(`著作『${esc(node.work)}』${node.year ? `（${esc(String(node.year))}）` : ""}`);
+  if (node.term_de) bits.push(`この人が使った原語 <span lang="de">${esc(node.term_de)}</span>`);
+  if (node.qid) bits.push(`<a class="ext-link" href="https://www.wikidata.org/wiki/${esc(node.qid)}" target="_blank" rel="noopener">Wikidata ${esc(node.qid)}</a>`);
+  return bits.length ? `<section class="rel-section"><h4>この地図のデータにある事実</h4><p>${bits.join("　／　")}</p></section>` : "";
+}
+function _markForms(text, forms) {
+  let h = esc(text);
+  (forms || []).filter(f => f && f.length >= 2).sort((a, b) => b.length - a.length).forEach(f => {
+    const ef = esc(f); h = h.split(ef).join(`<mark>${ef}</mark>`);
+  });
+  return h;
+}
+async function _relFillEvidence(p, center, target, node) {
+  const box = p.querySelector(".rel-ev"); if (!box) return;
+  const alts = [];
+  if (G && G.nodes) G.nodes.filter(x => x.kind === "original").slice(0, 4).forEach(x => alts.push(x.label));
+  if (node && node.term_de) String(node.term_de).split(/\s*\/\s*/).forEach(x => alts.push(x));
+  const tt = node && node.search && /[぀-鿿]/.test(node.search) ? node.search : "";
+  let d;
+  try { d = await api(`/api/relation?center=${encodeURIComponent(center)}&target=${encodeURIComponent(target)}&lang=${LANG}&target_title=${encodeURIComponent(tt)}&alts=${encodeURIComponent(alts.join("|"))}`); }
+  catch (e) { box.innerHTML = `<p class="srcline">本文の取得を見送りました。記事を直接開いて確かめられます：<a class="ext-link" href="https://${LANG}.wikipedia.org/wiki/${encodeURIComponent(center)}" target="_blank" rel="noopener">${esc(center)}</a></p>`; return; }
+  const part = (side, lead) => {
+    if (!side) return "";
+    const list = (side.sentences || []).map(s => `<li>${_markForms(s, side.looked_for)}</li>`).join("");
+    return `<div class="rel-ev-side"><p class="rel-ev-lead">${lead(side)}</p>`
+      + (list ? `<ul class="rel-ev-list">${list}</ul>` : `<p class="srcline muted">今回の取得範囲では、この記事の中で2語が同じ文に並ぶ箇所はゼロ件でした（つながりが無いという意味ではありません）。</p>`)
+      + `<p class="srcline">出所：<a class="ext-link" href="${esc(side.url)}" target="_blank" rel="noopener">Wikipedia「${esc(side.article)}」</a>・取得 ${esc(side.retrieved_at || "")}</p></div>`;
+  };
+  const html = part(d.forward, s => `「${esc(s.article)}」の記事の中で、<b>${esc(target)}</b> が出てくる文`)
+    + part(d.backward, s => `「${esc(s.article)}」の記事の中で、<b>${esc(center)}</b>（または原語）が出てくる文`);
+  box.innerHTML = html || `<p class="srcline">この2語の記事は、今回の取得では特定に至りませんでした。外部で調べる・多言語から確かめられます。</p>`;
+  box.dataset.count = String(((d.forward || {}).sentences || []).length + ((d.backward || {}).sentences || []).length);
+}
+
+// ── ②共起語を組のまま読む ──
+async function gPairPanel(a, b, ctx) {
+  const jp = LANG === "ja", lang = ctx.lang || "de", aLabel = ctx.aLabel || a;
+  const relJ = ctx.rel ? (REL_JP[ctx.rel] || ctx.rel) : "";
+  const p = gPanel(`語の組：${aLabel}${a && a !== aLabel ? `（${a}）` : ""} × ${b}`,
+    `<div class="pair-head"><p><b lang="${esc(lang)}">${esc(a)}</b> <span class="pair-x">×</span> <b lang="${esc(lang)}">${esc(b)}</b>${relJ ? `<span class="pair-rel">${esc(relJ)}</span>` : ""}</p>
+      <p class="srcline muted">共起の表は「一緒に使われる」ことだけを示します。どう一緒に使われるのかを、実際の文で確かめます。</p></div>
+     <div class="pair-gloss"></div><div class="pair-ex" aria-live="polite"><p class="srcline muted">2語を一緒に使っている文を探しています…</p></div>
+     <p class="pair-acts"><button type="button" class="pair-solo">◎ ${esc(b)} だけで地図を作る</button></p>`, b);
+  if (!p) return false;
+  p.querySelector(".pair-solo").addEventListener("click", () =>
+    dispatchAction("center", { term: b, label: b, kind: "word" }, currentViewState(), { surface: "colloc" }));
+  api(`/api/pivot?q=${encodeURIComponent(b)}&lang=${LANG}`).then(pv => {
+    const c = ((pv.data || {}).input_candidates || []).find(x => x.code === lang) || ((pv.data || {}).input_candidates || [])[0];
+    if (c && c.glosses && c.glosses.length) p.querySelector(".pair-gloss").innerHTML =
+      `<p><span lang="${esc(lang)}">${esc(b)}</span>：${c.glosses.slice(0, 2).map(esc).join(" ／ ")} <span class="srcline">（en.wiktionary の語義・英語）</span></p>`;
+  }).catch(() => {});
+  let d; try { d = await api(`/api/pair?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&lang=${encodeURIComponent(lang)}`); } catch (e) { d = null; }
+  const box = p.querySelector(".pair-ex");
+  const ex = (d && d.examples) || [];
+  const stem = (w) => w.slice(0, Math.max(4, w.length - 2));
+  const mark = (t) => { let h = esc(t); [a, b].forEach(w => { const re = new RegExp("(" + stem(w).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\p{L}*)", "giu"); h = h.replace(re, "<mark>$1</mark>"); }); return h; };
+  box.innerHTML = (ex.length
+      ? `<p class="rel-ev-lead">実際の用例（${lang}.wikipedia の本文の抜粋・${ex.length} 件${d.total ? `／検索の該当 ${d.total} 記事` : ""}）</p><ul class="rel-ev-list">`
+        + ex.map(x => `<li lang="${esc(lang)}">${mark(x.text)} <a class="ext-link srcline" href="${esc(x.url)}" target="_blank" rel="noopener">— ${esc(x.article)}</a></li>`).join("") + `</ul>`
+      : `<p class="srcline">今回の取得では、2語が同じ抜粋に並ぶ用例はゼロ件でした。下の入口で直接確かめられます。</p>`)
+    + `<p class="srcline">確かめる入口（新しいタブ）：<a class="ext-link" href="${esc((d && d.search_url) || "")}" target="_blank" rel="noopener">Wikipedia 全文検索</a>`
+    + `　<a class="ext-link" href="https://www.dwds.de/r/?q=${encodeURIComponent(a + " " + b)}" target="_blank" rel="noopener">DWDS コーパス</a>`
+    + `　<a class="ext-link" href="https://www.dwds.de/wp/${encodeURIComponent(a)}" target="_blank" rel="noopener">DWDS Wortprofil</a>`
+    + `${d && d.retrieved_at ? `・取得 ${esc(d.retrieved_at)}` : ""}</p>`;
+  box.dataset.count = String(ex.length);
+  return true;
+}
+
+// ── ⑤複合語を分ける ──
+let _partsPending = null;   // { q, units } 地図より先に本文が届いたとき、地図ができてから並べる
+function _partNodesAdd(nodeIdx, units, opts) {
+  if (!G || nodeIdx == null || !G.nodes[nodeIdx]) return 0;
+  const base = G.nodes[nodeIdx];
+  const key = (x) => String(x.q || x.label || "").toLowerCase();
+  const have = new Set(G.nodes.map(key));
+  const list = (units || []).filter(u => u && u.text && u.text !== (base.q || base.label));
+  const fresh = list.filter(u => !have.has(u.text.toLowerCase()));
+  const ang0 = base.layer === 1 ? Math.PI / 2 : (base.layoutAngle != null ? base.layoutAngle : Math.atan2(base.y - G.cy, base.x - G.cx));
+  const span = base.layer === 1 ? Math.PI * 0.7 : Math.PI * 0.8;
+  fresh.forEach((u, k) => {
+    // 左から語の順に並べる（canvas は y が下向き: 角度が増えると右回り＝下では右から左へ進む）
+    const a = ang0 + span / 2 - span * (k + .5) / Math.max(1, fresh.length), dist = base.layer === 1 ? 120 : 90;
+    const node = { id: "part:" + base.id + ":" + u.text, label: u.text, q: u.text, kind: "part", part: true, role: u.role,
+      gloss: u.gloss || "", layer: (Number(base.layer) || 1) + 1, weight: 1.6,
+      x: base.x, y: base.y, vx: 0, vy: 0, r: 9, idealX: base.x + dist * Math.cos(a), idealY: base.y + dist * Math.sin(a),
+      layoutAngle: a, layoutSpan: span / Math.max(1, fresh.length) };
+    const i = G.nodes.push(node) - 1;
+    G.edges.push({ a: nodeIdx, b: i, s: 1 });
+    (G.children[nodeIdx] = G.children[nodeIdx] || []).push(i);
+    G.parent[i] = nodeIdx;
+  });
+  base.splitDone = true;
+  if (!(opts && opts.quiet)) gGrowNote(LANG === "ja"
+    ? `「${base.label}」を ${list.map(u => u.text).join("＋")} に分けました` + (list.length > fresh.length ? `（${list.length - fresh.length} つは、すでにこの地図にあります）` : "")
+    : `Split “${base.label}” into ${list.map(u => u.text).join(" + ")}`);
+  G.alpha = 1; gLoop(140);
+  return fresh.length;
+}
+async function gSplitInPlace(nodeIdx, term) {
+  if (!G || nodeIdx == null || !G.nodes[nodeIdx]) return false;
+  const base = G.nodes[nodeIdx], root = G.rootQ;
+  let d; try { d = await api(`/api/segments?q=${encodeURIComponent(term)}`); } catch (e) { return false; }
+  if (!G || G.rootQ !== root || G.nodes[nodeIdx] !== base) return false;
+  const units = d.units || [];
+  if (units.length < 2) { gGrowNote(LANG === "ja" ? `「${base.label}」は、辞書の見出しの上では一つのまとまりです` : `“${base.label}” is one unit in the dictionary`); return true; }
+  _partNodesAdd(nodeIdx, units);
+  return true;
+}
+function _rootIdx() { return G && G.nodes ? G.nodes.findIndex(x => x.layer === 1) : -1; }
+function _applyPendingParts() {
+  if (!_partsPending || !G || G.rootQ !== _partsPending.q) return;
+  const ri = _rootIdx(); if (ri < 0 || G.nodes[ri].splitDone) return;
+  _partNodesAdd(ri, _partsPending.units, { quiet: true });
+}
+// 語の地図が作れなかった複合語（哲学草稿）でも、分けたまとまりから始められる最小の地図を出す
+function _partsOnlyMap(q, units) {
+  graphThin(null);
+  gApplyGraph({ query: q, note: LANG === "ja" ? "この語そのものの地図は、まだ作れる材料が少ない語です。意味のまとまりから始められます。" : "Start from the parts of this word.",
+    nodes: [{ id: "root", label: q, kind: "word", layer: 1, weight: 3, q }], edges: [] });
+}
+function renderDecomp(q, layers) {
+  const shell = $("origin-shell"); if (!shell) return;
+  let el = $("decomp-strip");
+  const units = ((layers || []).find(x => x && x.level === "semantic") || {}).units || [];
+  if (units.length < 2) { if (el) el.remove(); _partsPending = null; return; }
+  const jp = LANG === "ja";
+  if (!el) { el = document.createElement("div"); el.id = "decomp-strip"; el.className = "decomp-strip"; const lens = $("graph-lens"); shell.insertBefore(el, lens ? lens.nextSibling : shell.firstChild); }
+  const src = units.some(u => u.source === "ja.wiktionary") ? (jp ? "分け方の根拠：ja.wiktionary の見出し語" : "split grounded in ja.wiktionary headwords") : (jp ? "分け方の根拠：境界辞書（このサイトの手作業の一覧）" : "split from the curated boundary list");
+  el.innerHTML = `<span class="ds-h">${jp ? "語を分けて探る" : "Explore by parts"}</span>`
+    + `<span class="ds-whole">${esc(q)}</span><span class="ds-eq">＝</span>`
+    + units.map((u, i) => `${i ? `<span class="ds-plus">＋</span>` : ""}<button type="button" class="ds-part" data-i="${i}" title="${jp ? "押すと、このまとまりの操作が円形に開きます" : "open actions for this part"}"><b>${esc(u.text)}</b>${u.gloss ? `<small>${esc(u.gloss)}</small>` : ""}${u.role === "unresolved_unit" ? `<small>${jp ? "辞書で未確認" : "unconfirmed"}</small>` : ""}</button>`).join("")
+    + `<span class="ds-note">${esc(src)}${jp ? "。各まとまりを押すと、その語の操作が開きます。地図にも枝として並べています。" : "."}</span>`;
+  el._units = units;
+  el.querySelectorAll(".ds-part").forEach(b => b.addEventListener("click", () => {
+    const u = el._units[+b.dataset.i]; if (!u) return;
+    const r = b.getBoundingClientRect();
+    gRadialOpen({ kind: "word", label: u.text, q: u.text, id: "part-strip:" + u.text }, { x: r.left + r.width / 2, y: r.bottom + 170 });
+  }));
+  _partsPending = { q, units };
+  const thin = $("graph-thin");
+  if (thin && thin.style.display === "block" && originCurrent(q)) _partsOnlyMap(q, units);
+  else _applyPendingParts();
+}
+
+// ── ③探求の軌跡 ──
+const TRAIL_KEY = "dx_trail", TRAIL_SKIP = new Set(["external", "handoff", "newtab", "shelf", "lens", "hl", "resetFocus", "focus", "deepsearch"]);
+let _trailSet = new Set(), _centerFrom = null;
+function trailLoad() { try { const t = JSON.parse(sessionStorage.getItem(TRAIL_KEY) || "null"); return t && Array.isArray(t.steps) ? t : { steps: [], cur: -1 }; } catch (e) { return { steps: [], cur: -1 }; } }
+function trailSave(t) { try { sessionStorage.setItem(TRAIL_KEY, JSON.stringify(t)); } catch (e) {} }
+function trailPush(actionId, t, ctx) {
+  if (!DX_PREVIEW || TRAIL_SKIP.has(actionId) || !t || !t.term) return;
+  const tr = trailLoad();
+  const step = { a: actionId, term: t.term, label: t.label || t.term, kind: t.kind || null, root: actionId === "center" ? t.term : ((G && G.rootQ) || null),
+    from: (actionId === "center" && _centerFrom && _centerFrom.to === t.term) ? _centerFrom.from : null };   // 地図の中から移った（入力し直しではない）
+  if (ctx && actionId === "pair") Object.assign(step, { pa: ctx.a, paLabel: ctx.aLabel, rel: ctx.rel, lang: ctx.lang });
+  const same = (x) => x.a === step.a && x.term === step.term && x.root === step.root && (x.pa || "") === (step.pa || "");
+  const at = tr.steps.findIndex(same);
+  if (at >= 0) { tr.cur = at; if (step.from && !tr.steps[at].from) tr.steps[at].from = step.from; }
+  else { tr.steps.push(step); if (tr.steps.length > 24) tr.steps.shift(); tr.cur = tr.steps.length - 1; }
+  trailSave(tr); trailRender();
+}
+const TRAIL_VERB = { center: "", relationship: "関係", pair: "組", expand: "広げた", split: "分けた", meaning: "意味", multilingual: "多言語",
+  collapse: "埋没", anatomy: "源", colloc: "共起", panorama: "全体像", translationHistory: "受容史", author: "人物", authorNote: "系譜", contrast: "並置", combine: "組合せ" };
+function trailRender() {
+  if (!DX_PREVIEW) return;
+  const shell = $("origin-shell"); if (!shell) return;
+  const tr = trailLoad();
+  _trailSet = new Set(tr.steps.map(s => s.label));
+  let el = $("dx-trail");
+  if (!tr.steps.length) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement("div"); el.id = "dx-trail"; el.className = "dx-trail"; el.setAttribute("role", "navigation"); el.setAttribute("aria-label", "探求の軌跡"); shell.insertBefore(el, shell.querySelector(".graph-head") ? shell.querySelector(".graph-head").nextSibling : shell.firstChild); }
+  const jp = LANG === "ja";
+  el.innerHTML = `<span class="tr-h">${jp ? "探求の軌跡" : "Trail"}</span><ol class="tr-steps">`
+    + tr.steps.map((s, i) => {
+      const verb = jp ? (TRAIL_VERB[s.a] != null ? TRAIL_VERB[s.a] : (ACTIONS[s.a] || {}).label || s.a) : s.a;
+      const txt = s.a === "pair" ? `${s.paLabel || s.pa} × ${s.term}` : s.label;
+      return `<li class="${i === tr.cur ? "tr-cur" : ""} ${s.a === "center" ? "tr-center" : ""}"><button type="button" class="tr-step" data-i="${i}" title="${jp ? "この段をもう一度開く" : "reopen this step"}">${verb ? `<small>${esc(verb)}</small>` : ""}${esc(txt)}</button></li>`;
+    }).join("") + `</ol><button type="button" class="tr-clear" title="${jp ? "軌跡を消して、ここから記録し直す" : "clear"}">${jp ? "消す" : "clear"}</button>`;
+  el.querySelectorAll(".tr-step").forEach(b => b.addEventListener("click", () => trailReplay(+b.dataset.i)));
+  el.querySelector(".tr-clear").addEventListener("click", () => { trailSave({ steps: [], cur: -1 }); trailRender(); if (G) gDraw(); });
+  const cur = el.querySelector(".tr-cur"); if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+async function trailReplay(i) {
+  const tr = trailLoad(), s = tr.steps[i]; if (!s) return;
+  if (s.a !== "center" && s.root && (!G || G.rootQ !== s.root)) {
+    await dispatchAction("center", { term: s.root, label: s.root, kind: "word" }, currentViewState(), { surface: "trail" });
+  }
+  const live = G && G.nodes ? G.nodes.findIndex(x => x.label === s.label) : -1;
+  const ctx = { surface: "trail" };
+  if (live >= 0) { ctx.nodeIdx = live; ctx.node = G.nodes[live]; }
+  if (s.a === "pair") Object.assign(ctx, { a: s.pa, aLabel: s.paLabel, rel: s.rel, lang: s.lang });
+  if ((s.a === "expand" || s.a === "split") && live < 0) return;
+  await dispatchAction(s.a, live >= 0 ? G.nodes[live] : { term: s.term, label: s.label, kind: s.kind }, currentViewState(), ctx);
+}
+
+// ── ④行き止まりの回避: 語の少ない地図に着いたら、前の地図に戻ってその場で広げる道を示す ──
+function smallMapNote(q) {
+  const shell = $("origin-shell"); if (!shell || !G) return;
+  let el = $("dx-small-map"); if (el) el.remove();
+  const n = (G.nodes || []).filter(x => x.kind !== "domain" && x.kind !== "language").length;
+  if (n >= 5 || (_partsPending && _partsPending.q === q)) return;   // 複合語は分けたまとまりから進める
+  const tr = trailLoad();
+  const here = tr.steps.find(s => s.a === "center" && s.term === q && s.from);
+  const prev = (_centerFrom && _centerFrom.to === q) ? { term: _centerFrom.from } : (here ? { term: here.from } : null);   // 地図の中から移ってきたときだけ、元の地図へ戻る道を示す
+  const jp = LANG === "ja";
+  el = document.createElement("div"); el.id = "dx-small-map"; el.className = "dx-small-map"; el.setAttribute("role", "note");
+  const pairStep = prev ? [...tr.steps].reverse().find(s => s.a === "pair" && s.term === q && s.root === prev.term) : null;
+  el.innerHTML = `<b>${jp ? `「${esc(q)}」の地図は小さめです（語 ${n} つ）。` : `The map of “${esc(q)}” is small (${n}).`}</b> `
+    + (prev ? `<button type="button" class="sm-back">${jp ? (pairStep ? `「${esc(prev.term)}」に戻り、「${esc(pairStep.paLabel || pairStep.pa)} × ${esc(q)}」を組で読む` : `「${esc(prev.term)}」の地図に戻り、その中で「${esc(q)}」を読む`) : "go back and read it there"}</button>` : "")
+    + `<span class="srcline">${jp ? "語の少ない地図は、それだけで探すより、前の文脈の中で読むほうが先へ進めることがあります。" : ""}</span>`;
+  const wrap = $("origin-graph-wrap"); shell.insertBefore(el, wrap || null);
+  const b = el.querySelector(".sm-back");
+  if (b) b.addEventListener("click", async () => {
+    await dispatchAction("center", { term: prev.term, label: prev.term, kind: "word" }, currentViewState(), { surface: "trail" });
+    if (!G) return;
+    if (pairStep) {   // 共起から来た語は、元の語との組のまま読み直す
+      await dispatchAction("pair", { term: q, label: q, kind: "word" }, currentViewState(), { surface: "trail", a: pairStep.pa, aLabel: pairStep.paLabel, rel: pairStep.rel, lang: pairStep.lang });
+      return;
+    }
+    const k = G.nodes.findIndex(x => (x.q || x.label) === q || x.label === q);
+    if (k >= 0) await dispatchAction("expand", G.nodes[k], currentViewState(), { surface: "trail", nodeIdx: k });
+    else await dispatchAction("relationship", { term: q, label: q, kind: "word", layer: 2 }, currentViewState(), { surface: "trail", relation: { center: prev.term, centerTerm: prev.term, target: q, targetKind: "word", path: "探索レンズ", summary: `「${prev.term}」から「${q}」へ進んだつながりを、本文の文で確かめる。`, evidence: "candidate" } });
+  });
+}
+
+if (DX_PREVIEW) document.addEventListener("DOMContentLoaded", () => {
+  const gt = document.querySelector("#origin-shell .graph-title");
+  if (gt) gt.textContent = LANG === "ja" ? "言語空間の重力分布（語にマウスを乗せるか押すと操作が円形に開く／背景ドラッグで移動／ホイールで拡大縮小）" : "Gravity map (hover or click a word for actions · drag to pan · wheel to zoom)";
+  trailRender();
+});

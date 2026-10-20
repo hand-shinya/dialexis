@@ -38,6 +38,7 @@ from .connectors import ja_wiktionary, ndl_fulltext  # 辞書層と用例層（2
 from .connectors import tetsugaku_jii  # 訳語史層・1881年の訳語対応（2026-10-07）
 from .connectors import langpivot  # 言語の橋・入力/検索/表示の言語を分ける（2026-10-14）
 from .connectors import bridge as bridge_c  # 文→概念の候補（2026-10-15 隔離試作）
+from .connectors import relation as relation_c  # つながりの根拠の文・語の組の用例（2026-10-20 プレビュー）
 from .connectors import wikidata, openalex, crossref, wikipedia, gutendex, opencitations, sep, ndl, cinii, dwds, wiktionary, concept, searxng, etymology
 from .connectors.base import cached_get_json, cached_get_text
 from . import citations as cites
@@ -1124,7 +1125,7 @@ async def api_origin(q: str, lang: str = "ja", preview: int = 0):
         "dimensions": dimensions,                # 探究の次元（どの語からも辿れる路）
         "general_meaning": gen_senses,           # 広く共有されている意味（入力言語）
         # 分解は語全体→意味のまとまり→文字の順。外部取得なしの構造層を意味面でも共有する。
-        "segment_layers": etymology.semantic_layers(q),
+        "segment_layers": await etymology.semantic_layers_grounded(q),
         "collapse_warning": collapse_warning,    # ⚠ 埋没の明示警告（A←B・C・D）
         "concept_origin": concept_origin,        # 概念-翻訳-原点（疎外→独 Entfremdung）
         "originators": cd.get("originators") or [],  # 立てた/著した人（P50/P61/P112・決定論）
@@ -4670,6 +4671,37 @@ async def api_author(name: str, lang: str = "ja"):
         "sources": [{"source": f"wikipedia:{lang}", "retrieved_at": summ.get("retrieved_at"),
                      "error": summ["error"]}],
     }
+
+
+@app.get("/api/relation")
+async def api_relation(center: str, target: str, lang: str = "ja", target_title: str = "",
+                       alts: str = ""):
+    """地図の中心の語と選んだ語が、なぜつながるのか（Wikipedia 本文の文・記事・取得時刻）。
+    意味は生成しない。alts＝中心の語の別の形（原語など・| 区切り）。2026-10-20 プレビュー。"""
+    if not center.strip() or not target.strip():
+        raise HTTPException(400, "empty term")
+    return await relation_c.evidence(center.strip(), target.strip(), lang, target_title.strip() or None,
+                                     [x for x in alts.split("|") if x.strip()])
+
+
+@app.get("/api/segments")
+async def api_segments(q: str):
+    """語の意味のまとまり（/api/origin の segment_layers と同じ分け方・辞書の見出しに接地）。"""
+    if not q.strip():
+        raise HTTPException(400, "empty term")
+    layers = await etymology.semantic_layers_grounded(q.strip())
+    sem = next((L for L in layers if L.get("level") == "semantic"), {"units": []})
+    return {"query": q, "units": sem.get("units") or [], "queried_at": now()}
+
+
+@app.get("/api/pair")
+async def api_pair(a: str, b: str, lang: str = "de"):
+    """2語を一緒に使っている実際の文（Wikipedia 全文検索の抜粋）。共起語を組のまま見せる。"""
+    if not a.strip() or not b.strip():
+        raise HTTPException(400, "empty term")
+    if not re.fullmatch(r"[a-z]{2,3}", lang):
+        raise HTTPException(400, "bad lang")
+    return await relation_c.pair_usage(a.strip(), b.strip(), lang)
 
 
 @app.get("/api/collocations")

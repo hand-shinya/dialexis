@@ -123,6 +123,127 @@ def _semantic_unit(text, role="lexical_unit", source="lexical-boundary", confide
     }
 
 
+# 接尾の一字（前の語に付ける: 有機＋的→有機的、存在＋論＋的→存在論的）。
+_SEMANTIC_SUFFIXES = ("的", "性", "化", "論", "者", "観", "史", "界", "感", "学", "主義")
+_SEP = re.compile(r"[・･·\s、,／/\-]+")
+WIKT_JA = "https://ja.wiktionary.org/w/api.php"
+
+
+async def _wikt_titles(word):
+    """語の中の2字以上の部分のうち、ja.wiktionary に見出しとして在るもの（外部取得・キャッシュ）。
+    戻り値: (titles:set, retrieved_at, error)。取れないときは空集合と理由（不在と区別する）。"""
+    parts = [x for x in _SEP.split(word) if x]
+    subs = sorted({c[i:j] for c in parts for i in range(len(c)) for j in range(i + 2, len(c) + 1)})
+    subs = [x for x in subs if _is_cjk_word(x)][:150]
+    found, at, err = set(), None, None
+    for k in range(0, len(subs), 50):
+        chunk = subs[k:k + 50]
+        try:
+            d, at, _ = await cached_get_json(WIKT_JA, params={"action": "query", "titles": "|".join(chunk),
+                                                              "format": "json", "formatversion": 2},
+                                             ttl=30 * 86400)
+            for pg in (d.get("query") or {}).get("pages") or []:
+                if not pg.get("missing") and not pg.get("invalid") and pg.get("title"):
+                    found.add(pg["title"])
+        except Exception as e:  # noqa: BLE001 — 取れないことは「見出しが無い」ことではない
+            err = type(e).__name__
+    return found, at, err
+
+
+def _dp_units(chunk, known):
+    """known（見出し・境界辞書）だけを使い、まとまりの数が最小になる分け方を求める。
+    先頭の接頭辞1字・接尾の字は許すが、根拠の無い字は「未解決」として最小限に残す。"""
+    n = len(chunk)
+    INF = (10 ** 6, 0)
+    best = [INF] * (n + 1)   # (未解決の字数*10+まとまり数, -)
+    back = [None] * (n + 1)
+    best[0] = (0, 0)
+    for i in range(n):
+        if best[i] == INF:
+            continue
+        for j in range(i + 1, n + 1):
+            piece = chunk[i:j]
+            if len(piece) >= 2 and piece in known:
+                kind, cost = "lexical_unit", 1
+            elif i == 0 and piece in _SEMANTIC_PREFIXES and n - j >= 2:
+                kind, cost = "prefix", 1
+            elif i > 0 and piece in _SEMANTIC_SUFFIXES:
+                kind, cost = "suffix", 0
+            elif j == i + 1:
+                kind, cost = "unresolved_unit", 10
+            else:
+                continue
+            c = (best[i][0] + cost, 0)
+            if c < best[j]:
+                best[j], back[j] = c, (i, kind)
+    out, j = [], n
+    while j > 0:
+        i, kind = back[j]
+        out.append((chunk[i:j], kind)); j = i
+    out.reverse()
+    merged = []
+    for piece, kind in out:   # 接尾は前のまとまりに付ける。続く未解決の字は一つにまとめる
+        if kind == "suffix" and merged and merged[-1][1] != "prefix":
+            merged[-1] = (merged[-1][0] + piece, merged[-1][1])
+        elif kind == "unresolved_unit" and merged and merged[-1][1] == "unresolved_unit":
+            merged[-1] = (merged[-1][0] + piece, kind)
+        else:
+            merged.append((piece, "lexical_unit" if kind == "suffix" else kind))
+    return merged
+
+
+async def grounded_cjk_units(word):
+    """辞書（ja.wiktionary の見出し）に接地した意味のまとまり。境界辞書で分かれない語にだけ使う。
+    語全体が見出しにあるときは分けない（弁証法を 弁証＋法 にしない）。"""
+    word = unicodedata.normalize("NFKC", word or "").strip()
+    if not word or not _is_cjk_word(word) or word in _SEMANTIC_SPLITS:
+        return None
+    titles, at, err = await _wikt_titles(word)
+    known = titles | _SEMANTIC_LEXEMES
+    if word in known or (len(word) < 3 and not _SEP.search(word)):
+        return None
+    units = []
+    for chunk in [x for x in _SEP.split(word) if x]:
+        if chunk in known:
+            units.append((chunk, "lexical_unit")); continue
+        units.extend(_dp_units(chunk, known))
+    if len(units) < 2:
+        return None
+    out = []
+    for piece, kind in units:
+        u = _semantic_unit(piece, kind,
+                           "ja.wiktionary" if piece in titles else
+                           ("lexical-boundary" if kind == "lexical_unit" else
+                            ("derivational-boundary" if kind == "prefix" else "whole-term-preserved")),
+                           "high" if kind in ("lexical_unit", "prefix") else "low")
+        stem = piece if piece in titles else next((piece[:k] for k in range(len(piece) - 1, 1, -1) if piece[:k] in titles), None)
+        if stem:   # 接尾を付けたまとまり（存在＋論的）は、語幹の見出しを根拠として示す
+            u["source"] = "ja.wiktionary"
+            u["url"] = f"https://ja.wiktionary.org/wiki/{stem}"
+            u["retrieved_at"] = at
+        out.append(u)
+    if err:
+        out[0]["source_error"] = err
+    return out
+
+
+async def semantic_layers_grounded(word, **kw):
+    """semantic_layers と同じ契約。CJK 語の「意味のまとまり」だけを辞書の見出しで補う。"""
+    layers = _semantic_layers(word, **kw)
+    try:
+        g = await grounded_cjk_units(word)
+    except Exception:  # noqa: BLE001
+        g = None
+    if g:
+        for L in layers:
+            if L.get("level") == "semantic":
+                cur = L.get("units") or []
+                weak = len(cur) < 2 or any(u.get("role") == "unresolved_unit" for u in cur)
+                if weak:
+                    L["units"] = g
+    return layers
+
+
 def _semantic_cjk_units(word):
     """CJK語を、意味を担うまとまりの層へ保守的に分ける。
 
@@ -303,6 +424,11 @@ async def _cjk_anatomy(word):
     if len(cjk) < 2:
         return None
     semantic = _semantic_cjk_units(word)
+    if len(semantic) < 2 or any(u.get("role") == "unresolved_unit" for u in semantic):
+        try:
+            semantic = (await grounded_cjk_units(word)) or semantic   # 辞書の見出しで補う（意味の層と同じ分け方）
+        except Exception:  # noqa: BLE001
+            pass
     # F1: 語そのものが1つの単位なら、その字は「内側」ではない。
     #     矛盾 は 1 単位（矛盾）なので、矛=spear・盾=shield は語の由来そのものである
     #     （同じ応答の summary が「韓非子の故事に由来」と言い、
@@ -380,7 +506,7 @@ async def _cjk_anatomy(word):
     return {"term": word, "chain": [], "components": comps, "summary": summary,
             "components_note": note, "components_note_parts": parts,
             "semantic_segments": semantic,
-            "segment_layers": _semantic_layers(word, char_units=char_units),
+            "segment_layers": await semantic_layers_grounded(word, char_units=char_units),
             "wiktionary_url": f"https://en.wiktionary.org/wiki/{word}"}
 
 
@@ -502,4 +628,4 @@ async def anatomy(word, orig_terms, lang="ja"):
         return cjk
     return {"term": None, "chain": [], "components": [], "summary": "",
             "components_note": "", "components_note_parts": {},
-            "segment_layers": _semantic_layers(word)}
+            "segment_layers": await semantic_layers_grounded(word)}

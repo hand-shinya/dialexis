@@ -67,7 +67,9 @@ def script_of(q: str) -> str:
 
 
 def _strip_html(s: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", s or "")).strip()
+    # <style>・<script> は中身ごと落とす（entgegenwirken の語義に .mw-parser-output{...} が漏れた・2026-10-20）
+    s = re.sub(r"<(style|script)\b[^>]*>.*?</\1\s*>", "", s or "", flags=re.S | re.I)
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", s)).strip()
 
 
 def _en_lemmas(html: str) -> list:
@@ -121,6 +123,7 @@ def parse_definitions(body: dict) -> list:
     # 先に引くと RSS に着いた・2026-10-14）。名詞が無ければほかの品詞の言い換えを使う。
     out = []
     for c in by_key.values():
+        c["noun_lemmas"] = list(c["_noun"])
         c["en_lemmas"] = list(dict.fromkeys(c.pop("_noun") + c.pop("_other")))
         out.append(c)
     return out
@@ -378,6 +381,16 @@ async def bridge(q: str, ui_lang: str, resolve_en, nonconcept: frozenset,
         return ok("langpivot", started, False, data)
 
     best = ranked[0]
+    # 動詞・形容詞などの語義（to counteract）だけから着き、どの言語のラベルでも照合できない項目は
+    # 概念として採らない（entgegenwirken →「取り消し」に着いた・2026-10-20）。名詞の語義なら従来どおり。
+    noun_lems = {lem for c in work for lem in c.get("noun_lemmas", [])}
+    blems = votes[best["qid"]].get("lemmas") or set()
+    if (not best["confirmed_in"] and "label" not in best["routes"]
+            and blems and not (blems & noun_lems) and q.strip() not in noun_lems):
+        data["steps"].append({"step": "concept", "ok": False,
+                              "note": "動詞などの語義からだけ着いた項目は、照合できるまで概念として採らない",
+                              "held": best["qid"]})
+        return ok("langpivot", started, False, data)
     return await _finish(data, q, ui_lang, cands, work, best, ents[best["qid"]], ents, ranked,
                          votes, started)
 

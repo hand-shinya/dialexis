@@ -747,3 +747,34 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .tm-hint { color: var(--muted); font-size: .85em; }
 .dx-grow-note { position: fixed; left: 50%; bottom: max(72px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 70;
   background: var(--ink); color: var(--paper); padding: .55em 1.1em; border-radius: 999px; font-size: .9em; box-shadow: 0 8px 24px rgba(0,0,0,.2); max-width: calc(100vw - 32px); }
+/* ── 第1段（2026-10-20・プレビュー）: 探求の軌跡・語の分解・根拠の文・語の組 ── */
+.dx-trail { display: flex; align-items: center; gap: .5em; padding: .45em .8em; border-bottom: 1px solid var(--line); background: var(--paper); overflow-x: auto; }
+.dx-trail .tr-h { font-size: .8em; color: var(--muted); white-space: nowrap; }
+.dx-trail .tr-steps { display: flex; list-style: none; margin: 0; padding: 0; gap: 0; align-items: center; }
+.dx-trail .tr-steps li { display: flex; align-items: center; white-space: nowrap; }
+.dx-trail .tr-steps li + li::before { content: "→"; color: var(--muted); margin: 0 .35em; }
+.dx-trail .tr-step { border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 999px; padding: .15em .7em; font: inherit; font-size: .85em; cursor: pointer; }
+.dx-trail .tr-step small { color: var(--accent2); margin-right: .35em; font-size: .85em; }
+.dx-trail .tr-center .tr-step { font-weight: 600; }
+.dx-trail .tr-cur .tr-step { border-color: #c2410c; box-shadow: 0 0 0 2px rgba(194,65,12,.18); }
+.dx-trail .tr-clear { margin-left: auto; border: 0; background: none; padding: 0 .3em; color: var(--muted); font-size: .8em; cursor: pointer; white-space: nowrap; }
+.decomp-strip { display: flex; flex-wrap: wrap; align-items: center; gap: .4em; padding: .55em .8em; border-bottom: 1px solid var(--line); background: #f7f3fb; }
+.decomp-strip .ds-h { font-size: .8em; color: #5b3a7a; font-weight: 600; margin-right: .3em; }
+.decomp-strip .ds-whole { font-weight: 600; }
+.decomp-strip .ds-eq, .decomp-strip .ds-plus { color: #7b4fa0; }
+.decomp-strip .ds-part { color: var(--ink); display: inline-flex; flex-direction: column; align-items: center; border: 1.5px solid #7b4fa0; background: #fff; border-radius: 10px; padding: .2em .8em; cursor: pointer; font: inherit; line-height: 1.2; }
+.decomp-strip .ds-part:hover, .decomp-strip .ds-part:focus-visible { background: #efe6f7; }
+.decomp-strip .ds-part small { font-size: .7em; color: var(--muted); }
+.decomp-strip .ds-note { flex-basis: 100%; font-size: .75em; color: var(--muted); }
+.dx-small-map { margin: .4em .8em; padding: .5em .8em; border-left: 3px solid #c2410c; background: #fff7f0; font-size: .9em; }
+.dx-small-map .sm-back { margin: 0 .5em; font-weight: 600; border: 1px solid #c2410c; background: #fff; color: #7c2d12; border-radius: 999px; padding: .2em .8em; cursor: pointer; font: inherit; font-size: .9em; }
+.rel-ev-side + .rel-ev-side { margin-top: .8em; padding-top: .6em; border-top: 1px dashed var(--line); }
+.rel-ev-lead { font-size: .9em; margin: 0 0 .3em; }
+.rel-ev-list { margin: .2em 0 .3em 1.1em; padding: 0; }
+.rel-ev-list li { margin: .35em 0; line-height: 1.6; }
+.rel-ev-list mark { background: #fde7c7; padding: 0 .1em; }
+.pair-head p { margin: .2em 0; }
+.pair-x { color: var(--muted); margin: 0 .3em; }
+.pair-rel { margin-left: .6em; font-size: .8em; border: 1px solid var(--line); border-radius: 999px; padding: .05em .6em; color: var(--accent2); }
+.pair-solo, .gp-radial { border: 1px solid var(--accent2); background: #fff; color: var(--accent2); border-radius: 999px; padding: .25em .9em; cursor: pointer; font: inherit; font-size: .9em; }
+.gp-cont-radial { display: flex; justify-content: center; }
