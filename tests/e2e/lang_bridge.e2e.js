@@ -43,6 +43,14 @@ const PIVOT = (q) => ({ source: "langpivot", retrieved_at: "t", error: null, dat
   const R = []; const ok = (n, c, d) => { R.push(c); console.log(`${c ? "PASS" : "FAIL"}  ${n}${d ? "  — " + d : ""}`); };
   const ctx = await b.newContext(); const p = await ctx.newPage();
   const calls = { backgloss: 0 };
+  // 地図の API も固定値にする。外部へ取りに行かせると、冷えたサーバでは地図の取得に20秒以上かかり、
+  // その後に描かれる言語の橋のカードを15秒で待ちきれずに落ちていた（10/17・10/19・10/20 の verify 1回目）。
+  await p.route(/\/api\/origin\/graph\?/, r => {
+    const q = new URL(r.request().url()).searchParams.get("q");
+    r.fulfill({ contentType: "application/json", body: JSON.stringify({ query: q, note: "fx", nodes: [
+      { id: "root", label: q, kind: "word", layer: 1, weight: 3, q }, { id: "l1", label: "Swahili", kind: "language", layer: 2, weight: 1 }],
+      edges: [{ from: "root", to: "l1" }] }) });
+  });
   await p.route(/\/api\/origin\?/, r => {
     const q = new URL(r.request().url()).searchParams.get("q");
     r.fulfill({ contentType: "application/json", body: JSON.stringify(ORIGIN(q)) });
