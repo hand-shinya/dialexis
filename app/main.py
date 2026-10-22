@@ -1153,7 +1153,8 @@ async def api_origin(q: str, lang: str = "ja", preview: int = 0):
         "resolved_from": cd.get("resolved_from"),   # 間主観→間主観性 と辿った場合の元語
         "resolved_to": cd.get("title"),             # 実際に辿った記事名
         "redirected_to": cd.get("redirected_to"),   # Wikipedia の転送先（実存 → 実存主義）。画面で明示する
-        "rejected_article": cd.get("rejected_article"),   # 通常検索が返したが概念でない記事（映画など）
+        "rejected_article": cd.get("rejected_article"),   # 通常検索が返したが概念でない記事（映画など）。消さずに名札をつけて示す
+        "rejected_qid": cd.get("rejected_qid"),
         # 辞書（en.wiktionary）がこの語に与える英語の言い換え（転送で別の概念に着いたとき、辞書の意味へ戻る道）
         "dict_gloss_en": next((c.get("en_lemmas") or [] for c in ((defs.get("data") or {}).get("candidates") or [])
                                if c.get("code") == lang), [])[:3],

@@ -370,7 +370,8 @@ async def node(word: str, lang: str = "ja", typed: bool = False) -> dict:
             # （親密性 → 2012年の映画『親密さ』に着き、出演者を「思想家」として出していた・2026-10-21）
             if resolved_from and set(_claim_qids(claims, "P31")) & _CREATIVE_P31:
                 return ok("concept-node", ts, cached, {"word": word, "found": False,
-                                                       "suggestions": [title], "rejected_article": title})
+                                                       "suggestions": [title], "rejected_article": title,
+                                                       "rejected_qid": qid})
             orig_q = _claim_qids(claims, "P50") + _claim_qids(claims, "P61") + _claim_qids(claims, "P112")
             na_q = _claim_qids(claims, "P138")  # named after＝語形の由来（rhizome←根茎:植物）
             near_q = [x for p in _REL_NEAR for x in _claim_qids(claims, p)]  # 近い/類する
