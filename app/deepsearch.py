@@ -77,7 +77,16 @@ def generate(topic: str, goal: str, service: str, lang: str = "ja", ctx: dict | 
     if service not in SERVICE_IDS:
         service = "generic"
     ctx = ctx or {}
-    return (_ja if lang == "ja" else _en)(topic, goal, service, ctx)
+    out = (_ja if lang == "ja" else _en)(topic, goal, service, ctx)
+    # 経路の節と、機械が取得した手がかりの節が、どちらも「## 0.」になる。番号を分ける（参照も合わせる）
+    if "## 0. Dialexis" in out or "## 0. The path I took" in out:
+        out = (out.replace("## 0. Dialexis", "## 0-1. Dialexis").replace("## 0. The path I took", "## 0-1. The path I took")
+                  .replace("## 0. 機械が取得", "## 0-2. 機械が取得").replace("上の §0 の論争構造", "上の §0-2 の論争構造"))
+        out = out.replace("## 0. Machine-fetched", "## 0-2. Machine-fetched")
+        # 経路と根拠は付いているので「手がかりを付けていない」とは書かない
+        out = out.replace("この依頼には機械が取得した手がかりを付けていません。", "下の経路と根拠の文は未検証の出発点であって、確定した前提ではありません。")
+        out = out.replace("No machine-retrieved leads are attached to this request; ", "The path and evidence below are unverified starting points, not settled premises; ")
+    return out
 
 
 def _sub_questions(goal: str) -> list:
@@ -85,8 +94,41 @@ def _sub_questions(goal: str) -> list:
     mechanical (punctuation split) — no interpretation, so it never invents."""
     if not goal:
         return []
-    parts = re.split(r"[。\n！？・、,;]|そして|また|および", goal)
+    # 文の切れ目（改行・句点・疑問符）だけで分ける。読点や「また」で切ると、一つの問いが
+    # 「『実存』を探るなかで」のような断片の列になっていた（2026-10-23 所有者の写し）。
+    parts = re.split(r"[。\n！？?]+", goal)
     return [p.strip() for p in parts if len(p.strip()) >= 6]
+
+
+def _trail_block(topic: str, ctx: dict, jp: bool) -> str:
+    """Dialexis で辿った経路と、そこで得た根拠の文（出所・取得時刻つき）。未検証の出発点として渡す。"""
+    center = (ctx.get("center") or "").strip()
+    path = [p for p in (ctx.get("path") or []) if p][:8]
+    ev = [e for e in (ctx.get("evidence") or []) if e.get("text")][:5]
+    if not (center or path or ev):
+        return ""
+    if jp:
+        lines = ["\n\n## 0. Dialexis で辿った経路と、そこで得た根拠（未検証の出発点）"]
+        if center:
+            lines.append(f"- 私は「{center}」を探るなかで、「{topic}」へ進みました。")
+        if path:
+            lines.append("- 辿った経路: " + " → ".join(path))
+        for e in ev:
+            src = f"（{e.get('article') or '出所不明'}" + (f"、取得 {e['retrieved_at'][:10]}" if e.get("retrieved_at") else "") + "）"
+            lines.append(f"- 「{e['text']}」{src}")
+        if ev:
+            lines.append("- 上の文が原典に照らして正しいか、言い過ぎや時代錯誤が無いかを、まず確かめてください。")
+    else:
+        lines = ["\n\n## 0. The path I took in Dialexis and the evidence found there (unverified starting points)"]
+        if center:
+            lines.append(f"- While exploring “{center}”, I moved on to “{topic}”.")
+        if path:
+            lines.append("- Path: " + " → ".join(path))
+        for e in ev:
+            lines.append(f"- “{e['text']}” ({e.get('article') or 'source unknown'}{', retrieved ' + e['retrieved_at'][:10] if e.get('retrieved_at') else ''})")
+        if ev:
+            lines.append("- First check these sentences against the primary texts for overstatement or anachronism.")
+    return "\n".join(lines)
 
 
 def _orig_line(ctx: dict, jp: bool) -> str:
@@ -108,13 +150,19 @@ def _ja(topic: str, goal: str, service: str, ctx: dict) -> str:
     influences = ctx.get("influences") or []
     debate = ctx.get("debate") or []
     sep_title = ctx.get("sep_title") or ""
+    person = bool(ctx.get("is_person"))
+    center = (ctx.get("center") or "").strip()
+    if not goal and center:   # 経路から来たときは、つながりそのものを問いにする
+        goal = f"「{center}」と「{topic}」は、どこでつながり、どこで別物か。"
     subs = _sub_questions(goal)
 
     # Term-specific header grounding the request in real, resolved facts.
     grounded = []
     if desc:
-        grounded.append(f"- この語の位置づけ（Wikidata要約）: {desc}")
-    if orig:
+        grounded.append(f"- {'この人物' if person else 'この語'}の位置づけ（Wikidata要約）: {desc}")
+    if orig and person:   # 人名の表記の違いは翻訳の埋没ではない（転写）
+        grounded.append(f"- 人名の各言語での表記（転写であって訳語ではない）: {orig}")
+    elif orig:
         grounded.append(f"- 別言語での表記候補（Wikidataのlabel・原語の確認ではない）: **{orig}** ／ "
                         f"これらが同一の日本語「{topic}」に埋没していないか、"
                         f"まず各形が実際にその言語の術語として使われているかを確かめ、"
@@ -153,7 +201,12 @@ def _ja(topic: str, goal: str, service: str, ctx: dict) -> str:
 
     # The lost-distinction instruction is now anchored on the ACTUAL original
     # term, with Leib/Körper demoted to a one-line illustration of the pattern.
-    if orig:
+    if person:
+        target = f"「{center}」に関わる" if center else "この人物の中心的な"
+        lost = (f"- {target}概念語を、この人物の原語（原典の言語）で特定してください。その語が後世どの言語・訳語へ移り、"
+                f"**日本語の訳語でどの区別が消えたか**を、原典の該当箇所（校訂版・標準ロケータ）とともに示してください。\n"
+                f"- 主要著作を原題・成立年・校訂版で挙げ、日本語訳（訳者・版・年）ごとの訳語の違いを示してください。")
+    elif orig:
         lost = (f"- 上記の原語（{orig}）のそれぞれについて、**日本語で同じ「{topic}」に"
                 f"訳される近縁の別語が存在しないか**を検査してください。原語間で意味・"
                 f"含意・使用文脈がどう違い、翻訳でどの区別が消えたかを、原文の該当箇所"
@@ -169,14 +222,19 @@ def _ja(topic: str, goal: str, service: str, ctx: dict) -> str:
                   "Körper（物体としての身体）はいずれも日本語で「肉体」「身体」になりうる。"
                   "埋没しているのは「肉体」の側である。なおこの例自体も検証対象に含めてください。）")
 
+    if person:
+        lost_illus = ""
+    trail = _trail_block(topic, ctx, True)
+    title = (f"「{center}」と「{topic}」のつながり" if center else f"「{topic}」") + (f"（{orig}）" if orig and not person else "")
+
     return f"""{tune}
 
-# 調査依頼: 「{topic}」{('（' + orig + '）') if orig else ''}
+# 調査依頼: {title}
 
-私は上記について、表面的な要約ではなく、資料に接地した精密な理解を求めています。{lead_ref}ここから一次・二次資料を巡回し、深掘りしてください。{grounded_block}{sub_block}
+私は上記について、表面的な要約ではなく、資料に接地した精密な理解を求めています。{lead_ref}ここから一次・二次資料を巡回し、深掘りしてください。{trail}{grounded_block}{sub_block}
 
 ## 1. 私の本当の問いを先に言語化する
-- 私が「{topic}」で本当に知りたいことを、複数の解釈候補として明示してください（上の具体的な問いも踏まえて）。
+- 私が{("「" + center + "」と「" + topic + "」のつながり") if center else ("「" + topic + "」")}で本当に知りたいことを、複数の解釈候補として明示してください（上の具体的な問いも踏まえて）。
 - 私の問いの立て方に、誤解・思い込み・自己バイアス（用語の混同、時代錯誤、特定立場の暗黙の前提）があれば、遠慮なく指摘してください。
 
 ## 2. 語の系譜・翻訳史・失われた区別（最重要）
@@ -208,12 +266,18 @@ def _en(topic: str, goal: str, service: str, ctx: dict) -> str:
     related = ctx.get("related") or []
     debate = ctx.get("debate") or []
     sep_title = ctx.get("sep_title") or ""
+    person = bool(ctx.get("is_person"))
+    center = (ctx.get("center") or "").strip()
+    if not goal and center:
+        goal = f"Where do “{center}” and “{topic}” connect, and where do they differ?"
     subs = _sub_questions(goal)
 
     grounded = []
     if desc:
-        grounded.append(f"- What this term is (Wikidata): {desc}")
-    if orig:
+        grounded.append(f"- What this {'person' if person else 'term'} is (Wikidata): {desc}")
+    if orig and person:
+        grounded.append(f"- The name in other languages (transliterations, not translations): {orig}")
+    elif orig:
         grounded.append(f"- Other-language labels (Wikidata; NOT a confirmed original term): **{orig}** — "
                         f"first check whether each form is actually used as a technical term in that language, "
                         f"then check whether they collapse into one word and how their senses differ.")
@@ -237,7 +301,10 @@ def _en(topic: str, goal: str, service: str, ctx: dict) -> str:
                  + "\n".join(f"{i+1}. {s}" for i, s in enumerate(subs))) if subs else (
                  f"\n- Aim/context: {goal}" if goal else "")
 
-    if orig:
+    if person:
+        lost = (f"- Identify, in this person's original language, the concept words {'bearing on “' + center + '”' if center else 'central to their work'}; "
+                f"trace how they moved into later languages and which distinction the translations lost, citing critical editions and standard locators.")
+    elif orig:
         lost = (f"- For each original term ({orig}), check whether a NEAR-SYNONYM is "
                 f"collapsed into the same word in translation; show how their senses/uses differ and which distinction was lost, with source passages.")
     else:
@@ -245,9 +312,9 @@ def _en(topic: str, goal: str, service: str, ctx: dict) -> str:
 
     return f"""{tune}
 
-# Research request: "{topic}"{(' (' + orig + ')') if orig else ''}
+# Research request: {('the connection between “' + center + '” and “' + topic + '”') if center else ('"' + topic + '"')}{(' (' + orig + ')') if orig and not person else ''}
 
-I want a source-grounded, precise understanding - not a fluent summary. {lead_ref}browse primary and secondary sources from here.{grounded_block}{sub_block}
+I want a source-grounded, precise understanding - not a fluent summary. {lead_ref}browse primary and secondary sources from here.{_trail_block(topic, ctx, False)}{grounded_block}{sub_block}
 
 ## 1. First, articulate my real question
 - Give several candidate readings of what I actually want (using my specific questions above).

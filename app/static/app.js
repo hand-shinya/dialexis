@@ -1224,6 +1224,8 @@ function deepsearchInit(services) {
   // with the word already filled in (fixes the empty deep-search page).
   const q = new URLSearchParams(location.search).get("q");
   if (q && $("ds-topic")) $("ds-topic").value = q;
+  // プレビュー: 語が入って着いたら、押す前に原型を出す（所有者 2026-10-23「プロンプトの原型を示すべき」）
+  if (q && DX_PREVIEW && $("ds-result")) deepsearchRun();
 }
 
 async function deepsearchRun() {
@@ -1231,8 +1233,9 @@ async function deepsearchRun() {
   if (!topic) return;
   const out = $("ds-result");
   out.innerHTML = `<p class="muted">${T.loading}</p>`;
+  const center = new URLSearchParams(location.search).get("center") || "";
   const d = await api("/api/deepsearch", { method: "POST", body: {
-    topic, goal: $("ds-goal").value.trim(), service: $("ds-service").value,
+    topic, goal: $("ds-goal").value.trim(), service: $("ds-service").value, center,
     lang: LANG, llm: llmConfig() } });
 
   let dsN = 0;
@@ -2112,7 +2115,8 @@ const ACTIONS = {
                     : gCombinePanel(t.term, (ctx && ctx.retryB) || "", (ctx && ctx.retryOp) || "and") },
   external:     { label: "外部で調べる", effect: "action", newPage: true, transient: true, commits: false, run: (t) => gExtPanel(t.term) },
   shelf:        { label: "棚に追加", effect: "store", commits: false, run: (t) => shelfAdd(t.term) },
-  deepsearch:   { label: "深掘り", effect: "action", run: (t) => gPerspectivePanel(t.term) },
+  // プレビュー: 押す前から、ここまでの探求（中心の語・経路・根拠の文）を入れたプロンプトの原型をその場に出す（所有者 2026-10-23）
+  deepsearch:   { label: "深掘り", effect: "action", run: (t, ctx) => DX_PREVIEW ? gDeepPromptPanel(t.term, (ctx && ctx.node) || t) : gPerspectivePanel(t.term) },
   // 2026-10-09 所有者の設計: この system が AI や検索を提供できないなら、
   // 両者を繋ぐのは「所有者の環境と責任で実行するための文」を出すことである。
   // deepsearch（視点を選ぶ面）とは別に、いま画面に在るものをそのまま持ち出す。
@@ -2157,6 +2161,7 @@ const UI_ACTION_IDS = {
   edge:        ["hl", "focus", "combine", "deepsearch", "handoff", "center", "resetFocus"],
   node:        ["panorama", "handoff"],
   panelFooter: Object.values(UI_ACTION_MAP.panelFooter),
+  panelLink:   ["deepsearch"],   // パネルの中の「深掘り探索プロンプト」リンク（プレビュー: 別ページへ移らずその場で開く）
   nomiss:      Object.values(UI_ACTION_MAP.nomiss),
   lensMenu:    ["applyLens"],
   textLink:    ["center", "handoff"],
@@ -3426,7 +3431,7 @@ function gAuthorPanel(n) {
   if (n.term_de) rows.push([jp ? "この語での原語" : "term", `<b lang="de">${esc(n.term_de)}</b>`]);
   const body = `<p class="muted">${jp ? "思想家の系譜（検証済シード）から。著者は語とは別の次元なので、語源エンジンでなく著者情報として示します。" : "From the curated lineage; authors are a different dimension than words."}</p>
     ${rows.length ? `<table class="plain">${rows.map(r => `<tr><th>${esc(r[0])}</th><td>${r[1]}</td></tr>`).join("")}</table>` : ""}
-    <p class="srcline"><a href="${wp}" target="_blank">${jp ? "Wikipediaで開く" : "Wikipedia"}</a> · <a href="/deepsearch?q=${encodeURIComponent(n.label)}&lang=${LANG}"${originLinkAttr()}>${jp ? "深掘り探索プロンプト" : "deep-search"}</a></p>
+    <p class="srcline"><a href="${wp}" target="_blank">${jp ? "Wikipediaで開く" : "Wikipedia"}</a> · <a href="/deepsearch?q=${encodeURIComponent(n.label)}&lang=${LANG}${DX_PREVIEW && G && G.rootQ && G.rootQ !== n.label ? "&center=" + encodeURIComponent(G.rootQ) : ""}"${originLinkAttr()} class="ds-inline" data-term="${esc(n.label)}">${jp ? "深掘り探索プロンプト" : "deep-search"}</a></p>
     <p class="srcline muted">${jp ? "著者固有の用法（その著作でこの語がどう使われたか）・時代性・年表は整備中です。" : "Author-specific usage / timeline are being built."}</p>`;
   gPanel((jp ? "著者：" : "Author: ") + n.label, body, n.label);
 }
@@ -5761,3 +5766,67 @@ function dxSliceMap(arr, n, f, joiner, label) {
   if (!DX_PREVIEW || arr.length <= n) return shown;
   return shown + dxFold(`${label}のつづき`, arr.length - n, `多いので最初の${n}件のあとを畳んでいます`, arr.slice(n).map(f).join(joiner));
 }
+
+
+// ── 深掘りのプロンプトの原型を、その場に文脈つきで出す（所有者 2026-10-23・プレビュー）──
+// 以前は別ページへ移り、語の名前だけが入り、目的は空、プロンプトは「生成」を押すまで出なかった。
+// ここまでの探求（地図の中心の語・軌跡・関係の根拠の文）をそのまま依頼文に入れ、開いた瞬間に原型を出す。
+let _dsServicesCache = null;
+async function gDeepPromptPanel(term, node) {
+  const jp = LANG === "ja";
+  const center = (G && G.rootQ && G.rootQ !== term) ? G.rootQ : "";
+  const tr = typeof trailLoad === "function" ? trailLoad() : { steps: [] };
+  const path = tr.steps.map(s => (s.a === "center" ? "" : ((TRAIL_VERB[s.a] || "") + " ")) + (s.a === "pair" ? `${s.paLabel || s.pa} × ${s.term}` : s.label)).slice(-8);
+  if (!path.length || path[path.length - 1].indexOf(term) < 0) path.push(term);
+  const p = gPanel((jp ? "深掘りのプロンプト：" : "Deep-research prompt: ") + (center ? `${center} × ${term}` : term),
+    `<p class="srcline">${jp ? "ここまでの探求（経路と根拠）を入れた、プロンプトの原型です。そのまま、または目的を書き足して作り直し、使う AI に貼り付けてください。" : "A draft prompt built from your exploration so far. Paste it into the AI you use, or add a purpose and regenerate."}</p>
+     <div class="dsp-ctx"><p class="muted">${jp ? "文脈を集めています…" : "Collecting context…"}</p></div>
+     <div class="dsp-ctl"><select class="dsp-svc" aria-label="${jp ? "使う AI" : "target AI"}"></select>
+       <textarea class="dsp-goal" rows="2" placeholder="${esc(center ? (jp ? `目的（任意）：例「${center}」と「${term}」は、どこでつながり、どこで別物か` : `Purpose (optional)`) : (jp ? "目的（任意）：何のために、どこまで知りたいか" : "Purpose (optional)"))}"></textarea>
+       <p class="dsp-btns"><button type="button" class="dsp-regen">${jp ? "目的を入れて作り直す" : "Regenerate"}</button> <button type="button" class="dsp-copy">${jp ? "コピー" : "Copy"}</button>
+       <a class="srcline" href="/deepsearch?q=${encodeURIComponent(term)}&lang=${LANG}${center ? "&center=" + encodeURIComponent(center) : ""}&preview=1" target="_blank" rel="noopener">${jp ? "別ページで開く" : "open as page"}</a></p></div>
+     <textarea class="dsp-out" rows="16" aria-label="${jp ? "生成したプロンプト（書き換えてよい）" : "generated prompt (editable)"}">${jp ? "作っています…" : "generating…"}</textarea>`, term);
+  if (!p) return false;
+  const $p = (sel) => p.querySelector(sel);
+  // 使う AI の一覧
+  try { _dsServicesCache = _dsServicesCache || await api("/api/deepsearch/services"); } catch (e) { _dsServicesCache = _dsServicesCache || []; }
+  const svcs = Array.isArray(_dsServicesCache) ? _dsServicesCache : (_dsServicesCache.services || []);
+  const saved = (() => { try { return localStorage.getItem("dx_ds_service") || ""; } catch (e) { return ""; } })();
+  $p(".dsp-svc").innerHTML = svcs.map(s => `<option value="${esc(s.id)}"${s.id === saved ? " selected" : ""}>${esc(jp ? (s.label_ja || s.label || s.id) : (s.label_en || s.label || s.id))}</option>`).join("") || `<option value="generic">generic</option>`;
+  // 根拠の文（中心の語との関係）。消さずに全部渡す（生成器は5文まで載せる）
+  let evidence = [];
+  if (center) {
+    try {
+      const rel = await api(`/api/relation?center=${encodeURIComponent(center)}&target=${encodeURIComponent(term)}&lang=${LANG}`);
+      for (const side of [rel.forward, rel.backward]) if (side) (side.sentences || []).forEach(t => evidence.push({ text: t, article: side.article, retrieved_at: side.retrieved_at }));
+    } catch (e) { /* 根拠が取れなくても原型は出す（取れなかったことは下に書く） */ }
+  }
+  $p(".dsp-ctx").innerHTML = `<p class="rel-ev-lead">${jp ? "依頼文に入れた文脈" : "Context included"}</p><ul class="gp-ul">`
+    + (center ? `<li>${jp ? "中心の語" : "centre"}：<b>${esc(center)}</b> → <b>${esc(term)}</b></li>` : "")
+    + (path.length ? `<li>${jp ? "辿った経路" : "path"}：${path.map(esc).join(" → ")}</li>` : "")
+    + `<li>${jp ? "根拠の文" : "evidence"}：${evidence.length ? `${evidence.length} ${jp ? "文（Wikipedia 本文・出所と取得時刻つき）" : "sentences"}` : (center ? (jp ? "今回の取得では0文（依頼文には経路だけを入れました）" : "0 this time") : (jp ? "中心の語が無いので入れていません" : "none"))}</li></ul>`;
+  const gen = async () => {
+    const out = $p(".dsp-out"); out.value = jp ? "作っています…" : "generating…";
+    try { localStorage.setItem("dx_ds_service", $p(".dsp-svc").value); } catch (e) {}
+    try {
+      const d = await api("/api/deepsearch", { method: "POST", body: { topic: term, center, path, evidence, goal: $p(".dsp-goal").value.trim(), service: $p(".dsp-svc").value, lang: LANG } });
+      out.value = (d.level0 || "").trim();
+      p.dataset.generated = "1";
+    } catch (e) { out.value = jp ? "生成を見送りました。少し時間をおいて「作り直す」を押してください。" : "Generation deferred; press regenerate later."; }
+  };
+  $p(".dsp-regen").addEventListener("click", gen);
+  $p(".dsp-svc").addEventListener("change", gen);
+  $p(".dsp-copy").addEventListener("click", async () => {
+    const t = $p(".dsp-out").value; try { await navigator.clipboard.writeText(t); } catch (e) { $p(".dsp-out").select(); document.execCommand && document.execCommand("copy"); }
+    $p(".dsp-copy").textContent = jp ? "コピーしました" : "Copied";
+  });
+  await gen();
+  return true;
+}
+// パネルの中の「深掘り探索プロンプト」リンク: プレビューでは別ページへ移らず、その場のパネルで開く（文脈を落とさない）
+document.addEventListener("click", (e) => {
+  const a = e.target.closest && e.target.closest("a.ds-inline");
+  if (!a || !DX_PREVIEW || !document.getElementById("origin-shell")) return;
+  e.preventDefault();
+  dispatchAction("deepsearch", { term: a.dataset.term, label: a.dataset.term, kind: "author" }, currentViewState(), { surface: "panelLink" });
+});

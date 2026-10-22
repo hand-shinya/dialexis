@@ -4822,6 +4822,7 @@ async def _deepsearch_context(topic: str, lang: str) -> dict:
                 ed = ent["data"]
                 ctx["orig_labels"] = ed.get("orig_labels", {})
                 ctx["description"] = ed.get("description", "")
+                ctx["is_person"] = bool(ed.get("is_person"))   # 人名は転写として扱う（2026-10-23）
                 infl = ed.get("claims", {}).get("influenced_by", [])
                 labels = await wikidata.resolve_labels(
                     [q for q in infl if str(q).startswith("Q")], lang)
@@ -4861,6 +4862,12 @@ async def api_deepsearch(request: Request):
     # (original-language word, adjacent concepts, debate structure) instead of
     # being a fill-in-the-blank template.
     ctx = await _deepsearch_context(topic, lang)
+    # Dialexis で辿った文脈（中心の語・経路・根拠の文）。画面から渡される。未検証の出発点として載せる（2026-10-23）
+    ctx["center"] = str(b.get("center") or "").strip()[:80]
+    ctx["path"] = [str(x)[:60] for x in (b.get("path") or [])][:8]
+    ctx["evidence"] = [{"text": str(e.get("text") or "")[:300], "article": str(e.get("article") or "")[:80],
+                        "retrieved_at": str(e.get("retrieved_at") or "")[:30]}
+                       for e in (b.get("evidence") or []) if isinstance(e, dict)][:5]
     level0 = deepsearch.generate(topic, b.get("goal", ""), service, lang, ctx)
 
     result = {"service": service, "level0": level0, "level2": None}
