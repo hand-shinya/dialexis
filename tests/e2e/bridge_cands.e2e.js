@@ -57,6 +57,8 @@ const ORIGIN = (q, found, rf) => ({ query: q, lang: "ja", queried_at: "t", word:
   ok("候補が0件ならカードを残さない", !(await p.$("#bridge-cands")));
 
   await open("応答の無い文です");
+  // カードは「探しています…」から書き換わる。読む前に書き換わりを待つ（すぐ読むと1回目に落ちることがあった・2026-10-23）
+  await p.waitForFunction(() => /応答を返さなかった/.test((document.getElementById("bridge-cands") || {}).innerText || ""), null, { timeout: 8000 }).catch(() => {});
   const errTxt = await p.$eval("#bridge-cands", e => e.innerText).catch(() => "");
   ok("情報源が応答しなかったときは、0件を「該当なし」と装わずにそう示す", /応答を返さなかった/.test(errTxt), errTxt.slice(0, 60));
 
