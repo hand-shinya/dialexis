@@ -86,6 +86,9 @@ def generate(topic: str, goal: str, service: str, lang: str = "ja", ctx: dict | 
         # 経路と根拠は付いているので「手がかりを付けていない」とは書かない
         out = out.replace("この依頼には機械が取得した手がかりを付けていません。", "下の経路と根拠の文は未検証の出発点であって、確定した前提ではありません。")
         out = out.replace("No machine-retrieved leads are attached to this request; ", "The path and evidence below are unverified starting points, not settled premises; ")
+        # 経路の節(0-1)が手がかりの節(0-2)より上にあるので「上記の」は食い違う（2026-10-23）
+        out = out.replace("上記の「機械が取得した手がかり」は未検証の出発点であって、確定した前提ではありません。",
+                          "下の経路と根拠の文、および「機械が取得した手がかり」は、いずれも未検証の出発点であって、確定した前提ではありません。")
     return out
 
 

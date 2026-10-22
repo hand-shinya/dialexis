@@ -56,3 +56,10 @@ def test_without_a_path_the_prompt_keeps_its_previous_shape():
     t = deepsearch.generate("疎外", "", "claude", "ja", {"orig_labels": {"de": "Entfremdung"}})
     assert "# 調査依頼: 「疎外」（Entfremdung（独））" in t
     assert "## 0-1." not in t and "埋没していないか" in t
+
+
+def test_lead_wording_follows_the_order_of_sections():
+    # 経路の節(0-1)が手がかりの節(0-2)より上にあるとき「上記の『機械が取得した手がかり』」と書かない
+    t = deepsearch.generate("アリストテレス", "", "claude", "ja", dict(TRAIL, description="古代ギリシアの哲学者"))
+    assert "上記の「機械が取得した手がかり」" not in t
+    assert "下の経路と根拠の文、および「機械が取得した手がかり」は、いずれも未検証の出発点" in t

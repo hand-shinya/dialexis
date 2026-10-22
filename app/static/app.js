@@ -3226,10 +3226,10 @@ function _thResponseHtml(d) {
   let h = `<div class="th-result ${isDiscovery ? "th-discovery" : "th-ready"}">
     <div class="th-status-line"><b>${isDiscovery ? "自動予備台帳を表示しています：" : "台帳を表示しています："}${esc(ds.title || d.query)}</b>${_thLevel(isDiscovery ? "candidate" : "strong", levels)}</div>
     ${_thLedgerActions(d)}
-    <p class="th-honesty">${esc(d.note || "")}</p>
+    ${(DX_PREVIEW && isDiscovery) ? "<!--th-boiler-start-->" : ""}<p class="th-honesty">${esc(d.note || "")}</p>
     ${isDiscovery ? `<div class="th-discovery-banner"><b>これは最初の自動整理です</b><p>辞書・概念データ・書誌検索から取得できた情報を先に配置しました。原典の該当頁、版ごとの訳語、実際の引用・影響関係は未確認のまま保持しています。</p></div>` : ""}
     <div class="th-question"><b>中心問い</b><p>${esc(ds.center_question || "")}</p></div>
-    <p class="th-scope">${esc(ds.scope_note || "")}</p>
+    <p class="th-scope">${esc(ds.scope_note || "")}</p>${(DX_PREVIEW && isDiscovery) ? "<!--th-boiler-end-->" : ""}
     <details class="th-evidence-guide"><summary>証拠階層と読み方</summary><p>${esc(d.honesty || "")}</p><ul>`
       + levels.map(x => `<li>${_thLevel(x.id, levels)} ${esc(x.description || "")}</li>`).join("")
       + `</ul></details>`;
@@ -3282,6 +3282,8 @@ function _thResponseHtml(d) {
   h += `<section class="th-section"><h3>参照先</h3><div class="th-source-list">` + sources.map(s =>
     `<article class="th-source-card"><div class="th-card-top"><b>${s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id || "source")}</a>` : esc(s.label || s.id || "source")}</b>${_thLevel(s.evidence, levels)}</div><p>${esc(s.status || "")}</p>${(s.local_refs || []).length ? `<small class="th-local-ref">${esc(s.local_refs.join(" ／ "))}</small>` : ""}</article>`).join("") + `</div></section>`;
   h += `<section class="th-section th-next"><h3>次の調査</h3>${_thNextActions(d.next_actions || ds.next_actions || [], sources)}</section>`;
+  if (DX_PREVIEW) h = h.replace(/<!--th-boiler-start-->([\s\S]*?)<!--th-boiler-end-->/, (m, inner) =>
+    dxFold("自動予備台帳の前置き（どの語でも同じ説明）", 4, "語に固有の中身ではないため畳んでいます", inner));
   return h + `</div>`;
 }
 async function gTranslationHistoryPanel(word, targetContext = {}) {
@@ -3292,7 +3294,7 @@ async function gTranslationHistoryPanel(word, targetContext = {}) {
       ? (jp ? "🧭 著作の翻訳・受容史を追跡：" : "Work translation & reception: ")
       : (jp ? "🧭 翻訳・受容史を追跡：" : "Translation / reception history: ");
   const controls = `<div class="th-controls"><label for="th-domain">分野</label><select id="th-domain">${TH_DOMAIN_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select><button type="button" class="th-run">この条件で調査を開始</button></div>
-    <p class="th-intro">通常の意味検索や単純な語源検索とは別に、「誰が・いつ・どの版で・どの言語へ移し、何が保存／欠損／追加されたか」を証拠階層つきで追跡します。登録済み台帳がある語は詳細台帳を表示し、未登録語でも既存情報源から自動予備台帳を作って調査を始めます。</p>
+    ${DX_PREVIEW ? dxFold("この画面の説明", 1, "どの語でも同じ説明のため畳んでいます", `<p class="th-intro">通常の意味検索や単純な語源検索とは別に、「誰が・いつ・どの版で・どの言語へ移し、何が保存／欠損／追加されたか」を証拠階層つきで追跡します。登録済み台帳がある語は詳細台帳を表示し、未登録語でも既存情報源から自動予備台帳を作って調査を始めます。</p>`) : `<p class="th-intro">通常の意味検索や単純な語源検索とは別に、「誰が・いつ・どの版で・どの言語へ移し、何が保存／欠損／追加されたか」を証拠階層つきで追跡します。登録済み台帳がある語は詳細台帳を表示し、未登録語でも既存情報源から自動予備台帳を作って調査を始めます。</p>`}
     <div class="th-results"><p class="muted">${jp ? "台帳を読み込んでいます…" : "Loading the evidence dossier…"}</p></div>`;
   const p = gPanel(modeTitle + word, controls, word);
   if (!p) return false;
@@ -3432,8 +3434,10 @@ function gAuthorPanel(n) {
   const body = `<p class="muted">${jp ? "思想家の系譜（検証済シード）から。著者は語とは別の次元なので、語源エンジンでなく著者情報として示します。" : "From the curated lineage; authors are a different dimension than words."}</p>
     ${rows.length ? `<table class="plain">${rows.map(r => `<tr><th>${esc(r[0])}</th><td>${r[1]}</td></tr>`).join("")}</table>` : ""}
     <p class="srcline"><a href="${wp}" target="_blank">${jp ? "Wikipediaで開く" : "Wikipedia"}</a> · <a href="/deepsearch?q=${encodeURIComponent(n.label)}&lang=${LANG}${DX_PREVIEW && G && G.rootQ && G.rootQ !== n.label ? "&center=" + encodeURIComponent(G.rootQ) : ""}"${originLinkAttr()} class="ds-inline" data-term="${esc(n.label)}">${jp ? "深掘り探索プロンプト" : "deep-search"}</a></p>
-    <p class="srcline muted">${jp ? "著者固有の用法（その著作でこの語がどう使われたか）・時代性・年表は整備中です。" : "Author-specific usage / timeline are being built."}</p>`;
-  gPanel((jp ? "著者：" : "Author: ") + n.label, body, n.label);
+    ${DX_PREVIEW ? `<div class="author-facts"><p class="muted">${jp ? "人物のデータ（生没年・主要著作・職業）を取得しています…" : "Loading the person's data…"}</p></div>` : ""}<p class="srcline muted"${DX_PREVIEW ? " hidden" : ""}>${jp ? "著者固有の用法（その著作でこの語がどう使われたか）・時代性・年表は整備中です。" : "Author-specific usage / timeline are being built."}</p>`;
+  const p = gPanel((jp ? "著者：" : "Author: ") + n.label, body, n.label);
+  if (DX_PREVIEW && p) _authorFacts(p, n);   // 「整備中」の代わりに、実際のデータ（所有者 10/23 の写しで中身がほぼ無かった）
+  return p;
 }
 
 // 分解の表示契約: 語全体を先に置き、意味のまとまりを主表示にし、文字は補助へ下げる。
@@ -3588,7 +3592,7 @@ function gRelationshipPanel(term, relation, node) {
   next.push({ id: "center", label: "🎯 中心命題を地図の中心に戻す", target: { term: info.centerTerm || info.center, label: info.centerTerm || info.center, kind: "word", q: info.centerTerm || info.center } });
   const p = gPanel(`🧭 中心命題との関係：${info.target}`,
     `<div class="rel-hero"><p class="rel-route"><span>中心命題</span><b>${esc(info.center)}</b><span>→</span><span>派生項目</span><b>${esc(info.target)}</b></p><p>${esc(info.summary)}</p></div>
-      <section class="rel-section"><h4>この地図での接続</h4><dl class="rel-dl"><dt>位置</dt><dd>${esc(relationText)}</dd><dt>対象の種類</dt><dd>${esc(info.targetKind || "項目")}</dd><dt>証拠階層</dt><dd><span class="rel-evidence">${esc(_relationEvidenceLabel(info.evidence))}</span></dd></dl><p class="rel-detail">${esc(detail)}</p></section>
+      <section class="rel-section"><h4>この地図での接続</h4><dl class="rel-dl"><dt>位置</dt><dd>${esc(relationText)}</dd><dt>対象の種類</dt><dd>${esc(info.targetKind || "項目")}</dd><dt>証拠階層</dt><dd><span class="rel-evidence">${esc(_relationEvidenceLabel(info.evidence))}</span></dd></dl>${DX_PREVIEW && detail === info.summary ? "" : `<p class="rel-detail">${esc(detail)}</p>`}</section>
       ${DX_PREVIEW ? `${_relFactsHtml(info.node)}<section class="rel-section rel-evidence-sec"><h4>なぜつながっているか（本文の文）</h4><div class="rel-ev" aria-live="polite"><p class="srcline muted">Wikipedia の本文から、2つの語が一緒に出てくる文を探しています…</p></div></section>`
         : `<section class="rel-section"><h4>ここで分けて読むこと</h4><ul class="rel-list"><li>中心命題そのものの主張と、派生項目の著作・思想・受容上の位置を混同しない。</li><li>人物名の表記差、著作題名の翻訳差、引用・影響関係を別々の証拠単位で確認する。</li><li>「調査候補」は入口であり、本文・版・標準ロケータの照合後に確定度を更新する。</li></ul></section>`}
       <section class="rel-section"><h4>次に広げる</h4><div class="rel-next">${next.map((x, i) => `<button type="button" class="rel-next-btn" data-i="${i}">${esc(x.label)}</button>`).join("")}</div></section>
@@ -4694,6 +4698,13 @@ function gBind() {
     // opened (→ "sometimes works"). Dragging begins only past a real threshold.
     G.press = { mx, my, n, ei: n ? -1 : gEdgeAt(mx, my), moved: false, panx: G.view.x, pany: G.view.y };
   };
+  // 地図の外へ出たら強調を消す。プレビューでは語の真上に円形メニューが開き、マウスは地図から直接そこへ移るため、
+  // 強調が残って地図の大半が薄いままになっていた（所有者の写し 10/23 02:50）。
+  cv.onpointerleave = () => {
+    if (G.press) return;
+    clearTimeout(G._leaveT);
+    G._leaveT = setTimeout(() => { if (!G.press && !(_radial && _radial._node === G.hover)) { G.hover = null; G.hl = null; if (!G.running) gDraw(); } }, 120);
+  };
   cv.onpointermove = (e) => {
     const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
     if (!G.press) {
@@ -5275,6 +5286,7 @@ const RADIAL_EN = { meaning: "Meaning", anatomy: "Trace origin", multilingual: "
   focus: "Focus branch", hl: "Highlight", resetFocus: "Reset", pairTranslationHistory: "Pair history", split: "Split", pair: "Read as pair" };
 let _radial = null, _radialHoverT = 0, _radialLeaveT = 0, _radialHoverNode = null;
 function gRadialClose() {
+  if (G && G.hl && !G.press) { G.hover = null; G.hl = null; if (!G.running) gDraw(); }   // 円形メニューを閉じたら強調も消す
   clearTimeout(_radialHoverT); clearTimeout(_radialLeaveT);
   if (_radial) { _radial.remove(); _radial = null; }
 }
@@ -5830,3 +5842,19 @@ document.addEventListener("click", (e) => {
   e.preventDefault();
   dispatchAction("deepsearch", { term: a.dataset.term, label: a.dataset.term, kind: "author" }, currentViewState(), { surface: "panelLink" });
 });
+
+// 著作の系譜（人物）: /api/author（Wikipedia・Wikidata）の生没年・主要著作・職業を出す。0件は0件と書く（2026-10-23）
+async function _authorFacts(p, n) {
+  const box = p.querySelector(".author-facts"); if (!box) return;
+  const jp = LANG === "ja";
+  let d = null; try { d = await api(`/api/author?name=${encodeURIComponent(n.search || n.label)}&lang=${LANG}`); } catch (e) { d = null; }
+  const yr = (v) => { const x = String((Array.isArray(v) ? v[0] : v) || ""); const m = x.match(/^(-?)0*(\d{1,4})/); return m ? (m[1] ? (jp ? "前" : "") + m[2] + (jp ? "年" : " BCE") : m[2] + (jp ? "年" : "")) : ""; };
+  if (!d || d.found === false) { box.innerHTML = `<p class="srcline">${jp ? "この人物のデータは、今回の取得では 0 件でした。「人物を調べる」や外部の入口から確かめられます。" : "0 records this time."}</p>`; return; }
+  const works = d.works || [], occ = d.occupation || [];
+  const life = [yr(d.born), yr(d.died)].filter(Boolean).join(" – ");
+  box.innerHTML = `<table class="plain author-facts-t">`
+    + (life ? `<tr><th>${jp ? "生没年" : "life"}</th><td>${esc(life)}</td></tr>` : "")
+    + `<tr><th>${jp ? "主要著作" : "works"}</th><td>${works.length ? dxSliceMap(works, 8, w => `<a href="#" class="ext-term" data-w="${esc(w)}">${esc(w)}</a>`, "・", "主要著作") : (jp ? "登録 0 件" : "0")}</td></tr>`
+    + (occ.length ? `<tr><th>${jp ? "職業" : "occupation"}</th><td>${dxSliceMap(occ, 6, esc, "・", "職業")}</td></tr>` : "")
+    + `</table><p class="srcline">${jp ? "出所" : "sources"}：${d.wikipedia_url ? `<a class="ext-link" href="${esc(d.wikipedia_url)}" target="_blank" rel="noopener">Wikipedia</a>` : ""} ${d.wikidata_url ? `<a class="ext-link" href="${esc(d.wikidata_url)}" target="_blank" rel="noopener">Wikidata</a>` : ""}${d.queried_at ? ` · ${jp ? "取得" : "retrieved"} ${esc(String(d.queried_at).slice(0, 16))}` : ""}</p>`;
+}
