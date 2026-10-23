@@ -2143,6 +2143,8 @@ const ACTIONS = {
   split:        { label: "語を分ける", effect: "map", run: (t, ctx) => gSplitInPlace(ctx && ctx.nodeIdx, t.term) },
   // 共起語を、元の語との組のまま読む（単独の検索で行き止まりにしない・2026-10-20 プレビュー）
   pair:         { label: "語の組で読む", effect: "action", run: (t, ctx) => gPairPanel((ctx && ctx.a) || "", t.term, ctx || {}) },
+  // 畳んだ枝（世界の言語）を開く・畳む。中心は変えない（所有者 2026-10-23・プレビュー）
+  branch:       { label: "枝を開く・畳む", effect: "map", run: (t, ctx) => gBranchToggle(ctx && ctx.nodeIdx) },
 };
 // 各表示面が使う Action ID の宣言（テストが registry と照合し「未宣言のユーザー操作」を0にする）。
 // 実装側の各面はこの定義を参照する（文言から推測しない・面ごとに作用を再実装しない）。
@@ -2159,7 +2161,7 @@ const UI_ACTION_IDS = {
   colloc:      ["pair", "center"],   // 共起の表（プレビュー: 組で読む）
   emptyPanel:  null,   // 0件の見方から、データの在る見方へ（プレビュー）— 実行時に列挙
   edge:        ["hl", "focus", "combine", "deepsearch", "handoff", "center", "resetFocus"],
-  node:        ["panorama", "handoff"],
+  node:        ["panorama", "handoff", "branch"],
   panelFooter: Object.values(UI_ACTION_MAP.panelFooter),
   panelLink:   ["deepsearch"],   // パネルの中の「深掘り探索プロンプト」リンク（プレビュー: 別ページへ移らずその場で開く）
   nomiss:      Object.values(UI_ACTION_MAP.nomiss),
@@ -2693,7 +2695,7 @@ async function originGraph(q, tok) {
 // 親の角度範囲を子へ渡すことで、枝を扇形に保ち、交錯を減らす。共有ノードや
 // 複数親の線は意味上必要な場合があるため、完全な交錯ゼロは約束せず、まず
 // 「同じ枝の配置」を安定させる。
-function gInitialLayout(nodes, edges, W, H, cx, cy, parent, children) {
+function gInitialLayout(nodes, edges, W, H, cx, cy, parent, children, keepPos) {
   const minLayer = Math.min(...nodes.map(n => Number(n.layer) || 1));
   const layers = {};
   nodes.forEach((n, i) => { const l = Number(n.layer) || 1; (layers[l] = layers[l] || []).push(i); });
@@ -2708,6 +2710,16 @@ function gInitialLayout(nodes, edges, W, H, cx, cy, parent, children) {
     n.idealX = cx + rootRadius * Math.cos(angle); n.idealY = cy + rootRadius * Math.sin(angle);
   });
   const maxLayer = Math.max(...Object.keys(layers).map(Number));
+  // プレビュー: 枝の角度を、見えている先の語の数に比例して配る（等分だと、畳んだ枝や小さな枝が広い角度を占め、
+  // 大きな枝が狭く詰まる・所有者 2026-10-23）。差を和らげるため平方根で比べる。
+  const visMemo = {};
+  const visDesc = (i, seen) => {
+    if (visMemo[i] != null) return visMemo[i];
+    seen = seen || new Set(); if (seen.has(i)) return 0; seen.add(i);
+    let c = 0; ((children && children[i]) || []).forEach(ch => { if (!nodes[ch].hidden && parent[ch] === i) c += 1 + visDesc(ch, seen); });
+    return (visMemo[i] = c);
+  };
+  const share = (i) => DX_PREVIEW ? Math.sqrt(1 + visDesc(i)) : 1;
   for (let layer = minLayer + 1; layer <= maxLayer; layer++) {
     const peers = (layers[layer] || []).slice().sort((a, b) =>
       String(nodes[a].label || nodes[a].id).localeCompare(String(nodes[b].label || nodes[b].id), "ja"));
@@ -2721,12 +2733,18 @@ function gInitialLayout(nodes, edges, W, H, cx, cy, parent, children) {
     });
     groups.forEach((list, p) => {
       const pn = nodes[p], span = pn.layoutSpan || (Math.PI * 2 / Math.max(1, list.length));
-      list.forEach((i, k) => {
-        const n = nodes[i], angle = pn.layoutAngle - span / 2 + span * (k + .5) / list.length;
+      const vis = list.filter(i => !nodes[i].hidden);
+      const tot = vis.reduce((a, i) => a + share(i), 0) || 1;
+      let acc = 0;
+      vis.forEach((i) => {
+        const w = share(i), n = nodes[i], angle = pn.layoutAngle - span / 2 + span * (acc + w / 2) / tot;
+        acc += w;
         const radius = size * (0.12 + 0.14 * (layer - minLayer));
-        n.layoutAngle = angle; n.layoutSpan = Math.max(0.22, span / list.length * .84); n.layoutRadius = radius;
+        n.layoutAngle = angle; n.layoutSpan = Math.max(0.22, span * w / tot * .84); n.layoutRadius = radius;
         n.idealX = cx + radius * Math.cos(angle); n.idealY = cy + radius * Math.sin(angle);
       });
+      // 畳んだ枝の語は、親の位置に置いておく（開くとそこから伸びる）
+      list.filter(i => nodes[i].hidden).forEach(i => { const n = nodes[i]; n.layoutAngle = pn.layoutAngle; n.layoutSpan = 0.3; n.idealX = pn.idealX; n.idealY = pn.idealY; });
     });
     unassigned.forEach((i, k) => {
       const n = nodes[i], angle = -Math.PI / 2 + Math.PI * 2 * k / Math.max(1, unassigned.length);
@@ -2744,6 +2762,7 @@ function gInitialLayout(nodes, edges, W, H, cx, cy, parent, children) {
     n.layoutAngle = angle; n.layoutSpan = .4; n.layoutRadius = radius;
     n.idealX = cx + radius * Math.cos(angle); n.idealY = cy + radius * Math.sin(angle);
   });
+  if (keepPos) return;
   nodes.forEach(n => {
     n.x = n.idealX; n.y = n.idealY; n.vx = 0; n.vy = 0; n.r = 5 + (Number(n.weight) || 1) * 4.5;
   });
@@ -2767,9 +2786,11 @@ function gBuild(d) {
     if (!children[lo].includes(hi)) children[lo].push(hi);
     if (parent[hi] == null) parent[hi] = lo;
   });
+  if (DX_PREVIEW) nodes.forEach((n, i) => { if (n.id === "dom:breadth" && (children[i] || []).length && !_langOpenPref()) _branchHide(nodes, children, i, true); });
   gInitialLayout(nodes, edges, W, H, cx, cy, parent, children);
   G = { nodes, edges, children, parent, ctx, cv, W, H, cx, cy, rootQ: d.query, note: d.note, focusLabel: null,
         view: { x: 0, y: 0, k: 1 }, drag: null, hover: null, hl: null, alpha: 1, raf: 0, needFit: true };
+  if (DX_PREVIEW) { _dxSizes(); _dxLegend(); }
   gFitInstant();
   gBind();
   gLoop(200);
@@ -2780,9 +2801,9 @@ function gStep() {
   // 反発は節点数でスケール（大きいグラフが線状に潰れるのを防ぐ）＋近接時に強く押す（下限床）
   const REP = 3400 + N.length * 140;
   for (let i = 0; i < N.length; i++) {
-    const a = N[i];
+    const a = N[i]; if (a.hidden) continue;
     for (let j = i + 1; j < N.length; j++) {
-      const b = N[j];
+      const b = N[j]; if (b.hidden) continue;
       let dx = a.x - b.x, dy = a.y - b.y, ds = dx * dx + dy * dy || 1;
       const dist = Math.sqrt(ds), f = REP / Math.max(ds, 90);
       const fx = f * dx / dist, fy = f * dy / dist;
@@ -2790,15 +2811,16 @@ function gStep() {
     }
   }
   E.forEach(e => {
-    const a = N[e.a], b = N[e.b];
+    const a = N[e.a], b = N[e.b]; if (a.hidden || b.hidden) return;
     const dx = b.x - a.x, dy = b.y - a.y, dist = Math.sqrt(dx * dx + dy * dy) || 1;
     const target = 88 + Math.abs(a.layer - b.layer) * 42;   // やや長いバネ（潰れ防止）
     const f = 0.02 * (dist - target);
     const fx = f * dx / dist, fy = f * dy / dist;
     a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
   });
-  N.forEach(n => {
+  N.forEach((n, i) => {
     if (n === G.drag) { n.vx = 0; n.vy = 0; return; }
+    if (n.hidden) { const pn = N[G.parent[i]]; if (pn) { n.x = pn.x; n.y = pn.y; } n.vx = 0; n.vy = 0; return; }
     // 初期配置の理想点へ弱く戻す。反発・バネはノードを読みやすく離すが、
     // この拘束が無いと枝が別の枝の領域へ流れ、線の交錯が再発する。
     const pull = n.layer === 1 ? 0.026 : 0.038;
@@ -2812,14 +2834,26 @@ function gDraw() {
   const { ctx, W, H, view, nodes, edges, hl } = G;
   ctx.clearRect(0, 0, W, H);
   ctx.save(); ctx.translate(view.x, view.y); ctx.scale(view.k, view.k);
+  const br = DX_PREVIEW ? _dxBranches() : null;
   edges.forEach((e, ei) => {
     const a = nodes[e.a], b = nodes[e.b];
+    if (a.hidden || b.hidden) return;
     const on = !hl || hl.eset.has(ei);
+    if (br) {   // 線の色＝どの枝か／太さ＝中心からの段（幹・枝・枝先）／破線＝検索で一緒に出ただけ
+      const deep = (Number(a.layer) || 1) >= (Number(b.layer) || 1) ? e.a : e.b, dn = nodes[deep];
+      const depth = Math.min(Number(a.layer) || 1, Number(b.layer) || 1);
+      ctx.strokeStyle = on ? _dxAlpha(br.color[deep], 0.62) : _dxAlpha(br.color[deep], 0.07);
+      ctx.lineWidth = (on ? (depth <= 1 ? 4.2 : depth === 2 ? 2.2 : 1.2) : 0.6) / view.k;
+      if (dn.kind === "cooccurrence") ctx.setLineDash([5 / view.k, 4 / view.k]);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
+      return;
+    }
     ctx.strokeStyle = on ? "rgba(122,92,46," + (0.28 + 0.4 * e.s) + ")" : "rgba(122,92,46,0.06)";
     ctx.lineWidth = (on ? (0.8 + e.s * 1.2) : 0.5) / view.k;
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   });
   nodes.forEach((n, i) => {
+    if (n.hidden) return;
     const on = !hl || hl.nset.has(i);
     const isRoot = n.layer === 1;          // 入力語（現在地）＝はっきり目立たせる
     const isHover = n === G.hover;          // ホバー中＝何を選んでいるか明瞭に
@@ -2837,10 +2871,17 @@ function gDraw() {
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 5, 0, 7); ctx.setLineDash([4 / view.k, 3 / view.k]);
       ctx.lineWidth = 2 / view.k; ctx.strokeStyle = "#c2410c"; ctx.stroke(); ctx.setLineDash([]);
     }
+    if (DX_PREVIEW && n.foldable) {          // 畳める枝の印（＋＝畳んでいる／−＝開いている）
+      ctx.beginPath(); ctx.arc(n.x, n.y, r + 4, 0, 7); ctx.setLineDash(n.folded ? [3 / view.k, 2 / view.k] : []);
+      ctx.lineWidth = 1.6 / view.k; ctx.strokeStyle = GKIND.language; ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = "#fff"; ctx.font = "bold " + Math.round(r * 1.3) + "px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(n.folded ? "+" : "−", n.x, n.y + 1);
+    }
     const bold = isRoot || isHover;
-    ctx.font = (bold ? "bold " : "") + (isRoot ? 18 : Math.round(10 + n.weight * 1.4)) + "px system-ui, sans-serif";
+    ctx.font = (bold ? "bold " : "") + (isRoot ? 18 : (DX_PREVIEW ? (n.dxDesc ? 13 : 11) : Math.round(10 + n.weight * 1.4))) + "px system-ui, sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-    const lab = n.label.length > 22 ? n.label.slice(0, 21) + "…" : n.label;
+    const lab0 = n.label.length > 22 ? n.label.slice(0, 21) + "…" : n.label;
+    const lab = DX_PREVIEW && n.foldable ? lab0 + (LANG === "ja" ? (n.folded ? "（押すと開く）" : "（押すと畳む）") : (n.folded ? " (click to open)" : " (click to fold)")) : lab0;
     if (bold) {                             // 強調ノードは下地つき・文字を下地の中央に（欠けない）
       const fs = isRoot ? 18 : 13, th = fs + 8, tw = ctx.measureText(lab).width + 14;
       const screenY = n.y * view.k + view.y;
@@ -2879,7 +2920,8 @@ function gEdgeAt(mx, my) {
   // consistent regardless of zoom (fixes the unstable line selection).
   let best = -1, bestd = 8;
   for (let ei = 0; ei < G.edges.length; ei++) {
-    const e = G.edges[ei], a = gToScreen(G.nodes[e.a]), b = gToScreen(G.nodes[e.b]);
+    const e = G.edges[ei]; if (G.nodes[e.a].hidden || G.nodes[e.b].hidden) continue;
+    const a = gToScreen(G.nodes[e.a]), b = gToScreen(G.nodes[e.b]);
     const d = gSegDist(mx, my, a.x, a.y, b.x, b.y);
     if (d < bestd) { bestd = d; best = ei; }
   }
@@ -3730,8 +3772,11 @@ function gLensMenu(W) {
   const p = gPanel((jp ? "見方を選ぶ（この地図の切り口）：" : "Views: ") + W,
     `<p class="muted">${jp ? "同じ言葉を、いくつもの見方で。どれもこの地図（重力場）の切り口です。選ぶとこの語を中心にその見方で描き直します。" : "Views of this map; each re-draws around this word."}</p>`
     + `<div class="lens-list">` + items.map((it, i) =>
-        `<button type="button" class="lens-row" data-i="${i}" data-k="${esc(it.key)}"><b>${esc(it.label)}</b><span class="lens-cap">${esc(it.cap)}</span></button>`).join("") + `</div>`, W);
+        `<button type="button" class="lens-row" data-i="${i}" data-k="${esc(it.key)}"><b>${esc(it.label)}</b><span class="lens-cap">${esc(it.cap)}</span></button>`).join("") + `</div>`
+    + (DX_PREVIEW ? `<label class="lens-pref"><input type="checkbox" class="lens-lang-open"${_langOpenPref() ? " checked" : ""}> ${jp ? "「世界の言語」の枝を、はじめから開いて描く（この端末に覚えます）" : "Draw the world-languages branch open from the start (remembered on this device)"}</label>` : ""), W);
   if (!p) return;
+  const lo = p.querySelector(".lens-lang-open");
+  if (lo) lo.addEventListener("change", () => { _langOpenSet(lo.checked); gBranchSetAll(lo.checked); });
   p._lensItems = items;
   p.querySelectorAll(".lens-row").forEach(b => b.addEventListener("click", () => {
     const it = p._lensItems[+b.dataset.i]; if (!it) return;
@@ -4701,7 +4746,8 @@ function gScreenToGraph(mx, my) {
 function gToScreen(n) { return { x: n.x * G.view.k + G.view.x, y: n.y * G.view.k + G.view.y }; }
 function gNodeAt(mx, my) {
   for (let i = G.nodes.length - 1; i >= 0; i--) {
-    const n = G.nodes[i], s = gToScreen(n), rr = n.r * G.view.k + 8;
+    const n = G.nodes[i]; if (n.hidden) continue;
+    const s = gToScreen(n), rr = n.r * G.view.k + 8;
     if ((s.x - mx) ** 2 + (s.y - my) ** 2 <= rr * rr) return n;
   }
   return null;
@@ -4761,7 +4807,10 @@ function gBind() {
         //  ・構造ノード（domain/区分名/件数＝q無し）は entity ではない → Contextを中心語の全景（該当節）へ
         const n = p.n;
         const isStructure = (n.kind === "domain") || !(n.q || n.label);
-        if (isStructure) {
+        if (isStructure && DX_PREVIEW && n.foldable) {
+          dispatchAction("branch", { term: (G && G.rootQ) || n.label, label: n.label, kind: n.kind, id: n.id, layer: n.layer },
+            currentViewState(), { surface: "node", nodeIdx: G.nodes.indexOf(n) });
+        } else if (isStructure) {
           const secHint = /言語|表記/.test(n.label || "") ? "lang" : /語源|来歴/.test(n.label || "") ? "history" : null;
           dispatchAction("panorama", { term: (G && G.rootQ) || n.label, label: n.label, kind: n.kind, id: n.id, layer: n.layer },
             currentViewState(), { surface: "node", node: null, secHint });
@@ -4799,7 +4848,7 @@ function gFitInstant() { G.view = { x: 0, y: 0, k: 1 }; }
 function graphFit() {
   if (!G || !G.nodes || !G.nodes.length) return;
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  G.nodes.forEach(n => { x0 = Math.min(x0, n.x - n.r - 40); y0 = Math.min(y0, n.y - n.r - 20);
+  G.nodes.forEach(n => { if (n.hidden) return; x0 = Math.min(x0, n.x - n.r - 40); y0 = Math.min(y0, n.y - n.r - 20);
     x1 = Math.max(x1, n.x + n.r + 40); y1 = Math.max(y1, n.y + n.r + 20); });
   const W = G.W > 0 ? G.W : 800, H = G.H > 0 ? G.H : 600;   // canvas未計測(0)でも座標が潰れない
   const spanX = (x1 - x0) > 1 ? (x1 - x0) : 1, spanY = (y1 - y0) > 1 ? (y1 - y0) : 1;   // 縮退bbox(単一/同座標)でも0除算しない
@@ -5385,6 +5434,89 @@ document.addEventListener("pointerdown", (e) => { if (_radial && !e.target.close
 // 少しのスクロール（クリック時のブラウザの位置合わせ・慣性の残り）では閉じない。語が画面上で動いた時だけ閉じる
 window.addEventListener("scroll", () => { if (_radial && Math.abs(scrollY - (_radial._scrollY || 0)) > 40) gRadialClose(); }, { passive: true });
 
+// ── 枝を畳む・開く（所有者 2026-10-23「世界の言語の枝が地図の面積を占め、右の詳しい部分が小さくなる」）──
+// 畳んでも消さない: 語は G に残り（パネル・件数・試験から見える）、描画・配置・当たり判定から外すだけ。
+const DX_LANG_OPEN_KEY = "dx_lang_open";
+function _langOpenPref() { try { return localStorage.getItem(DX_LANG_OPEN_KEY) === "1"; } catch (e) { return false; } }
+function _langOpenSet(v) { try { localStorage.setItem(DX_LANG_OPEN_KEY, v ? "1" : "0"); } catch (e) {} }
+function _branchHide(nodes, children, i, hide) {
+  const base = nodes[i]; base.foldable = true; base.folded = hide;
+  const seen = new Set([i]), stack = [...((children[i]) || [])];
+  while (stack.length) { const c = stack.pop(); if (seen.has(c)) continue; seen.add(c); nodes[c].hidden = hide; ((children[c]) || []).forEach(x => stack.push(x)); }
+}
+function gBranchToggle(idx, want) {
+  if (!G || idx == null || !G.nodes[idx]) return false;
+  const n = G.nodes[idx];
+  if (!(G.children[idx] || []).length) return false;
+  const hide = want == null ? !n.folded : !want;
+  _branchHide(G.nodes, G.children, idx, hide);
+  gInitialLayout(G.nodes, G.edges, G.W, G.H, G.cx, G.cy, G.parent, G.children, true);
+  _dxSizes(); _dxLegend();
+  G.hover = null; G.hl = null; G.needFit = true; G.alpha = 1; gLoop(140);
+  return true;
+}
+function gBranchSetAll(open) {
+  if (!G || !G.nodes) return;
+  G.nodes.forEach((n, i) => { if (n.foldable && n.folded === open) gBranchToggle(i, open); });
+}
+// 円の大きさ＝その先につながる語の数（畳んだ語も数える）。中心の語は最大。測った重要度ではない。
+function _dxSizes() {
+  if (!G || !G.nodes) return;
+  const memo = {};
+  const desc = (i, seen) => {
+    if (memo[i] != null) return memo[i];
+    seen = seen || new Set(); if (seen.has(i)) return 0; seen.add(i);
+    let c = 0; (G.children[i] || []).forEach(ch => { if (G.parent[ch] === i) c += 1 + desc(ch, seen); });
+    return (memo[i] = c);
+  };
+  G.nodes.forEach((n, i) => {
+    const d = desc(i); n.dxDesc = d;
+    n.r = Number(n.layer) <= 1 ? 22 : Math.min(24, 7 + 3 * Math.sqrt(d));
+  });
+  G._brMemo = null;
+}
+// 各語が属する枝（中心の直下の語）と、その色
+const DX_BRANCH_COLOR = { "dom:phil": "#a4581d", "dom:breadth": "#3b6f9e", "dom:general": "#6b7280", "dom:etym": "#7a5c2e" };
+function _dxBranches() {
+  if (G._brMemo && G._brMemo.n === G.nodes.length) return G._brMemo;
+  const color = [], branch = [];
+  G.nodes.forEach((n, i) => {
+    let j = i, guard = 0;
+    while (G.parent[j] != null && Number(G.nodes[G.parent[j]].layer) > 1 && guard++ < 20) j = G.parent[j];
+    branch[i] = j;
+    const b = G.nodes[j];
+    color[i] = Number(n.layer) <= 1 ? "#7c2d12" : (DX_BRANCH_COLOR[b.id] || GKIND[b.kind] || "#7a5c2e");
+  });
+  return (G._brMemo = { n: G.nodes.length, color, branch });
+}
+function _dxAlpha(hex, a) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || ""); if (!m) return `rgba(122,92,46,${a})`;
+  const v = parseInt(m[1], 16); return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`;
+}
+const DX_KIND_JA = { ...REL_KIND_JA, domain: "分類（枝の根元）" };
+// 凡例: 見た目のそれぞれが何を表すかを地図の隅に常に出す（畳める・開閉は端末に覚える）
+function _dxLegend() {
+  const stage = document.querySelector("#origin-graph-wrap .graph-stage"); if (!stage || !G) return;
+  const jp = LANG === "ja";
+  let el = stage.parentNode.querySelector(".dx-legend");
+  // 地図の上に重ねない（語を覆って押せなくなる）。地図のすぐ下に置く
+  if (!el) { el = document.createElement("details"); el.className = "dx-legend"; stage.insertAdjacentElement("afterend", el);
+    let open = window.innerWidth >= 700; try { const v = localStorage.getItem("dx_legend_open"); if (v != null) open = v !== "0"; } catch (e) {}
+    el.open = open; el.addEventListener("toggle", () => { try { localStorage.setItem("dx_legend_open", el.open ? "1" : "0"); } catch (e) {} }); }
+  const br = _dxBranches(), seenB = new Map(), kinds = new Set();
+  G.nodes.forEach((n, i) => { kinds.add(n.kind); const b = G.nodes[br.branch[i]]; if (b && Number(b.layer) === 2 && !seenB.has(b.id)) seenB.set(b.id, { label: b.label, color: br.color[i] }); });
+  // 従来の注記「重力(nodeの大きさ)…は密度の代理指標」は、この凡例と食い違うので言い換える
+  const gn = $("graph-note"); if (gn && /^重力\(nodeの大きさ\)/.test(gn.textContent)) gn.textContent = jp ? "見た目が表すものは上の凡例のとおりです。データのある枝だけを描きます（無い枝を作りません）。著者の並びは史的順。" : gn.textContent;
+  const folded = G.nodes.filter(n => n.folded);
+  const hiddenN = G.nodes.filter(n => n.hidden).length;
+  el.innerHTML = `<summary>${jp ? "凡例（見た目が表すもの）" : "Legend"}</summary>`
+    + (seenB.size ? `<p class="lg-h">${jp ? "線の色＝どの枝か" : "Line colour = branch"}</p><ul class="lg-br">${[...seenB.values()].map(b => `<li><i style="background:${esc(b.color)}"></i>${esc(b.label)}</li>`).join("")}</ul>` : "")
+    + `<p>${jp ? "線の太さ＝中心からの段（太い幹 → 枝 → 細い枝先）。関係の強さを測った値ではありません。" : "Line width = step from the centre (trunk → branch → twig); not a measured strength."}</p>`
+    + (kinds.has("cooccurrence") ? `<p>${jp ? "破線＝検索で一緒に出ただけの語（関係は確かめていません）。" : "Dashed = only co-occurred in search."}</p>` : "")
+    + `<p>${jp ? "円の大きさ＝その先につながる語の数。円の色＝種類：" : "Circle size = words beyond it. Colour = kind:"}</p><ul class="lg-kind">${[...kinds].filter(k => k !== "word").map(k => `<li><i style="background:${esc(GKIND[k] || "#888")}"></i>${esc(jp ? (DX_KIND_JA[k] || k) : k)}</li>`).join("")}</ul>`
+    + (folded.length ? `<p class="lg-fold">${jp ? `畳んでいる枝：${folded.map(n => esc(n.label)).join("・")}（${hiddenN} 語）。円の「＋」を押すと開きます。はじめから開くかは「見方」で選べます。` : `Folded: ${folded.map(n => esc(n.label)).join(", ")} (${hiddenN}). Click “+” to open.`}</p>` : "");
+}
+
 // ── その場で広げる（中心を変えずに、選んだ語の先を枝として生やす）──
 async function gExpandInPlace(nodeIdx, term) {
   if (!G || nodeIdx == null || !G.nodes[nodeIdx]) return false;
@@ -5413,6 +5545,7 @@ async function gExpandInPlace(nodeIdx, term) {
     (G.children[nodeIdx] = G.children[nodeIdx] || []).push(i);
     G.parent[i] = nodeIdx;
   });
+  if (DX_PREVIEW) { _dxSizes(); _dxLegend(); }
   G.alpha = 1; gLoop(140);
   return true;
 }
@@ -5543,6 +5676,7 @@ function _partNodesAdd(nodeIdx, units, opts) {
     G.parent[i] = nodeIdx;
   });
   base.splitDone = true;
+  if (DX_PREVIEW) { _dxSizes(); _dxLegend(); }
   if (!(opts && opts.quiet)) gGrowNote(LANG === "ja"
     ? `「${base.label}」を ${list.map(u => u.text).join("＋")} に分けました` + (list.length > fresh.length ? `（${list.length - fresh.length} つは、すでにこの地図にあります）` : "")
     : `Split “${base.label}” into ${list.map(u => u.text).join(" + ")}`);
