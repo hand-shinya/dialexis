@@ -3514,6 +3514,21 @@ function _graphWorkFor(node) {
 function _relationEvidenceLabel(level) {
   return ({ confirmed: "本文・書誌を確認", bibliography_confirmed: "書誌を確認", strong: "有力・要照合", candidate: "調査候補", unverified: "未確認" }[level] || "調査候補");
 }
+// 地図の上で、その語をどこから広げたか（分類の箱は飛ばす）。地図の中心まで戻ったら null。
+// 所有者 2026-10-23: 実存 → ポストモダンを広げて出たフロイトを「実存から派生」と書き、実存主義とフロイトの記事で根拠の文を探して0件だった。
+// ポストモダンとフロイトで探せば「ニーチェ、フロイト、ハイデッガーらの思想を源泉とし」の文が在る。
+function _growBase(node) {
+  if (!node || !G || !G.nodes || !G.parent) return null;
+  let pi = G.parent[G.nodes.indexOf(node)];
+  for (let guard = 0; pi != null && guard < 12; guard++) {
+    const pn = G.nodes[pi]; if (!pn || Number(pn.layer) <= 1) return null;
+    if (pn.kind !== "domain" && (pn.q || pn.label)) return pn;
+    pi = G.parent[pi];
+  }
+  return null;
+}
+const REL_KIND_JA = { word: "語", original: "原語", author: "人物", work: "著作", language: "他の言語の語", part: "語の部分",
+  related: "関連する語", opposite: "対立する語", appdomain: "応用の分野", application: "応用", cooccurrence: "一緒に検索に出た語" };
 function _relationInfo(node) {
   if (!node || node.layer == null || Number(node.layer) <= 1 || node.kind === "domain") return null;
   const pair = G_raw && G_raw.person_pair;
@@ -3530,6 +3545,12 @@ function _relationInfo(node) {
       work: node.work, term_de: node.term_de, qid: node.qid, search: node.search },
     sourceIds: []
   };
+  const base = DX_PREVIEW && !profile && !pair ? _growBase(node) : null;
+  if (base) {
+    const bt = base.q || base.label;
+    info.center = bt; info.centerTerm = bt; info.mapRoot = (G && G.rootQ) || "";
+    info.summary = `「${bt}」から広げて出た「${node.label}」。地図の中心「${info.mapRoot}」とは「${bt}」を介してつながっています。同じ意味の語としてではなく、著作・思想・歴史・受容の接続として確かめます。`;
+  }
   if (profile) {
     const pairNorm = _relationNorm(node.label);
     const foundWork = _graphWorkFor(node);
@@ -3589,10 +3610,10 @@ function gRelationshipPanel(term, relation, node) {
   const next = [];
   if (info.work) next.push({ id: "authorNote", label: "📖 この著作の系譜を読む", target: info.node, ctx: { node: info.node } });
   if (info.targetKind === "author") next.push({ id: "translationHistory", label: "🧭 この人物の著作・受容史へ", target: info.node, ctx: { node: info.node } });
-  next.push({ id: "center", label: "🎯 中心命題を地図の中心に戻す", target: { term: info.centerTerm || info.center, label: info.centerTerm || info.center, kind: "word", q: info.centerTerm || info.center } });
+  next.push({ id: "center", label: info.mapRoot ? `🎯「${info.center}」を地図の中心にする` : "🎯 中心命題を地図の中心に戻す", target: { term: info.centerTerm || info.center, label: info.centerTerm || info.center, kind: "word", q: info.centerTerm || info.center } });
   const p = gPanel(`🧭 中心命題との関係：${info.target}`,
-    `<div class="rel-hero"><p class="rel-route"><span>中心命題</span><b>${esc(info.center)}</b><span>→</span><span>派生項目</span><b>${esc(info.target)}</b></p><p>${esc(info.summary)}</p></div>
-      <section class="rel-section"><h4>この地図での接続</h4><dl class="rel-dl"><dt>位置</dt><dd>${esc(relationText)}</dd><dt>対象の種類</dt><dd>${esc(info.targetKind || "項目")}</dd><dt>証拠階層</dt><dd><span class="rel-evidence">${esc(_relationEvidenceLabel(info.evidence))}</span></dd></dl>${DX_PREVIEW && detail === info.summary ? "" : `<p class="rel-detail">${esc(detail)}</p>`}</section>
+    `<div class="rel-hero"><p class="rel-route">${info.mapRoot ? `<span>地図の中心</span><b>${esc(info.mapRoot)}</b><span>→</span><span>広げた語</span><b>${esc(info.center)}</b><span>→</span><span>この項目</span>` : `<span>中心命題</span><b>${esc(info.center)}</b><span>→</span><span>派生項目</span>`}<b>${esc(info.target)}</b></p><p>${esc(info.summary)}</p></div>
+      <section class="rel-section"><h4>この地図での接続</h4><dl class="rel-dl"><dt>位置</dt><dd>${esc(relationText)}</dd><dt>対象の種類</dt><dd>${esc((DX_PREVIEW && REL_KIND_JA[info.targetKind]) || info.targetKind || "項目")}</dd><dt>証拠階層</dt><dd><span class="rel-evidence">${esc(_relationEvidenceLabel(info.evidence))}</span></dd></dl>${DX_PREVIEW && detail === info.summary ? "" : `<p class="rel-detail">${esc(detail)}</p>`}</section>
       ${DX_PREVIEW ? `${_relFactsHtml(info.node)}<section class="rel-section rel-evidence-sec"><h4>なぜつながっているか（本文の文）</h4><div class="rel-ev" aria-live="polite"><p class="srcline muted">Wikipedia の本文から、2つの語が一緒に出てくる文を探しています…</p></div></section>`
         : `<section class="rel-section"><h4>ここで分けて読むこと</h4><ul class="rel-list"><li>中心命題そのものの主張と、派生項目の著作・思想・受容上の位置を混同しない。</li><li>人物名の表記差、著作題名の翻訳差、引用・影響関係を別々の証拠単位で確認する。</li><li>「調査候補」は入口であり、本文・版・標準ロケータの照合後に確定度を更新する。</li></ul></section>`}
       <section class="rel-section"><h4>次に広げる</h4><div class="rel-next">${next.map((x, i) => `<button type="button" class="rel-next-btn" data-i="${i}">${esc(x.label)}</button>`).join("")}</div></section>
@@ -5786,7 +5807,8 @@ function dxSliceMap(arr, n, f, joiner, label) {
 let _dsServicesCache = null;
 async function gDeepPromptPanel(term, node) {
   const jp = LANG === "ja";
-  const center = (G && G.rootQ && G.rootQ !== term) ? G.rootQ : "";
+  const gb = _growBase(node && G && G.nodes && G.nodes.includes(node) ? node : null);
+  const center = gb ? (gb.q || gb.label) : ((G && G.rootQ && G.rootQ !== term) ? G.rootQ : "");
   const tr = typeof trailLoad === "function" ? trailLoad() : { steps: [] };
   const path = tr.steps.map(s => (s.a === "center" ? "" : ((TRAIL_VERB[s.a] || "") + " ")) + (s.a === "pair" ? `${s.paLabel || s.pa} × ${s.term}` : s.label)).slice(-8);
   if (!path.length || path[path.length - 1].indexOf(term) < 0) path.push(term);
