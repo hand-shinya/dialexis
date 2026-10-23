@@ -34,7 +34,7 @@ const GRAPH = (q) => ({ query: q, note: "fx", nodes: [{ id: "root", label: q, ki
     await p.evaluate((lb) => { const G = window.__dx.G; const n = G.nodes.find(x => x.label === lb); return dispatchAction("relationship", n, currentViewState(), { surface: "radial", node: n }); }, label);
     await p.waitForTimeout(1200); return p.$eval(".rel-via-tpl", e => e.innerText).catch(() => ""); };
   const t1 = await rel("枠の人");
-  ok("① 本文に出てこない思想家は、関係パネルでそう告げる（記事名つき）", /本文には出てきません/.test(t1) && /中心語の記事/.test(t1), t1.slice(0, 60));
+  ok("① 本文に出てこない思想家は、関係パネルでそう告げる（記事名つき）", /リンクも名前も見当たりません/.test(t1) && /中心語の記事/.test(t1), t1.slice(0, 60));
   const t2 = await rel("本文の人");
   ok("① 本文でリンクされている思想家には、その告知を出さない", t2 === "");
   const lg = await p.$eval(".dx-legend", e => e.innerText).catch(() => "");

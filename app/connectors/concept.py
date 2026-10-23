@@ -86,7 +86,7 @@ async def _article_resolved(title, lang):
         # 本文（テンプレートの外）でリンクしている記事の見出し。prop=links は記事の横の案内枠
         # （例: 哲学のサイドバー）のリンクも含むので、本文で触れていない人物まで「記事が言及」と
         # 出ていた（所有者の写し 10/23 17:27: 実存主義の本文にカントは出てこない）。消さずに印を付ける。
-        body = await _body_link_titles(title, lang)
+        body, body_text = await _body_links_and_text(title, lang)
         qids, final_qid = [], {}
         for i in range(0, len(titles), 50):
             pp, _, _ = await cached_get_json(WP_API.format(lang=lang), {
@@ -108,7 +108,15 @@ async def _article_resolved(title, lang):
         body_qids = {_qid_of(t) for t in body} if body is not None else None
         res = list((await _resolve(qids, lang)).values())
         for v in res:
-            v["in_body"] = (v["qid"] in body_qids) if body_qids is not None else None
+            if body_qids is None:
+                v["in_body"] = None
+            elif v["qid"] in body_qids:
+                v["in_body"], v["body_mention"] = True, "link"
+            elif _name_in_text(v.get("label") or "", body_text):
+                # リンクは無いが本文（注釈を含む）に名前が書かれている（構造主義の「マルクスへの批判」）
+                v["in_body"], v["body_mention"] = True, "text"
+            else:
+                v["in_body"] = False
         return res
     except Exception:
         return []
@@ -130,20 +138,44 @@ def _strip_templates(t):
 
 async def _body_link_titles(title, lang):
     """記事の本文（テンプレートの外）で [[…]] リンクしている見出しの集合。取れなければ None（＝不明）。"""
+    return (await _body_links_and_text(title, lang))[0]
+
+
+# 名前の前後が語の続き（漢字・カタカナ）なら、別の語の一部とみなす（新カント派・マルクス主義は カント・マルクス の言及にしない）
+_NAME_EDGE = "\u30A0-\u30FF\u4E00-\u9FFF"
+
+
+def _name_in_text(label, text):
+    """本文に人名が書かれているか。全名か、姓（・＝ で区切った最後の部分・2字以上）を、語の境目で探す。"""
+    if not label or not text:
+        return False
+    forms = {label}
+    last = re.split(r"[・＝=･\s]", label)[-1]
+    if len(last) >= 2:
+        forms.add(last)
+    for f in forms:
+        if re.search(r"(?<![" + _NAME_EDGE + r"])" + re.escape(f) + r"(?![" + _NAME_EDGE + r"])", text):
+            return True
+    return False
+
+
+async def _body_links_and_text(title, lang):
+    """(本文のリンク先の見出しの集合, テンプレートを除いた本文)。取れなければ (None, "")。"""
     try:
         d, _, _ = await cached_get_json(WP_API.format(lang=lang), {
             "action": "parse", "page": title, "prop": "wikitext", "redirects": 1, "format": "json"}, ttl=86400)
         w = (((d.get("parse") or {}).get("wikitext") or {}).get("*")) or ""
     except Exception:
-        return None
+        return None, ""
     if not w:
-        return None
+        return None, ""
+    body = _strip_templates(w)
     out = set()
-    for m in re.findall(r"\[\[([^\]|#]+)", _strip_templates(w)):
+    for m in re.findall(r"\[\[([^\]|#]+)", body):
         t = m.strip().replace("_", " ")
         if t and ":" not in t[:12]:
             out.add(t[:1].upper() + t[1:])
-    return out
+    return out, body
 
 
 async def _article_persons(title, lang, exclude):

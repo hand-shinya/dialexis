@@ -3660,7 +3660,7 @@ function gRelationshipPanel(term, relation, node) {
   const p = gPanel(`🧭 中心命題との関係：${info.target}`,
     `<div class="rel-hero"><p class="rel-route">${info.mapRoot ? `<span>地図の中心</span><b>${esc(info.mapRoot)}</b><span>→</span><span>広げた語</span><b>${esc(info.center)}</b><span>→</span><span>この項目</span>` : `<span>中心命題</span><b>${esc(info.center)}</b><span>→</span><span>派生項目</span>`}<b>${esc(info.target)}</b></p><p>${esc(info.summary)}</p></div>
       <section class="rel-section"><h4>この地図での接続</h4><dl class="rel-dl"><dt>位置</dt><dd>${esc(relationText)}</dd><dt>対象の種類</dt><dd>${esc((DX_PREVIEW && REL_KIND_JA[info.targetKind]) || info.targetKind || "項目")}</dd><dt>証拠階層</dt><dd><span class="rel-evidence">${esc(_relationEvidenceLabel(info.evidence))}</span></dd></dl>${DX_PREVIEW && detail === info.summary ? "" : `<p class="rel-detail">${esc(detail)}</p>`}</section>
-      ${DX_PREVIEW ? `${_relFactsHtml(info.node)}<section class="rel-section rel-evidence-sec"><h4>なぜつながっているか（本文の文）</h4>${info.node && info.node.in_body === false && !info.mapRoot ? `<p class="rel-via-tpl">「${esc(info.target)}」は『${esc(info.node.via_article || info.center)}』の記事の<b>本文には出てきません</b>。記事の横の案内枠（テンプレート）にあるリンクから、この地図に入っています。下の文が0件なのはそのためで、つながりが無いという意味ではありません。地図では破線で描いています。</p>` : ""}<div class="rel-ev" aria-live="polite"><p class="srcline muted">Wikipedia の本文から、2つの語が一緒に出てくる文を探しています…</p></div></section>`
+      ${DX_PREVIEW ? `${_relFactsHtml(info.node)}<section class="rel-section rel-evidence-sec"><h4>なぜつながっているか（本文の文）</h4>${info.node && info.node.in_body === false && !info.mapRoot ? `<p class="rel-via-tpl">「${esc(info.target)}」は『${esc(info.node.via_article || info.center)}』の記事の<b>本文（注釈を含む）には、リンクも名前も見当たりません</b>。記事の横の案内枠（テンプレート）にあるリンクから、この地図に入っています。下の文が0件なのはそのためで、つながりが無いという意味ではありません。地図では破線で描いています。</p>` : ""}<div class="rel-ev" aria-live="polite"><p class="srcline muted">Wikipedia の本文から、2つの語が一緒に出てくる文を探しています…</p></div></section>`
         : `<section class="rel-section"><h4>ここで分けて読むこと</h4><ul class="rel-list"><li>中心命題そのものの主張と、派生項目の著作・思想・受容上の位置を混同しない。</li><li>人物名の表記差、著作題名の翻訳差、引用・影響関係を別々の証拠単位で確認する。</li><li>「調査候補」は入口であり、本文・版・標準ロケータの照合後に確定度を更新する。</li></ul></section>`}
       <section class="rel-section"><h4>次に広げる</h4><div class="rel-next">${next.map((x, i) => `<button type="button" class="rel-next-btn" data-i="${i}">${esc(x.label)}</button>`).join("")}</div></section>
       ${sources.length ? `<section class="rel-section"><h4>確認入口</h4><div class="rel-sources">${sources.map(s => s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id)}</a>` : `<span>${esc(s.label || s.id)}</span>`).join(" ")}</div></section>` : `<p class="srcline">この接続は探索レンズとして提示しています。本文・版・引用箇所を追加すれば証拠単位へ更新できます。</p>`}`,
@@ -4122,8 +4122,8 @@ function _bodyFirst(list) {
   if (!DX_PREVIEW) return { body: list, tpl: [] };
   return { body: list.filter(x => x.in_body !== false), tpl: list.filter(x => x.in_body === false) };
 }
-const TPL_FOLD_LABEL = "記事の本文に出てこない思想家（記事の横の案内枠のリンクだけ）";
-const TPL_FOLD_REASON = "本文で触れられていることを確かめられないため畳んでいます（消してはいません）";
+const TPL_FOLD_LABEL = "記事の本文に名前が見当たらない思想家（記事の横の案内枠のリンクだけ）";
+const TPL_FOLD_REASON = "本文（注釈を含む）にリンクも名前も見当たらないため畳んでいます（消してはいません）";
 function _panoBearers(d) {   // 原語・思想家・著作（概念を担った系譜＝日本語表記の来歴とは別次元）
   const o = d.origin || {}; let h = "";
   const co = _panoOrigSplit(d).origs;   // 語自身の語源に接地した原語だけ（翻訳対応語は表記側へ）
@@ -5076,7 +5076,7 @@ async function originRun(q, tok) {
   // (1b) 関連する思想家（記事言及・重要度順）— P50/P61が無い概念でも0にしない（資本主義→スミス/マルクス…）
   if (assoc.length) {
     html += `<div class="assoc-line">${jp ? "関連する思想家（この概念の記事がリンク・重要度順）" : "Associated thinkers (linked from the article, by prominence)"}:
-      ${(() => { const bf = _bodyFirst(assoc), one = p => `<a href="#" class="origin-thinker" data-name="${esc(p.label)}">${esc(p.label)}</a>${DX_PREVIEW && p.in_body === false ? `<small class="via-tpl">${jp ? "（本文に無く、記事の横の案内枠のリンクだけ）" : " (sidebar link only)"}</small>` : ""}`;
+      ${(() => { const bf = _bodyFirst(assoc), one = p => `<a href="#" class="origin-thinker" data-name="${esc(p.label)}">${esc(p.label)}</a>${DX_PREVIEW && p.in_body === false ? `<small class="via-tpl">${jp ? "（本文に名前が見当たらず、記事の横の案内枠のリンクだけ）" : " (sidebar link only)"}</small>` : ""}`;
         return bf.body.map(one).join("　／　") + (bf.tpl.length ? dxFold(TPL_FOLD_LABEL, bf.tpl.length, TPL_FOLD_REASON, bf.tpl.map(one).join("　／　")) : ""); })()}</div>
       <p class="srcline">${jp ? "『立てた人』が一人に定まらない概念でも、通常検索が結びつける主要人物へ届くための層。記事の言及に接地（賛否は判定しない）。" : "A recall layer reaching the figures normal search associates; grounded in the article's mentions."}</p>`;
   }
@@ -5547,7 +5547,7 @@ function _dxLegend() {
   el.innerHTML = `<summary>${jp ? "凡例（見た目が表すもの）" : "Legend"}</summary>`
     + (seenB.size ? `<p class="lg-h">${jp ? "線の色＝どの枝か" : "Line colour = branch"}</p><ul class="lg-br">${[...seenB.values()].map(b => `<li><i style="background:${esc(b.color)}"></i>${esc(b.label)}</li>`).join("")}</ul>` : "")
     + `<p>${jp ? "線の太さ＝中心からの段（太い幹 → 枝 → 細い枝先）。関係の強さを測った値ではありません。" : "Line width = step from the centre (trunk → branch → twig); not a measured strength."}</p>`
-    + (kinds.has("cooccurrence") || G.nodes.some(n => n.in_body === false) ? `<p>${jp ? "破線＝記事の本文では確かめられない語（検索で一緒に出ただけ・記事の横の案内枠のリンクだけ）。" : "Dashed = linked only outside the article body (sidebar) or co-occurring in search."}</p>` : "")
+    + (kinds.has("cooccurrence") || G.nodes.some(n => n.in_body === false) ? `<p>${jp ? "破線＝記事の本文では確かめられない語（検索で一緒に出ただけ・本文に名前が見当たらず記事の横の案内枠のリンクだけ）。" : "Dashed = linked only outside the article body (sidebar) or co-occurring in search."}</p>` : "")
     + `<p>${jp ? "円の大きさ＝その先につながる語の数。円の色＝種類：" : "Circle size = words beyond it. Colour = kind:"}</p><ul class="lg-kind">${[...kinds].filter(k => k !== "word").map(k => `<li><i style="background:${esc(GKIND[k] || "#888")}"></i>${esc(jp ? (DX_KIND_JA[k] || k) : k)}</li>`).join("")}</ul>`
     + (folded.length ? `<p class="lg-fold">${jp ? `畳んでいる枝：${folded.map(n => esc(n.label)).join("・")}（${hiddenN} 語）。円の「＋」を押すと開きます。はじめから開くかは「見方」で選べます。` : `Folded: ${folded.map(n => esc(n.label)).join(", ")} (${hiddenN}). Click “+” to open.`}</p>` : "");
 }

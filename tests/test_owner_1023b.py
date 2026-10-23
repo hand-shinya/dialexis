@@ -92,3 +92,27 @@ def test_katakana_word_without_particle_is_not_split(monkeypatch):
         return {"ポスト", "モダン"}, "t", None
     monkeypatch.setattr(ety, "_wikt_titles", titles)
     assert asyncio.run(ety.grounded_cjk_units("ポストモダン")) is None
+
+
+def test_name_written_without_link_counts_as_in_body():
+    # 構造主義の記事は、注釈で「マルクスへの批判」とリンク無しに名前を書く。これを「本文に無い」と言わない
+    t = "岩井克人によれば構造主義とは、歴史には方向性があるとするマルクスへの批判であり、新カント派とは別に"
+    assert concept._name_in_text("カール・マルクス", t)
+    assert not concept._name_in_text("イマヌエル・カント", t)        # 新カント派 は カント の言及ではない
+    assert not concept._name_in_text("カール・マルクス", "マルクス主義を更新")   # 別の語の一部
+
+
+def test_text_mention_is_marked_in_body(monkeypatch):
+    wt = "{{哲学のサイドバー|[[カール・マルクス]]}}本文で歴史を論じ、マルクスへの批判を述べる。"
+    async def fake(url, params, ttl=0):
+        if params.get("prop") == "links":
+            return {"query": {"pages": {"1": {"links": [{"title": "カール・マルクス"}]}}}}, "t", False
+        if params.get("action") == "parse":
+            return {"parse": {"wikitext": {"*": wt}}}, "t", False
+        return {"query": {"pages": {"a": {"title": "カール・マルクス", "pageprops": {"wikibase_item": "Q9061"}}}}}, "t", False
+    async def resolve(qids, lang="ja"):
+        return {q: {"qid": q, "label": "カール・マルクス", "is_person": True, "nclaims": 1} for q in qids}
+    monkeypatch.setattr(concept, "cached_get_json", fake)
+    monkeypatch.setattr(concept, "_resolve", resolve)
+    v = asyncio.run(concept._article_resolved("構造主義", "ja"))[0]
+    assert v["in_body"] is True and v["body_mention"] == "text"
