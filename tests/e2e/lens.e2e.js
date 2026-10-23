@@ -13,7 +13,9 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
   const kinds = () => page.evaluate(() => (G && G.nodes ? G.nodes.map(n => n.kind) : []));
   const labels = () => page.evaluate(() => (G && G.nodes ? G.nodes.map(n => n.label) : []));
 
-  await page.goto(`${BASE}/origin?q=%E3%83%AA%E3%82%BE%E3%83%BC%E3%83%A0&lang=ja`, { waitUntil: "networkidle" });
+  // 実 API（Wikimedia）の応答を「通信が静まるまで」待つと、冷えた取得で30秒を超えて落ちた（10/23）。地図ができた状態を待つ。
+  await page.goto(`${BASE}/origin?q=%E3%83%AA%E3%82%BE%E3%83%BC%E3%83%A0&lang=ja`, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => typeof G !== "undefined" && G && G.nodes && G.nodes.length >= 3, null, { timeout: 90000 }).catch(() => {});
   await page.waitForTimeout(1500);
 
   await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();});
@@ -25,7 +27,7 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
 
   // 思想家と著作レンズ
   let reqDuring = 0;
-  page.on("request", r => { if (/\/api\/origin\/graph/.test(r.url())) reqDuring++; });
+  page.on("request", r => { if (/\/api\/origin\/graph/.test(r.url())) { reqDuring++; console.log("graph req", r.url().slice(-80)); } });
   const before = reqDuring;
   await page.evaluate(()=>{const c=[...document.querySelectorAll("#graph-lens .tm-chip")].find(x=>x.textContent.includes("見方"));if(c)c.click();}); await page.waitForTimeout(350); await page.click('.lens-row[data-k="thinkers"]');
   await page.waitForTimeout(900);

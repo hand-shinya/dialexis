@@ -4,7 +4,9 @@ const BASE = process.argv[2] || "http://127.0.0.1:8012";
 (async () => {
   const b = await chromium.launch({ executablePath: EXE, headless: true }); const p = await b.newPage();
   const R = []; const ok = (n, c, d) => { R.push(c); console.log(`${c ? "PASS" : "FAIL"}  ${n}${d ? "  — " + d : ""}`); };
-  await p.goto(`${BASE}/origin?q=%E5%BC%81%E8%A8%BC%E6%B3%95&lang=ja`, { waitUntil: "networkidle" });
+  // 実 API（Wikimedia）の応答を「通信が静まるまで」待つと、冷えた取得で30秒を超えて落ちた（10/23）。地図ができた状態を待つ。
+  await p.goto(`${BASE}/origin?q=%E5%BC%81%E8%A8%BC%E6%B3%95&lang=ja`, { waitUntil: "domcontentloaded" });
+  await p.waitForFunction(() => typeof G !== "undefined" && G && G.nodes && G.nodes.length >= 3, null, { timeout: 90000 }).catch(() => {});
   await p.waitForTimeout(1500);
   ok("メニューに『語源と構成要素を解剖する』がある", await p.evaluate(() => gActions({ kind: "word", label: "弁証法", q: "弁証法" }).some(i => /解剖/.test(i.t))));
   await p.evaluate(() => gAnatomyPanel("弁証法"));
