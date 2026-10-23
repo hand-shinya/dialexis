@@ -802,3 +802,8 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .dx-legend .lg-kind i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 .dx-legend .lg-fold { color: #2f5f88; }
 .lens-pref { display: block; margin-top: 10px; font-size: 13px; color: #3a3a3a; }
+
+.via-tpl { color: #8a6d3b; font-size: 11px; margin-left: 2px; }
+.rel-via-tpl { background: #fbf6ea; border-left: 3px solid #c9a65a; padding: 6px 9px; font-size: 12.5px; margin: 4px 0 8px; }
+.ds-particle, .anat-particle { color: #6b6b6b; padding: 0 2px; }
+.segment-particle { color: #6b6b6b; }

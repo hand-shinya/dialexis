@@ -83,17 +83,67 @@ async def _article_resolved(title, lang):
                   for l in pg.get("links", [])][:220]
         if not titles:
             return []
-        qids = []
+        # 本文（テンプレートの外）でリンクしている記事の見出し。prop=links は記事の横の案内枠
+        # （例: 哲学のサイドバー）のリンクも含むので、本文で触れていない人物まで「記事が言及」と
+        # 出ていた（所有者の写し 10/23 17:27: 実存主義の本文にカントは出てこない）。消さずに印を付ける。
+        body = await _body_link_titles(title, lang)
+        qids, final_qid = [], {}
         for i in range(0, len(titles), 50):
             pp, _, _ = await cached_get_json(WP_API.format(lang=lang), {
                 "action": "query", "prop": "pageprops", "titles": "|".join(titles[i:i + 50]),
                 "redirects": 1, "format": "json"}, ttl=86400)
-            qids += [pg.get("pageprops", {}).get("wikibase_item")
-                     for pg in pp.get("query", {}).get("pages", {}).values()
-                     if pg.get("pageprops", {}).get("wikibase_item")]
-        return list((await _resolve(qids, lang)).values())
+            q_ = pp.get("query", {})
+            for pg in q_.get("pages", {}).values():
+                qid = pg.get("pageprops", {}).get("wikibase_item")
+                if qid:
+                    qids.append(qid); final_qid[pg.get("title")] = qid
+            for m in (q_.get("normalized") or []) + (q_.get("redirects") or []):
+                final_qid.setdefault(m.get("from"), None)
+                final_qid[m.get("from")] = m.get("to")   # 後で辿る（from → to → qid）
+        def _qid_of(t, guard=0):
+            v = final_qid.get(t)
+            if v is None or guard > 4:
+                return None
+            return v if re.fullmatch(r"Q\d+", str(v)) else _qid_of(v, guard + 1)
+        body_qids = {_qid_of(t) for t in body} if body is not None else None
+        res = list((await _resolve(qids, lang)).values())
+        for v in res:
+            v["in_body"] = (v["qid"] in body_qids) if body_qids is not None else None
+        return res
     except Exception:
         return []
+
+
+def _strip_templates(t):
+    """wikitext から {{…}}（入れ子を含む）を除いた本文。"""
+    out, depth, i = [], 0, 0
+    while i < len(t):
+        if t.startswith("{{", i):
+            depth += 1; i += 2; continue
+        if t.startswith("}}", i) and depth:
+            depth -= 1; i += 2; continue
+        if depth == 0:
+            out.append(t[i])
+        i += 1
+    return "".join(out)
+
+
+async def _body_link_titles(title, lang):
+    """記事の本文（テンプレートの外）で [[…]] リンクしている見出しの集合。取れなければ None（＝不明）。"""
+    try:
+        d, _, _ = await cached_get_json(WP_API.format(lang=lang), {
+            "action": "parse", "page": title, "prop": "wikitext", "redirects": 1, "format": "json"}, ttl=86400)
+        w = (((d.get("parse") or {}).get("wikitext") or {}).get("*")) or ""
+    except Exception:
+        return None
+    if not w:
+        return None
+    out = set()
+    for m in re.findall(r"\[\[([^\]|#]+)", _strip_templates(w)):
+        t = m.strip().replace("_", " ")
+        if t and ":" not in t[:12]:
+            out.add(t[:1].upper() + t[1:])
+    return out
 
 
 async def _article_persons(title, lang, exclude):
@@ -127,6 +177,10 @@ _CODE = {
     "ar": "アラビア語", "fa": "ペルシア語", "ru": "ロシア語", "it": "イタリア語",
     "es": "スペイン語", "pt": "ポルトガル語", "nl": "オランダ語", "bo": "チベット語",
 }
+# 冒頭の「英: Leibniz's notation」形。ラテン・ギリシア・キリル文字の語は空白をまたいで続ける
+# （以前は空白で切れ、Leibniz's だけを英語の原語として地図に出していた・所有者の写し 10/23 17:34）。
+_LEAD_ABBREV_RE = re.compile(
+    r"([独英羅希梵巴中露伊西葡蘭韓朝蔵])\s*[:：]\s*([^\s、。，,）)（(]+(?: [A-Za-zÀ-ɏͰ-ϿЀ-ӿ][^\s、。，,）)（(;；]*)*)")
 # Single-kanji abbreviations Japanese leads use plainly (独: Entfremdung).
 _ABBREV = {
     "独": "ドイツ語", "英": "英語", "羅": "ラテン語", "希": "ギリシャ語",
@@ -350,9 +404,7 @@ async def node(word: str, lang: str = "ja", typed: bool = False) -> dict:
         for code, term in re.findall(r"\{\{lang-([a-z-]+)\|([^|}{\n]+)", wikitext[:2500]):
             base = code.split("-")[0]
             _add(_CODE.get(code) or _CODE.get(base) or base, term)
-        for ab, term in re.findall(
-                r"([独英羅希梵巴中露伊西葡蘭韓朝蔵])\s*[:：]\s*([^\s、。，,）)（(]+)",
-                extract[:700]):
+        for ab, term in _LEAD_ABBREV_RE.findall(extract[:700]):
             _add(_ABBREV.get(ab), term)
         origs = list(by_name.values())
 

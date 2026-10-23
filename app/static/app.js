@@ -2844,7 +2844,7 @@ function gDraw() {
       const depth = Math.min(Number(a.layer) || 1, Number(b.layer) || 1);
       ctx.strokeStyle = on ? _dxAlpha(br.color[deep], 0.62) : _dxAlpha(br.color[deep], 0.07);
       ctx.lineWidth = (on ? (depth <= 1 ? 4.2 : depth === 2 ? 2.2 : 1.2) : 0.6) / view.k;
-      if (dn.kind === "cooccurrence") ctx.setLineDash([5 / view.k, 4 / view.k]);
+      if (dn.kind === "cooccurrence" || dn.in_body === false) ctx.setLineDash([5 / view.k, 4 / view.k]);
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
       return;
     }
@@ -3504,7 +3504,7 @@ function segmentLayersHtml(layers, opts) {
     h += `<div class="segment-block segment-primary"><p class="segment-heading">${label}</p>`
       + `<p class="segment-note">${jp ? "まずこの単位で読み、必要な時だけ下の文字・語源へ進みます。" : "Read these units first; open character or etymological detail only when useful."}</p>`
       + `<div class="segment-units">`
-      + primary.units.map(u => `<span class="segment-unit"><a href="#" class="ext-term" data-w="${esc(u.text || "")}">${esc(u.text || "")}</a>${u.gloss ? `<small>${esc(u.gloss)}</small>` : ""}</span>`).join(`<span class="segment-join">＋</span>`)
+      + primary.units.map(u => u.role === "particle" ? `<span class="segment-unit segment-particle">${esc(u.text || "")}<small>${jp ? "助詞" : "particle"}</small></span>` : `<span class="segment-unit"><a href="#" class="ext-term" data-w="${esc(u.text || "")}">${esc(u.text || "")}</a>${u.gloss ? `<small>${esc(u.gloss)}</small>` : ""}</span>`).join(`<span class="segment-join">＋</span>`)
       + `</div></div>`;
   }
   if (opts.includeCharacter !== false && character && character.units && character.units.length) {
@@ -3584,7 +3584,7 @@ function _relationInfo(node) {
     evidence: "candidate", record: null, work: null,
     node: { term: node.q || node.label, label: node.label, kind: node.kind, id: node.id, lang: node.lang, layer: node.layer,
       original_title: node.original_title, year: node.year, person_id: node.person_id,
-      work: node.work, term_de: node.term_de, qid: node.qid, search: node.search },
+      work: node.work, term_de: node.term_de, qid: node.qid, search: node.search, in_body: node.in_body, via_article: node.via_article },
     sourceIds: []
   };
   const base = DX_PREVIEW && !profile && !pair ? _growBase(node) : null;
@@ -3656,7 +3656,7 @@ function gRelationshipPanel(term, relation, node) {
   const p = gPanel(`🧭 中心命題との関係：${info.target}`,
     `<div class="rel-hero"><p class="rel-route">${info.mapRoot ? `<span>地図の中心</span><b>${esc(info.mapRoot)}</b><span>→</span><span>広げた語</span><b>${esc(info.center)}</b><span>→</span><span>この項目</span>` : `<span>中心命題</span><b>${esc(info.center)}</b><span>→</span><span>派生項目</span>`}<b>${esc(info.target)}</b></p><p>${esc(info.summary)}</p></div>
       <section class="rel-section"><h4>この地図での接続</h4><dl class="rel-dl"><dt>位置</dt><dd>${esc(relationText)}</dd><dt>対象の種類</dt><dd>${esc((DX_PREVIEW && REL_KIND_JA[info.targetKind]) || info.targetKind || "項目")}</dd><dt>証拠階層</dt><dd><span class="rel-evidence">${esc(_relationEvidenceLabel(info.evidence))}</span></dd></dl>${DX_PREVIEW && detail === info.summary ? "" : `<p class="rel-detail">${esc(detail)}</p>`}</section>
-      ${DX_PREVIEW ? `${_relFactsHtml(info.node)}<section class="rel-section rel-evidence-sec"><h4>なぜつながっているか（本文の文）</h4><div class="rel-ev" aria-live="polite"><p class="srcline muted">Wikipedia の本文から、2つの語が一緒に出てくる文を探しています…</p></div></section>`
+      ${DX_PREVIEW ? `${_relFactsHtml(info.node)}<section class="rel-section rel-evidence-sec"><h4>なぜつながっているか（本文の文）</h4>${info.node && info.node.in_body === false && !info.mapRoot ? `<p class="rel-via-tpl">「${esc(info.target)}」は『${esc(info.node.via_article || info.center)}』の記事の<b>本文には出てきません</b>。記事の横の案内枠（テンプレート）にあるリンクから、この地図に入っています。下の文が0件なのはそのためで、つながりが無いという意味ではありません。地図では破線で描いています。</p>` : ""}<div class="rel-ev" aria-live="polite"><p class="srcline muted">Wikipedia の本文から、2つの語が一緒に出てくる文を探しています…</p></div></section>`
         : `<section class="rel-section"><h4>ここで分けて読むこと</h4><ul class="rel-list"><li>中心命題そのものの主張と、派生項目の著作・思想・受容上の位置を混同しない。</li><li>人物名の表記差、著作題名の翻訳差、引用・影響関係を別々の証拠単位で確認する。</li><li>「調査候補」は入口であり、本文・版・標準ロケータの照合後に確定度を更新する。</li></ul></section>`}
       <section class="rel-section"><h4>次に広げる</h4><div class="rel-next">${next.map((x, i) => `<button type="button" class="rel-next-btn" data-i="${i}">${esc(x.label)}</button>`).join("")}</div></section>
       ${sources.length ? `<section class="rel-section"><h4>確認入口</h4><div class="rel-sources">${sources.map(s => s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id)}</a>` : `<span>${esc(s.label || s.id)}</span>`).join(" ")}</div></section>` : `<p class="srcline">この接続は探索レンズとして提示しています。本文・版・引用箇所を追加すれば証拠単位へ更新できます。</p>`}`,
@@ -4007,7 +4007,7 @@ function _panoHistory(d) {   // 語の来歴＝日本語漢字表記の語形・
   if (!hasForm) return "";   // 語形・構成が無ければ来歴は出さない（英語散文だけでは出さない）
   let h = "";
   if (semantic.length) h += `<p class="pano-lbl">意味のまとまり（優先）</p><div class="anat-comp segment-panorama">`
-    + semantic.map(u => `${_entLink(u.text, "word", "segment:" + u.text)}${u.gloss ? `<span class="anat-gloss">「${esc(u.gloss)}」</span>` : ""}`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
+    + semantic.map(u => u.role === "particle" ? `<span class="anat-particle">${esc(u.text)}</span>` : `${_entLink(u.text, "word", "segment:" + u.text)}${u.gloss ? `<span class="anat-gloss">「${esc(u.gloss)}」</span>` : ""}`).join(`<span class="anat-plus">＋</span>`) + `</div>`;
   // 原語表記は保持し、glossは接地済みの日本語がある時だけ併記（英語訳は原語の意味として主表示しない）
   if ((a.components || []).length) h += `<p class="pano-lbl">語形・構成要素</p>` + _compNote(a) + `<div class="anat-comp">`
     + a.components.map(c => { const g = _jaGloss(c.meaning);
@@ -5063,7 +5063,7 @@ async function originRun(q, tok) {
   // (1b) 関連する思想家（記事言及・重要度順）— P50/P61が無い概念でも0にしない（資本主義→スミス/マルクス…）
   if (assoc.length) {
     html += `<p>${jp ? "関連する思想家（この概念の記事が言及・重要度順）" : "Associated thinkers (named in the article, by prominence)"}:
-      ${assoc.map(p => `<a href="#" class="origin-thinker" data-name="${esc(p.label)}">${esc(p.label)}</a>`).join("　／　")}</p>
+      ${assoc.map(p => `<a href="#" class="origin-thinker" data-name="${esc(p.label)}">${esc(p.label)}</a>${DX_PREVIEW && p.in_body === false ? `<small class="via-tpl">${jp ? "（本文に無く、記事の横の案内枠のリンクだけ）" : " (sidebar link only)"}</small>` : ""}`).join("　／　")}</p>
       <p class="srcline">${jp ? "『立てた人』が一人に定まらない概念でも、通常検索が結びつける主要人物へ届くための層。記事の言及に接地（賛否は判定しない）。" : "A recall layer reaching the figures normal search associates; grounded in the article's mentions."}</p>`;
   }
   // (2) 語形の由来（語源）＋翻訳原点の候補 — 思想家がいる場合は"語源"として明確に降格し警告
@@ -5512,7 +5512,7 @@ function _dxLegend() {
   el.innerHTML = `<summary>${jp ? "凡例（見た目が表すもの）" : "Legend"}</summary>`
     + (seenB.size ? `<p class="lg-h">${jp ? "線の色＝どの枝か" : "Line colour = branch"}</p><ul class="lg-br">${[...seenB.values()].map(b => `<li><i style="background:${esc(b.color)}"></i>${esc(b.label)}</li>`).join("")}</ul>` : "")
     + `<p>${jp ? "線の太さ＝中心からの段（太い幹 → 枝 → 細い枝先）。関係の強さを測った値ではありません。" : "Line width = step from the centre (trunk → branch → twig); not a measured strength."}</p>`
-    + (kinds.has("cooccurrence") ? `<p>${jp ? "破線＝検索で一緒に出ただけの語（関係は確かめていません）。" : "Dashed = only co-occurred in search."}</p>` : "")
+    + (kinds.has("cooccurrence") || G.nodes.some(n => n.in_body === false) ? `<p>${jp ? "破線＝記事の本文では確かめられない語（検索で一緒に出ただけ・記事の横の案内枠のリンクだけ）。" : "Dashed = linked only outside the article body (sidebar) or co-occurring in search."}</p>` : "")
     + `<p>${jp ? "円の大きさ＝その先につながる語の数。円の色＝種類：" : "Circle size = words beyond it. Colour = kind:"}</p><ul class="lg-kind">${[...kinds].filter(k => k !== "word").map(k => `<li><i style="background:${esc(GKIND[k] || "#888")}"></i>${esc(jp ? (DX_KIND_JA[k] || k) : k)}</li>`).join("")}</ul>`
     + (folded.length ? `<p class="lg-fold">${jp ? `畳んでいる枝：${folded.map(n => esc(n.label)).join("・")}（${hiddenN} 語）。円の「＋」を押すと開きます。はじめから開くかは「見方」で選べます。` : `Folded: ${folded.map(n => esc(n.label)).join(", ")} (${hiddenN}). Click “+” to open.`}</p>` : "");
 }
@@ -5659,7 +5659,7 @@ function _partNodesAdd(nodeIdx, units, opts) {
   const base = G.nodes[nodeIdx];
   const key = (x) => String(x.q || x.label || "").toLowerCase();
   const have = new Set(G.nodes.map(key));
-  const list = (units || []).filter(u => u && u.text && u.text !== (base.q || base.label));
+  const list = (units || []).filter(u => u && u.text && u.role !== "particle" && u.text !== (base.q || base.label));
   const fresh = list.filter(u => !have.has(u.text.toLowerCase()));
   const ang0 = base.layer === 1 ? Math.PI / 2 : (base.layoutAngle != null ? base.layoutAngle : Math.atan2(base.y - G.cy, base.x - G.cx));
   const span = base.layer === 1 ? Math.PI * 0.7 : Math.PI * 0.8;
@@ -5715,7 +5715,7 @@ function renderDecomp(q, layers) {
   const src = units.some(u => u.source === "ja.wiktionary") ? (jp ? "分け方の根拠：ja.wiktionary の見出し語" : "split grounded in ja.wiktionary headwords") : (jp ? "分け方の根拠：境界辞書（このサイトの手作業の一覧）" : "split from the curated boundary list");
   el.innerHTML = `<span class="ds-h">${jp ? "語を分けて探る" : "Explore by parts"}</span>`
     + `<span class="ds-whole">${esc(q)}</span><span class="ds-eq">＝</span>`
-    + units.map((u, i) => `${i ? `<span class="ds-plus">＋</span>` : ""}<button type="button" class="ds-part" data-i="${i}" title="${jp ? "押すと、このまとまりの操作が円形に開きます" : "open actions for this part"}"><b>${esc(u.text)}</b>${u.gloss ? `<small>${esc(u.gloss)}</small>` : ""}${u.role === "unresolved_unit" ? `<small>${jp ? "辞書で未確認" : "unconfirmed"}</small>` : ""}</button>`).join("")
+    + units.map((u, i) => u.role === "particle" ? `<span class="ds-plus">＋</span><span class="ds-particle" title="${jp ? "助詞（つなぎの語）" : "particle"}">${esc(u.text)}</span>` : `${i ? `<span class="ds-plus">＋</span>` : ""}<button type="button" class="ds-part" data-i="${i}" title="${jp ? "押すと、このまとまりの操作が円形に開きます" : "open actions for this part"}"><b>${esc(u.text)}</b>${u.gloss ? `<small>${esc(u.gloss)}</small>` : ""}${u.role === "unresolved_unit" ? `<small>${jp ? "辞書で未確認" : "unconfirmed"}</small>` : ""}</button>`).join("")
     + `<span class="ds-note">${esc(src)}${jp ? "。各まとまりを押すと、その語の操作が開きます。地図にも枝として並べています。" : "."}</span>`;
   el._units = units;
   const sm = $("dx-small-map"); if (sm) sm.remove();   // 地図が本文より先に届くと「小さめ」が先に出る。複合語はまとまりから進める

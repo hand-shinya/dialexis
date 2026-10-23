@@ -76,6 +76,7 @@ expected_tests = [
   "tests/test_no_negative_ui.py",
   "tests/test_no_raw_error.py",
   "tests/test_one_char_corpus.py",
+  "tests/test_owner_1023b.py",
   "tests/test_orig_cluster.py",
   "tests/test_origin.py",
   "tests/test_person_dynamic.py",
@@ -399,6 +400,20 @@ code のコメントの「所有者の設計」「所有者の決裁」は帰属
 tests/test_roles.py を新設し、描画後のHTML 16画面と handoff / inquiry の payload に
 所有者の名が入らないことを機械で検査する（source の grep ではなく、利用者に届くかを基準にする）。"""
 guarded_by = "tests/test_roles.py"
+
+[[correction]]
+id = "thinkers-linked-only-from-sidebar"
+fixed = "2026-10-23"
+what = """「関連する思想家（この概念の記事が言及）」に、記事の本文に出てこず、記事の横の案内枠（例: 哲学のサイドバー）に
+リンクがあるだけの人物が、本文で言及された人と区別なく入っていた（実存→イマヌエル・カント。実存主義の wikitext で、
+カントは本文に無く「新カント派」の関連項目だけ）。関係パネルは理由を示さず根拠の文0件とだけ出していた。
+また、冒頭の「英: Leibniz's notation」を空白で切って Leibniz's を英語の原語としていた。
+さらに、ライプニッツの記法 を「ライプニッツの＋記法」と助詞を付けたまま分けていた。"""
+how_fixed = """記事の本文（テンプレートの外）のリンクを wikitext から取り、転送を辿って人物ごとに in_body を付けた（取れない時は不明＝None で、
+「本文に無い」とは言わない）。消さずに、プレビューでは関係パネル・原点の欄・地図の破線で示す。
+原語の正規表現はラテン・ギリシア・キリル文字の語を空白をまたいで続ける（_LEAD_ABBREV_RE）。
+漢字・カタカナに挟まれた「の」を助詞として分け、帯では押せる部分にせず、地図の枝にもしない。"""
+guarded_by = "tests/test_owner_1023b.py"
 
 # ---------------------------------------------------------------------------
 # 閉じていない穴（2026-10-09 の敵対的検証が実証したもののうち、まだ塞げていない分）

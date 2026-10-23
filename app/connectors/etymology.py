@@ -126,6 +126,8 @@ def _semantic_unit(text, role="lexical_unit", source="lexical-boundary", confide
 # 接尾の一字（前の語に付ける: 有機＋的→有機的、存在＋論＋的→存在論的）。
 _SEMANTIC_SUFFIXES = ("的", "性", "化", "論", "者", "観", "史", "界", "感", "学", "主義")
 _SEP = re.compile(r"[・･·\s、,／/\-]+")
+# 漢字・カタカナに挟まれた助詞「の」（ひらがなの語の中の「の」は分けない）
+_NO_PARTICLE = re.compile(r"(?<=[\u30A0-\u30FF\u4E00-\u9FFF])(の)(?=[\u30A0-\u30FF\u4E00-\u9FFF])")
 WIKT_JA = "https://ja.wiktionary.org/w/api.php"
 
 
@@ -203,14 +205,21 @@ async def grounded_cjk_units(word):
     if word in known or (len(word) < 3 and not _SEP.search(word)):
         return None
     units = []
-    for chunk in [x for x in _SEP.split(word) if x]:
-        if chunk in known:
-            units.append((chunk, "lexical_unit")); continue
-        units.extend(_dp_units(chunk, known))
-    if len(units) < 2:
+    for chunk0 in [x for x in _SEP.split(word) if x]:
+        # 助詞「の」は前後の語と分ける（ライプニッツの記法 → ライプニッツ＋の＋記法。
+        # 以前は「ライプニッツの」を一つの未確認のまとまりにしていた・所有者の写し 10/23 17:34）
+        for chunk in [x for x in _NO_PARTICLE.split(chunk0) if x]:
+            if chunk == "の" and chunk != chunk0:
+                units.append((chunk, "particle")); continue
+            if chunk in known:
+                units.append((chunk, "lexical_unit")); continue
+            units.extend(_dp_units(chunk, known))
+    if len([u for u in units if u[1] != "particle"]) < 2:
         return None
     out = []
     for piece, kind in units:
+        if kind == "particle":
+            out.append(_semantic_unit(piece, "particle", "particle", "high")); continue
         u = _semantic_unit(piece, kind,
                            "ja.wiktionary" if piece in titles else
                            ("lexical-boundary" if kind == "lexical_unit" else

@@ -3987,7 +3987,10 @@ async def api_origin_graph(q: str, lang: str = "ja"):
             norm = (math.log1p(p.get("nclaims") or 0) - lo) / (hi - lo) if hi > lo else 1.0
             w = round((2.8 if kind == "orig" else 1.0) + norm * 3.4, 2)  # 著者本人を際立たせ＋影響度で大小
             pid = f"auth:{p['label']}"
-            add(pid, p["label"], "author", 4, w, None, {"search": p["label"], "qid": p.get("qid")})
+            add(pid, p["label"], "author", 4, w, None, {"search": p["label"], "qid": p.get("qid"),
+                                                        # 記事の本文でリンクしているか（False＝記事の横の案内枠のリンクだけ）
+                                                        "in_body": p.get("in_body") if kind == "assoc" else None,
+                                                        "via_article": cd.get("title") if kind == "assoc" else None})
             link(phil or "root", pid, 1.4 if kind == "orig" else 0.9)
             if p.get("qid"):
                 node_of[p["qid"]] = pid
