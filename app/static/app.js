@@ -2666,7 +2666,8 @@ function gApplyGraph(d) {
   const cur2 = LENSES.find(x => x.key === G_lens) || LENSES[0];
   if ((cur2.mode || "filter") === "filter") {
     showCanvas();
-    const pd = applyLens(d, G_lens);
+    let pd = applyLens(d, G_lens);
+    if (DX_PREVIEW && G_lens === "all") pd = _groupSidebarThinkers(pd);
     const note = $("graph-note"); if (note) note.textContent = pd.note || d.note || "";
     gBuild(pd);
     if (DX_PREVIEW) { _applyPendingParts(); if ((d.nodes || []).length > 1) smallMapNote(d.query); else { const sm = $("dx-small-map"); if (sm) sm.remove(); } }
@@ -2786,7 +2787,10 @@ function gBuild(d) {
     if (!children[lo].includes(hi)) children[lo].push(hi);
     if (parent[hi] == null) parent[hi] = lo;
   });
-  if (DX_PREVIEW) nodes.forEach((n, i) => { if (n.id === "dom:breadth" && (children[i] || []).length && !_langOpenPref()) _branchHide(nodes, children, i, true); });
+  if (DX_PREVIEW) nodes.forEach((n, i) => {
+    if (n.id === "dom:breadth" && (children[i] || []).length && !_langOpenPref()) _branchHide(nodes, children, i, true, parent);
+    if (n.tplGroup && (children[i] || []).length) _branchHide(nodes, children, i, true, parent);   // 案内枠だけの思想家は畳む
+  });
   gInitialLayout(nodes, edges, W, H, cx, cy, parent, children);
   G = { nodes, edges, children, parent, ctx, cv, W, H, cx, cy, rootQ: d.query, note: d.note, focusLabel: null,
         view: { x: 0, y: 0, k: 1 }, drag: null, hover: null, hl: null, alpha: 1, raf: 0, needFit: true };
@@ -4113,14 +4117,23 @@ function _panoBindEntities(panel) {
     gMenu(Math.round(r.left + r.width / 2), Math.round(r.bottom + 6), node);
   });
 }
+// 記事の本文に出てくる思想家を先に、案内枠のリンクだけの人は消さずに件数つきで畳む（所有者の承認 10/23・プレビュー）
+function _bodyFirst(list) {
+  if (!DX_PREVIEW) return { body: list, tpl: [] };
+  return { body: list.filter(x => x.in_body !== false), tpl: list.filter(x => x.in_body === false) };
+}
+const TPL_FOLD_LABEL = "記事の本文に出てこない思想家（記事の横の案内枠のリンクだけ）";
+const TPL_FOLD_REASON = "本文で触れられていることを確かめられないため畳んでいます（消してはいません）";
 function _panoBearers(d) {   // 原語・思想家・著作（概念を担った系譜＝日本語表記の来歴とは別次元）
   const o = d.origin || {}; let h = "";
   const co = _panoOrigSplit(d).origs;   // 語自身の語源に接地した原語だけ（翻訳対応語は表記側へ）
   if (co.length) h += `<p class="pano-lbl">概念を担った原語</p><p class="pano-terms">`
     + co.map(x => `${_entLink(x.term, "original", "orig:" + x.term)}${x.name ? `（${esc(x.name)}）` : ""}`).join("　") + `</p>`;
   const personsAll = (o.associated || []).filter(x => x && x.is_person), persons = personsAll.slice(0, 8);
-  if (persons.length) h += `<p class="pano-lbl">この概念を担った思想家</p><p class="pano-terms">`
-    + dxSliceMap(personsAll, 8, x => _entLink(_pw(x), "author", x.qid ? ("wd:" + x.qid) : ("author:" + _pw(x))), "　", "思想家") + `</p>`;
+  const bf = _bodyFirst(personsAll), pl = x => _entLink(_pw(x), "author", x.qid ? ("wd:" + x.qid) : ("author:" + _pw(x)));
+  if (persons.length) h += `<p class="pano-lbl">この概念を担った思想家</p><div class="pano-terms">`
+    + dxSliceMap(bf.body, 8, pl, "　", "思想家")
+    + (bf.tpl.length ? dxFold(TPL_FOLD_LABEL, bf.tpl.length, TPL_FOLD_REASON, bf.tpl.map(pl).join("　")) : "") + `</div>`;
   return h;
 }
 function _panoFocus(d) {   // 翻訳で変わった焦点（意味・用法・概念作用の差＝構成要素の再掲でない）
@@ -5062,8 +5075,9 @@ async function originRun(q, tok) {
   }
   // (1b) 関連する思想家（記事言及・重要度順）— P50/P61が無い概念でも0にしない（資本主義→スミス/マルクス…）
   if (assoc.length) {
-    html += `<p>${jp ? "関連する思想家（この概念の記事が言及・重要度順）" : "Associated thinkers (named in the article, by prominence)"}:
-      ${assoc.map(p => `<a href="#" class="origin-thinker" data-name="${esc(p.label)}">${esc(p.label)}</a>${DX_PREVIEW && p.in_body === false ? `<small class="via-tpl">${jp ? "（本文に無く、記事の横の案内枠のリンクだけ）" : " (sidebar link only)"}</small>` : ""}`).join("　／　")}</p>
+    html += `<div class="assoc-line">${jp ? "関連する思想家（この概念の記事がリンク・重要度順）" : "Associated thinkers (linked from the article, by prominence)"}:
+      ${(() => { const bf = _bodyFirst(assoc), one = p => `<a href="#" class="origin-thinker" data-name="${esc(p.label)}">${esc(p.label)}</a>${DX_PREVIEW && p.in_body === false ? `<small class="via-tpl">${jp ? "（本文に無く、記事の横の案内枠のリンクだけ）" : " (sidebar link only)"}</small>` : ""}`;
+        return bf.body.map(one).join("　／　") + (bf.tpl.length ? dxFold(TPL_FOLD_LABEL, bf.tpl.length, TPL_FOLD_REASON, bf.tpl.map(one).join("　／　")) : ""); })()}</div>
       <p class="srcline">${jp ? "『立てた人』が一人に定まらない概念でも、通常検索が結びつける主要人物へ届くための層。記事の言及に接地（賛否は判定しない）。" : "A recall layer reaching the figures normal search associates; grounded in the article's mentions."}</p>`;
   }
   // (2) 語形の由来（語源）＋翻訳原点の候補 — 思想家がいる場合は"語源"として明確に降格し警告
@@ -5439,17 +5453,38 @@ window.addEventListener("scroll", () => { if (_radial && Math.abs(scrollY - (_ra
 const DX_LANG_OPEN_KEY = "dx_lang_open";
 function _langOpenPref() { try { return localStorage.getItem(DX_LANG_OPEN_KEY) === "1"; } catch (e) { return false; } }
 function _langOpenSet(v) { try { localStorage.setItem(DX_LANG_OPEN_KEY, v ? "1" : "0"); } catch (e) {} }
-function _branchHide(nodes, children, i, hide) {
+function _branchHide(nodes, children, i, hide, parent) {
   const base = nodes[i]; base.foldable = true; base.folded = hide;
-  const seen = new Set([i]), stack = [...((children[i]) || [])];
-  while (stack.length) { const c = stack.pop(); if (seen.has(c)) continue; seen.add(c); nodes[c].hidden = hide; ((children[c]) || []).forEach(x => stack.push(x)); }
+  // 木の子（その枝を親とする語）だけを辿る。思想家どうしの影響線で別の枝の語まで隠さない
+  const tree = (k) => ((children[k]) || []).filter(c => !parent || parent[c] === k);
+  const seen = new Set([i]), stack = [...tree(i)];
+  while (stack.length) { const c = stack.pop(); if (seen.has(c)) continue; seen.add(c); nodes[c].hidden = hide; tree(c).forEach(x => stack.push(x)); }
+}
+// 地図のデータで、案内枠のリンクだけの思想家を、元の親の下の「畳める束」にまとめ直す（語は消さない）
+function _groupSidebarThinkers(d) {
+  const tpl = (d.nodes || []).filter(n => n.kind === "author" && n.in_body === false);
+  if (!tpl.length) return d;
+  const byId = Object.fromEntries(d.nodes.map(n => [n.id, n])), ids = new Set(tpl.map(n => n.id));
+  const groups = {};
+  const edges = d.edges.filter(e => {
+    if (!ids.has(e.to) || !byId[e.from] || ids.has(e.from) || byId[e.from].kind === "author") return true;
+    (groups[e.from] = groups[e.from] || []).push(e.to); return false;
+  });
+  const nodes = d.nodes.slice(), head = [];
+  Object.entries(groups).forEach(([pid, kids]) => {
+    const gid = "grp:tpl:" + pid, pl = Number(byId[pid].layer) || 1;
+    nodes.push({ id: gid, label: (LANG === "ja" ? "案内枠のリンクだけの思想家 " : "Sidebar-only thinkers ") + kids.length, kind: "domain", layer: pl + 1, weight: 1.6, tplGroup: true });
+    head.push({ from: pid, to: gid, strength: 0.6 });
+    kids.forEach(k => head.push({ from: gid, to: k, strength: 0.5 }));
+  });
+  return { ...d, nodes, edges: [...head, ...edges] };
 }
 function gBranchToggle(idx, want) {
   if (!G || idx == null || !G.nodes[idx]) return false;
   const n = G.nodes[idx];
   if (!(G.children[idx] || []).length) return false;
   const hide = want == null ? !n.folded : !want;
-  _branchHide(G.nodes, G.children, idx, hide);
+  _branchHide(G.nodes, G.children, idx, hide, G.parent);
   gInitialLayout(G.nodes, G.edges, G.W, G.H, G.cx, G.cy, G.parent, G.children, true);
   _dxSizes(); _dxLegend();
   G.hover = null; G.hl = null; G.needFit = true; G.alpha = 1; gLoop(140);
@@ -5577,6 +5612,7 @@ function gGrowNote(text) {
 
 function isCompoundTerm(t) {
   t = String(t || "").trim();
+  if (/[\u30A0-\u30FF\u4E00-\u9FFF](における|による|への|との|の|と|や)[\u30A0-\u30FF\u4E00-\u9FFF]/.test(t)) return true;   // 助詞でつながる語（ゼノンのパラドックス）
   return /[㐀-鿿]/.test(t) && (t.replace(/[^㐀-鿿぀-ヿ]/g, "").length >= 3 || /[・･]/.test(t));
 }
 

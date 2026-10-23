@@ -285,7 +285,7 @@ deadline = "2026-11-06"
 observation = "所有者が、畳んだ言語の枝と見た目の符号化について「本採用」「作り直し」「撤去」のいずれかを決めたこと"
 observation_threshold = "判断が1件記録されている（開発台帳）"
 how_to_measure = "grep -n 'preview-map-visual' Main/論考/哲学DESK/_AI/開発台帳.md（Vault 内）で 2026-10-23 以降の判断の行を数える"
-retreat = "期日までに判断が無ければ、_branchHide・gBranchToggle・ACTIONS.branch（UI_ACTION_IDS.node からも）・dx_lang_open の設定・_dxSizes・_dxBranches・_dxLegend・gInitialLayout の比例配分と keepPos・.dx-legend の CSS と tests/e2e/map_visual.e2e.js を削除する（地図は従来の等分配置・関係の種類ごとの太さ・並び順の大きさに戻る）"
+retreat = "期日までに判断が無ければ、_branchHide・gBranchToggle・ACTIONS.branch（UI_ACTION_IDS.node からも）・dx_lang_open の設定・_dxSizes・_dxBranches・_dxLegend・gInitialLayout の比例配分と keepPos・案内枠だけの思想家の束（_groupSidebarThinkers・_bodyFirst・TPL_FOLD_LABEL。所有者の承認 10/23 18:1x）・.dx-legend の CSS と tests/e2e/map_visual.e2e.js を削除する（地図は従来の等分配置・関係の種類ごとの太さ・並び順の大きさに戻る）"
 status = "open"
 observed = ""
 evidence = ""
@@ -412,7 +412,9 @@ what = """「関連する思想家（この概念の記事が言及）」に、�
 how_fixed = """記事の本文（テンプレートの外）のリンクを wikitext から取り、転送を辿って人物ごとに in_body を付けた（取れない時は不明＝None で、
 「本文に無い」とは言わない）。消さずに、プレビューでは関係パネル・原点の欄・地図の破線で示す。
 原語の正規表現はラテン・ギリシア・キリル文字の語を空白をまたいで続ける（_LEAD_ABBREV_RE）。
-漢字・カタカナに挟まれた「の」を助詞として分け、帯では押せる部分にせず、地図の枝にもしない。"""
+漢字・カタカナに挟まれた「の」を助詞として分け、帯では押せる部分にせず、地図の枝にもしない。
+10/23 18:1x 所有者の承認で、助詞を における・による・への・との・の・と・や に広げ、漢字を含まない語（ゼノンのパラドックス）にも効かせた。
+カタカナの語は、連なり全体が辞書の見出しの時だけ一語として採り、内側では切らない（ヘーゲル を ヘー＋ゲル にしない）。"""
 guarded_by = "tests/test_owner_1023b.py"
 
 # ---------------------------------------------------------------------------

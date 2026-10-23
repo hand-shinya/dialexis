@@ -126,8 +126,13 @@ def _semantic_unit(text, role="lexical_unit", source="lexical-boundary", confide
 # 接尾の一字（前の語に付ける: 有機＋的→有機的、存在＋論＋的→存在論的）。
 _SEMANTIC_SUFFIXES = ("的", "性", "化", "論", "者", "観", "史", "界", "感", "学", "主義")
 _SEP = re.compile(r"[・･·\s、,／/\-]+")
-# 漢字・カタカナに挟まれた助詞「の」（ひらがなの語の中の「の」は分けない）
-_NO_PARTICLE = re.compile(r"(?<=[\u30A0-\u30FF\u4E00-\u9FFF])(の)(?=[\u30A0-\u30FF\u4E00-\u9FFF])")
+# 漢字・カタカナに挟まれた助詞（ひらがなの語の中のものは分けない）。長いものから照合する
+# （死への存在 → 死＋への＋存在、他者との対話 → 他者＋との＋対話、ゼノンのパラドックス）。所有者の承認 10/23
+_PARTICLE = re.compile(r"(?<=[\u30A0-\u30FF\u4E00-\u9FFF])(における|による|への|との|の|と|や)(?=[\u30A0-\u30FF\u4E00-\u9FFF])")
+_NO_PARTICLE = _PARTICLE
+_PARTICLES = {"における", "による", "への", "との", "の", "と", "や"}
+_KATA = re.compile(r"[\u30A1-\u30FA\u30FC]{2,}")
+_KATA_CH = re.compile(r"[\u30A1-\u30FA\u30FC]")
 WIKT_JA = "https://ja.wiktionary.org/w/api.php"
 
 
@@ -136,7 +141,7 @@ async def _wikt_titles(word):
     戻り値: (titles:set, retrieved_at, error)。取れないときは空集合と理由（不在と区別する）。"""
     parts = [x for x in _SEP.split(word) if x]
     subs = sorted({c[i:j] for c in parts for i in range(len(c)) for j in range(i + 2, len(c) + 1)})
-    subs = [x for x in subs if _is_cjk_word(x)][:150]
+    subs = [x for x in subs if _is_cjk_word(x) or _KATA.fullmatch(x)][:150]
     found, at, err = set(), None, None
     for k in range(0, len(subs), 50):
         chunk = subs[k:k + 50]
@@ -165,7 +170,9 @@ def _dp_units(chunk, known):
             continue
         for j in range(i + 1, n + 1):
             piece = chunk[i:j]
-            if len(piece) >= 2 and piece in known:
+            # カタカナの語は内側で切らない（ヘーゲル を ヘー＋ゲル にしない）。カタカナの連なり全体が見出しの時だけ採る
+            kata_ok = not _KATA.fullmatch(piece) or ((i == 0 or not _KATA_CH.match(chunk[i - 1])) and (j == n or not _KATA_CH.match(chunk[j])))
+            if len(piece) >= 2 and piece in known and kata_ok:
                 kind, cost = "lexical_unit", 1
             elif i == 0 and piece in _SEMANTIC_PREFIXES and n - j >= 2:
                 kind, cost = "prefix", 1
@@ -198,7 +205,8 @@ async def grounded_cjk_units(word):
     """辞書（ja.wiktionary の見出し）に接地した意味のまとまり。境界辞書で分かれない語にだけ使う。
     語全体が見出しにあるときは分けない（弁証法を 弁証＋法 にしない）。"""
     word = unicodedata.normalize("NFKC", word or "").strip()
-    if not word or not _is_cjk_word(word) or word in _SEMANTIC_SPLITS:
+    # 漢字を含む語に加え、助詞でつながるカタカナの語（ゼノンのパラドックス）も分ける
+    if not word or not (_is_cjk_word(word) or _PARTICLE.search(word)) or word in _SEMANTIC_SPLITS:
         return None
     titles, at, err = await _wikt_titles(word)
     known = titles | _SEMANTIC_LEXEMES
@@ -208,8 +216,8 @@ async def grounded_cjk_units(word):
     for chunk0 in [x for x in _SEP.split(word) if x]:
         # 助詞「の」は前後の語と分ける（ライプニッツの記法 → ライプニッツ＋の＋記法。
         # 以前は「ライプニッツの」を一つの未確認のまとまりにしていた・所有者の写し 10/23 17:34）
-        for chunk in [x for x in _NO_PARTICLE.split(chunk0) if x]:
-            if chunk == "の" and chunk != chunk0:
+        for chunk in [x for x in _PARTICLE.split(chunk0) if x]:
+            if chunk in _PARTICLES and chunk != chunk0:
                 units.append((chunk, "particle")); continue
             if chunk in known:
                 units.append((chunk, "lexical_unit")); continue

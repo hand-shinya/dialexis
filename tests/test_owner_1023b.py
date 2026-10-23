@@ -72,3 +72,23 @@ def test_unknown_body_is_not_reported_as_absent(monkeypatch):
     monkeypatch.setattr(concept, "cached_get_json", fake)
     monkeypatch.setattr(concept, "_resolve", resolve)
     assert asyncio.run(concept._article_resolved("実存主義", "ja"))[0]["in_body"] is None   # 取れない＝不明（「本文に無い」と言わない）
+
+
+def test_more_particles_and_katakana_words_are_split(monkeypatch):
+    # 所有者の承認（10/23 18:1x）:「の」以外の助詞と、漢字を含まない語にも同じ規則を広げる
+    async def titles(word):
+        return {"パラドックス", "存在", "他者", "対話", "時間", "弁証法", "ゲル", "ノン"}, "t", None
+    monkeypatch.setattr(ety, "_wikt_titles", titles)
+    seg = lambda w: [(x["text"], x["role"]) for x in asyncio.run(ety.grounded_cjk_units(w))]
+    assert seg("ゼノンのパラドックス") == [("ゼノン", "unresolved_unit"), ("の", "particle"), ("パラドックス", "lexical_unit")]
+    assert seg("他者との対話") == [("他者", "lexical_unit"), ("との", "particle"), ("対話", "lexical_unit")]
+    assert seg("存在と時間") == [("存在", "lexical_unit"), ("と", "particle"), ("時間", "lexical_unit")]
+    # カタカナの語は内側で切らない（辞書に ゲル が在っても ヘー＋ゲル にしない）
+    assert seg("ヘーゲルの弁証法") == [("ヘーゲル", "unresolved_unit"), ("の", "particle"), ("弁証法", "lexical_unit")]
+
+
+def test_katakana_word_without_particle_is_not_split(monkeypatch):
+    async def titles(word):
+        return {"ポスト", "モダン"}, "t", None
+    monkeypatch.setattr(ety, "_wikt_titles", titles)
+    assert asyncio.run(ety.grounded_cjk_units("ポストモダン")) is None
