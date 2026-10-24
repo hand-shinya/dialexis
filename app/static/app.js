@@ -167,6 +167,7 @@ else routeReturnInit();
 // 外部情報源の応答が返らない時も、画面を「読み込み中」のまま固定しない。
 // 個別の呼び出し側で timeout を書かず、全てのAPI操作に同じ安全弁を掛ける。
 const API_TIMEOUT_MS = 20000;
+const GRAPH_TIMEOUT_MS = 75000;   // 地図の組み立ては、初めての語で20秒を超えることがある
 async function api(path, opts = {}) {
   const { timeout = API_TIMEOUT_MS, signal: callerSignal, body, ...fetchOpts } = opts;
   const controller = typeof AbortController === "function" ? new AbortController() : null;
@@ -1587,7 +1588,12 @@ function _termVariants(q) {
 async function originResolveGraph(q, tok) {
   for (const v of _termVariants(q)) {
     let d = null;
-    try { d = await api(`/api/origin/graph?q=${encodeURIComponent(v)}&lang=${LANG}`); } catch (e) { d = null; }
+    // 初めての語は、意味・語源などの取得と同時に走るため20秒を超えることがある（所有者の写し 10/24 10:49: 資本論で
+    // 最初は地図が出ず、「原語から問い直す」で出た）。地図だけは長く待ち、1回だけ取り直す。
+    for (let attempt = 0; attempt < 2 && !d; attempt++) {
+      try { d = await api(`/api/origin/graph?q=${encodeURIComponent(v)}&lang=${LANG}`, { timeout: GRAPH_TIMEOUT_MS }); } catch (e) { d = null; }
+      if (tok != null && originStale(tok)) return null;
+    }
     if (tok != null && originStale(tok)) return null;
     // rootだけの薄いMapも「構築可能な結果」として採用する。語源形・著者名・
     // 外部sourceが薄い語を、旧Mapを残したままの見かけ上の停止にしない。
@@ -2667,7 +2673,7 @@ function gApplyGraph(d) {
   if ((cur2.mode || "filter") === "filter") {
     showCanvas();
     let pd = applyLens(d, G_lens);
-    if (DX_PREVIEW && G_lens === "all") pd = _groupSidebarThinkers(pd);
+    if (DX_PREVIEW && G_lens === "all") pd = _promoteOriginators(_groupSidebarThinkers(pd));
     const note = $("graph-note"); if (note) note.textContent = pd.note || d.note || "";
     gBuild(pd);
     if (DX_PREVIEW) { _applyPendingParts(); if ((d.nodes || []).length > 1) smallMapNote(d.query); else { const sm = $("dx-small-map"); if (sm) sm.remove(); } }
@@ -2776,7 +2782,7 @@ function gBuild(d) {
   const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const cx = W / 2, cy = H / 2, idx = {};
   const nodes = d.nodes.map((n, i) => { idx[n.id] = i; return { ...n }; });
-  const edges = d.edges.map(e => ({ a: idx[e.from], b: idx[e.to], s: e.strength || 1 }))
+  const edges = d.edges.map(e => ({ a: idx[e.from], b: idx[e.to], s: e.strength || 1, rel: e.rel, label: e.label }))
     .filter(e => e.a != null && e.b != null);
   // parent/children by layer, so hovering a line lights the whole path root→leaves
   const children = {}, parent = {};
@@ -2844,6 +2850,14 @@ function gDraw() {
     if (a.hidden || b.hidden) return;
     const on = !hl || hl.eset.has(ei);
     if (br) {   // 線の色＝どの枝か／太さ＝中心からの段（幹・枝・枝先）／破線＝検索で一緒に出ただけ
+      if (e.rel === "originator") {   // 立てた・著した人＝中心から直結の太い線と、関係の名
+        ctx.strokeStyle = on ? "rgba(124,45,18,0.85)" : "rgba(124,45,18,0.1)"; ctx.lineWidth = (on ? 5.5 : 1) / view.k;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        if (on && e.label) { const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; ctx.font = "bold " + Math.round(12 / Math.max(.6, view.k) * view.k) + "px system-ui, sans-serif";
+          const tw = ctx.measureText(e.label).width + 8; ctx.fillStyle = "rgba(255,250,240,0.95)"; ctx.fillRect(mx - tw / 2, my - 9, tw, 18);
+          ctx.fillStyle = "#7c2d12"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(e.label, mx, my); }
+        return;
+      }
       const deep = (Number(a.layer) || 1) >= (Number(b.layer) || 1) ? e.a : e.b, dn = nodes[deep];
       const depth = Math.min(Number(a.layer) || 1, Number(b.layer) || 1);
       ctx.strokeStyle = on ? _dxAlpha(br.color[deep], 0.62) : _dxAlpha(br.color[deep], 0.07);
@@ -2874,6 +2888,9 @@ function gDraw() {
     if (DX_PREVIEW && !isRoot && _trailSet.has(n.label)) {   // 探求の軌跡で通った語（破線の輪）
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 5, 0, 7); ctx.setLineDash([4 / view.k, 3 / view.k]);
       ctx.lineWidth = 2 / view.k; ctx.strokeStyle = "#c2410c"; ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (DX_PREVIEW && n.role === "originator" && !isRoot) {   // 立てた・著した人（二重の輪）
+      ctx.beginPath(); ctx.arc(n.x, n.y, r + 4, 0, 7); ctx.lineWidth = 2.4 / view.k; ctx.strokeStyle = "#7c2d12"; ctx.stroke();
     }
     if (DX_PREVIEW && n.foldable) {          // 畳める枝の印（＋＝畳んでいる／−＝開いている）
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 4, 0, 7); ctx.setLineDash(n.folded ? [3 / view.k, 2 / view.k] : []);
@@ -3558,7 +3575,7 @@ function _graphWorkFor(node) {
   return { profile: null, work: null };
 }
 function _relationEvidenceLabel(level) {
-  return ({ confirmed: "本文・書誌を確認", bibliography_confirmed: "書誌を確認", strong: "有力・要照合", candidate: "調査候補", unverified: "未確認" }[level] || "調査候補");
+  return ({ confirmed: "本文・書誌を確認", bibliography_confirmed: "書誌を確認", wikidata: "Wikidata の記載", strong: "有力・要照合", candidate: "調査候補", unverified: "未確認" }[level] || "調査候補");
 }
 // 地図の上で、その語をどこから広げたか（分類の箱は飛ばす）。地図の中心まで戻ったら null。
 // 所有者 2026-10-23: 実存 → ポストモダンを広げて出たフロイトを「実存から派生」と書き、実存主義とフロイトの記事で根拠の文を探して0件だった。
@@ -3588,10 +3605,16 @@ function _relationInfo(node) {
     evidence: "candidate", record: null, work: null,
     node: { term: node.q || node.label, label: node.label, kind: node.kind, id: node.id, lang: node.lang, layer: node.layer,
       original_title: node.original_title, year: node.year, person_id: node.person_id,
-      work: node.work, term_de: node.term_de, qid: node.qid, search: node.search, in_body: node.in_body, via_article: node.via_article },
+      work: node.work, term_de: node.term_de, qid: node.qid, search: node.search, in_body: node.in_body, via_article: node.via_article,
+      role: node.role, role_prop: node.role_prop, role_label: node.role_label },
     sourceIds: []
   };
-  const base = DX_PREVIEW && !profile && !pair ? _growBase(node) : null;
+  if (DX_PREVIEW && node.role === "originator" && !profile && !pair) {
+    const lab = node.role_label || "立てた人", pr = node.role_prop ? `Wikidata ${node.role_prop}` : "Wikidata";
+    info.path = `${lab}（${pr} の記載）`; info.evidence = "wikidata"; info.roleLabel = lab;
+    info.summary = `「${node.label}」は「${center}」の${lab}です（${pr} の記載）。地図では、中心から直結する太い線で描いています。下に、本文でどう書かれているかを示します。`;
+  }
+  const base = DX_PREVIEW && !profile && !pair && node.role !== "originator" ? _growBase(node) : null;
   if (base) {
     const bt = base.q || base.label;
     info.center = bt; info.centerTerm = bt; info.mapRoot = (G && G.rootQ) || "";
@@ -3658,7 +3681,7 @@ function gRelationshipPanel(term, relation, node) {
   if (info.targetKind === "author") next.push({ id: "translationHistory", label: "🧭 この人物の著作・受容史へ", target: info.node, ctx: { node: info.node } });
   next.push({ id: "center", label: info.mapRoot ? `🎯「${info.center}」を地図の中心にする` : "🎯 中心命題を地図の中心に戻す", target: { term: info.centerTerm || info.center, label: info.centerTerm || info.center, kind: "word", q: info.centerTerm || info.center } });
   const p = gPanel(`🧭 中心命題との関係：${info.target}`,
-    `<div class="rel-hero"><p class="rel-route">${info.mapRoot ? `<span>地図の中心</span><b>${esc(info.mapRoot)}</b><span>→</span><span>広げた語</span><b>${esc(info.center)}</b><span>→</span><span>この項目</span>` : `<span>中心命題</span><b>${esc(info.center)}</b><span>→</span><span>派生項目</span>`}<b>${esc(info.target)}</b></p><p>${esc(info.summary)}</p></div>
+    `<div class="rel-hero"><p class="rel-route">${info.mapRoot ? `<span>地図の中心</span><b>${esc(info.mapRoot)}</b><span>→</span><span>広げた語</span><b>${esc(info.center)}</b><span>→</span><span>この項目</span>` : `<span>中心命題</span><b>${esc(info.center)}</b><span>→</span><span>${esc(info.roleLabel || "派生項目")}</span>`}<b>${esc(info.target)}</b></p><p>${esc(info.summary)}</p></div>
       <section class="rel-section"><h4>この地図での接続</h4><dl class="rel-dl"><dt>位置</dt><dd>${esc(relationText)}</dd><dt>対象の種類</dt><dd>${esc((DX_PREVIEW && REL_KIND_JA[info.targetKind]) || info.targetKind || "項目")}</dd><dt>証拠階層</dt><dd><span class="rel-evidence">${esc(_relationEvidenceLabel(info.evidence))}</span></dd></dl>${DX_PREVIEW && detail === info.summary ? "" : `<p class="rel-detail">${esc(detail)}</p>`}</section>
       ${DX_PREVIEW ? `${_relFactsHtml(info.node)}<section class="rel-section rel-evidence-sec"><h4>なぜつながっているか（本文の文）</h4>${info.node && info.node.in_body === false && !info.mapRoot ? `<p class="rel-via-tpl">「${esc(info.target)}」は『${esc(info.node.via_article || info.center)}』の記事の<b>本文（注釈を含む）には、リンクも名前も見当たりません</b>。記事の横の案内枠（テンプレート）にあるリンクから、この地図に入っています。下の文が0件なのはそのためで、つながりが無いという意味ではありません。地図では破線で描いています。</p>` : ""}<div class="rel-ev" aria-live="polite"><p class="srcline muted">Wikipedia の本文から、2つの語が一緒に出てくる文を探しています…</p></div></section>`
         : `<section class="rel-section"><h4>ここで分けて読むこと</h4><ul class="rel-list"><li>中心命題そのものの主張と、派生項目の著作・思想・受容上の位置を混同しない。</li><li>人物名の表記差、著作題名の翻訳差、引用・影響関係を別々の証拠単位で確認する。</li><li>「調査候補」は入口であり、本文・版・標準ロケータの照合後に確定度を更新する。</li></ul></section>`}
@@ -5460,6 +5483,18 @@ function _branchHide(nodes, children, i, hide, parent) {
   const seen = new Set([i]), stack = [...tree(i)];
   while (stack.length) { const c = stack.pop(); if (seen.has(c)) continue; seen.add(c); nodes[c].hidden = hide; tree(c).forEach(x => stack.push(x)); }
 }
+// この語を立てた・著した人（Wikidata の宣言: 著者 P50・発見者 P61・創設者 P112）は、分類の箱を介さず中心に直結させる
+// （所有者 10/24「資本論の著者マルクスが、地図で他の情報と同じ重さになっているのは不自然」）。どの語にも同じ規則で効く
+function _promoteOriginators(d) {
+  const root = (d.nodes || []).find(n => Number(n.layer) === 1);
+  const ors = (d.nodes || []).filter(n => n.role === "originator");
+  if (!root || !ors.length) return d;
+  const ids = new Set(ors.map(n => n.id)), byId = Object.fromEntries(d.nodes.map(n => [n.id, n]));
+  const edges = d.edges.filter(e => !(ids.has(e.to) && byId[e.from] && byId[e.from].kind === "domain"));
+  const head = ors.map(n => ({ from: root.id, to: n.id, strength: 1.8, rel: "originator", label: n.role_label || (LANG === "ja" ? "立てた人" : "originator") }));
+  const nodes = d.nodes.map(n => ids.has(n.id) ? { ...n, layer: Number(root.layer) + 1 } : n);
+  return { ...d, nodes, edges: [...head, ...edges] };
+}
 // 地図のデータで、案内枠のリンクだけの思想家を、元の親の下の「畳める束」にまとめ直す（語は消さない）
 function _groupSidebarThinkers(d) {
   const tpl = (d.nodes || []).filter(n => n.kind === "author" && n.in_body === false);
@@ -5507,6 +5542,7 @@ function _dxSizes() {
   G.nodes.forEach((n, i) => {
     const d = desc(i); n.dxDesc = d;
     n.r = Number(n.layer) <= 1 ? 22 : Math.min(24, 7 + 3 * Math.sqrt(d));
+    if (n.role === "originator") n.r = Math.max(n.r, 17);   // 立てた・著した人は大きく
   });
   G._brMemo = null;
 }
@@ -5546,6 +5582,7 @@ function _dxLegend() {
   const hiddenN = G.nodes.filter(n => n.hidden).length;
   el.innerHTML = `<summary>${jp ? "凡例（見た目が表すもの）" : "Legend"}</summary>`
     + (seenB.size ? `<p class="lg-h">${jp ? "線の色＝どの枝か" : "Line colour = branch"}</p><ul class="lg-br">${[...seenB.values()].map(b => `<li><i style="background:${esc(b.color)}"></i>${esc(b.label)}</li>`).join("")}</ul>` : "")
+    + (G.nodes.some(n => n.role === "originator") ? `<p class="lg-orig">${jp ? "中心から直結する最も太い線と二重の輪＝この語を立てた・著した人（Wikidata の宣言：著者 P50・発見者／発明者 P61・創設者 P112）。線の上に関係の名を書きます。" : "Thickest direct line + double ring = the person who authored/founded this (Wikidata P50/P61/P112)."}</p>` : "")
     + `<p>${jp ? "線の太さ＝中心からの段（太い幹 → 枝 → 細い枝先）。関係の強さを測った値ではありません。" : "Line width = step from the centre (trunk → branch → twig); not a measured strength."}</p>`
     + (kinds.has("cooccurrence") || G.nodes.some(n => n.in_body === false) ? `<p>${jp ? "破線＝記事の本文では確かめられない語（検索で一緒に出ただけ・本文に名前が見当たらず記事の横の案内枠のリンクだけ）。" : "Dashed = linked only outside the article body (sidebar) or co-occurring in search."}</p>` : "")
     + `<p>${jp ? "円の大きさ＝その先につながる語の数。円の色＝種類：" : "Circle size = words beyond it. Colour = kind:"}</p><ul class="lg-kind">${[...kinds].filter(k => k !== "word").map(k => `<li><i style="background:${esc(GKIND[k] || "#888")}"></i>${esc(jp ? (DX_KIND_JA[k] || k) : k)}</li>`).join("")}</ul>`

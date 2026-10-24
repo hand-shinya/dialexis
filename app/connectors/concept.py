@@ -466,7 +466,13 @@ async def node(word: str, lang: str = "ja", typed: bool = False) -> dict:
             incoming = await _incoming(qid) if typed else []
             res = await _resolve(orig_q + na_q + near_q + opp_q + seealso_q
                                  + [o for _, o in incoming], lang)
-            originators = [res[q] for q in dict.fromkeys(orig_q) if q in res and res[q]["is_person"]]
+            # どの宣言で立てた人か（著者 P50／発見者・発明者 P61／創設者 P112）を残す。地図で関係の強さを表すのに使う
+            role_of = {}
+            for prop, lab in (("P50", "著者"), ("P61", "発見者・発明者"), ("P112", "創設者")):
+                for q_ in _claim_qids(claims, prop):
+                    role_of.setdefault(q_, (prop, lab))
+            originators = [dict(res[q], role_prop=role_of.get(q, ("", ""))[0], role_label=role_of.get(q, ("", ""))[1])
+                           for q in dict.fromkeys(orig_q) if q in res and res[q]["is_person"]]
             named_after = [res[q] for q in dict.fromkeys(na_q) if q in res]
             # 関連する思想家（再現向上）: P50/P61が無い概念でも記事が言及する人物を重要度順に。
             # 資本主義→スミス/マルクス/ケインズ… 通常検索が筆頭に出す人物へ届く（0にしない）。

@@ -808,3 +808,4 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .ds-particle, .anat-particle { color: #6b6b6b; padding: 0 2px; }
 .segment-particle { color: #6b6b6b; }
 .assoc-line { margin: 0 0 1em; }
+.dx-legend .lg-orig { color: #7c2d12; font-weight: 600; }

@@ -3990,7 +3990,11 @@ async def api_origin_graph(q: str, lang: str = "ja"):
             add(pid, p["label"], "author", 4, w, None, {"search": p["label"], "qid": p.get("qid"),
                                                         # 記事の本文でリンクしているか（False＝記事の横の案内枠のリンクだけ）
                                                         "in_body": p.get("in_body") if kind == "assoc" else None,
-                                                        "via_article": cd.get("title") if kind == "assoc" else None})
+                                                        "via_article": cd.get("title") if kind == "assoc" else None,
+                                                        # この語を立てた・著した人（Wikidata の宣言）。地図で直結の太い線にする
+                                                        "role": "originator" if kind == "orig" else None,
+                                                        "role_prop": p.get("role_prop") if kind == "orig" else None,
+                                                        "role_label": p.get("role_label") if kind == "orig" else None})
             link(phil or "root", pid, 1.4 if kind == "orig" else 0.9)
             if p.get("qid"):
                 node_of[p["qid"]] = pid
