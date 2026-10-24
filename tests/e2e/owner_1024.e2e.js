@@ -15,9 +15,12 @@ const GRAPH = (q) => ({ query: q, note: "fx", nodes: [{ id: "root", label: q, ki
   { id: "auth:著した人", label: "著した人", kind: "author", layer: 4, weight: 4, role: "originator", role_prop: "P50", role_label: "著者", search: "著した人" },
   { id: "w1", label: "その人の別の著作", kind: "work", layer: 5, weight: 0.8, q: "その人の別の著作" },
   { id: "auth:関連の人", label: "関連の人", kind: "author", layer: 4, weight: 2, in_body: true },
+  { id: "auth:枠の人", label: "枠の人", kind: "author", layer: 4, weight: 2, in_body: false },
+  { id: "opp", label: "別物の語", kind: "opposite", layer: 3, weight: 1.1, q: "別物の語" },
   { id: "r1", label: "子", kind: "related", layer: 3, weight: 1, q: "子" }],
   edges: [{ from: "root", to: "dom:phil" }, { from: "dom:phil", to: "auth:著した人", strength: 1.4 }, { from: "auth:著した人", to: "w1" },
-    { from: "dom:phil", to: "auth:関連の人" }, { from: "dom:phil", to: "r1" }] });
+    { from: "dom:phil", to: "auth:関連の人" }, { from: "dom:phil", to: "r1" }, { from: "dom:phil", to: "auth:枠の人" },
+    { from: "auth:関連の人", to: "auth:枠の人", strength: 1.1 }, { from: "root", to: "opp", strength: 0.7 }] });
 (async () => {
   const b = await chromium.launch({ executablePath: EXE, headless: true });
   const R = []; const ok = (n, c, d) => { R.push(c); console.log(`${c ? "PASS" : "FAIL"}  ${n}${d ? "  — " + d : ""}`); };
@@ -50,6 +53,20 @@ const GRAPH = (q) => ({ query: q, note: "fx", nodes: [{ id: "root", label: q, ki
   ok("③ 関係パネルは「著者」と言い、証拠を「Wikidata の記載」と示す", /著者/.test(hero) && !/派生項目/.test(hero) && ev === "Wikidata の記載", hero.replace(/\s+/g, " ") + " / " + ev);
   const lg = await p.$eval(".dx-legend .lg-orig", e => e.innerText).catch(() => "");
   ok("③ 凡例が直結の太い線の意味（Wikidata 著者 P50 等）を言う", /著者 P50/.test(lg), lg.slice(0, 50));
+  // ⑤ 所有者の写し 11:12: 戻る・進む・見方の切替でも、最初の描画と同じ組み直し（案内枠だけの思想家の束・著者の直結）を通す
+  await p.evaluate(() => document.querySelectorAll(".gp-x").forEach(x => x.click()));
+  await p.evaluate(() => applyLensBuild("all"));
+  await p.waitForTimeout(800);
+  const re = await p.evaluate(() => { const G = window.__dx.G; const w = G.nodes.find(n => n.label === "枠の人"), g = G.nodes.find(n => n.tplGroup), i = G.nodes.findIndex(n => n.label === "著した人");
+    return { group: !!g, hidden: !!(w && w.hidden), direct: G.edges.some(e => e.rel === "originator" && (e.a === i || e.b === i)) }; });
+  ok("⑤ 戻る・進む・見方の切替の経路でも、束（線ごと畳む）と著者の直結が保たれる", re.group && re.hidden && re.direct, JSON.stringify(re));
+  // ⑥ 中心に直接つながる個々の語（対立・区別）は幹の太さにしない
+  const w = await p.evaluate(() => ({ opp: _dxEdgeWidth(1, { kind: "opposite" }), trunk: _dxEdgeWidth(1, { kind: "domain" }) }));
+  ok("⑥ 対立・区別の語への線は細く（幹の太さは中心→分類の箱だけ）、凡例がそう言う", w.opp < 2 && w.trunk > 4 && /強い結びつきではありません/.test(await p.$eval(".dx-legend", e => e.innerText)), JSON.stringify(w));
+  // ⑦ 一度開いた語の印は灰色の点線（著者の二重の輪と別）で、凡例がそう言う
+  await p.evaluate(() => { const G = window.__dx.G; const n = G.nodes.find(x => x.label === "子"); return dispatchAction("meaning", { term: "子", label: "子", kind: "related" }, currentViewState(), { surface: "radial", node: n }); });
+  await p.waitForTimeout(1200);
+  ok("⑦ 一度開いた語の印を、凡例が「関係の強さとは別の印」と言う", /灰色の点線の輪＝この探求で一度開いた語/.test(await p.$eval(".dx-legend", e => e.innerText)));
   await ctx.close();
   ({ ctx, p } = await mk(false));
   await p.goto(`${BASE}/origin?q=${encodeURIComponent("中心語")}&lang=ja&preview=0`, { waitUntil: "domcontentloaded" });

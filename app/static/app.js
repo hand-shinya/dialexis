@@ -2491,7 +2491,9 @@ async function applyLensBuild(key) {
   // 空のときは既存の地図を壊さず（gBuild しない＝G を保持）、noMiss の建設的な入口を出す（否定文言は使わない）。
   const lensThin = (pd) => !pd || !pd.nodes || pd.nodes.length <= 1;
   if (mode === "filter") {
-    const pd = applyLens(G_raw, key);
+    // 戻る・進む・見方の切替でも、最初の描画と同じ組み直しを通す（所有者の写し 10/24 11:12: 戻る・進むの途中で
+    // 案内枠だけの思想家どうしの線が一瞬見え、その後消えた＝この経路だけ組み直しを通っていなかった）
+    const pd = _previewProject(applyLens(G_raw, key), key);
     if (lensThin(pd)) { setNote(vlabel); showAlt(); $("graph-alt").innerHTML = noMiss(G_raw.query); return; }
     showCanvas(); setNote(pd.note || G_raw.note || ""); gBuild(pd); return;
   }
@@ -2672,8 +2674,7 @@ function gApplyGraph(d) {
   const cur2 = LENSES.find(x => x.key === G_lens) || LENSES[0];
   if ((cur2.mode || "filter") === "filter") {
     showCanvas();
-    let pd = applyLens(d, G_lens);
-    if (DX_PREVIEW && G_lens === "all") pd = _promoteOriginators(_groupSidebarThinkers(pd));
+    const pd = _previewProject(applyLens(d, G_lens), G_lens);
     const note = $("graph-note"); if (note) note.textContent = pd.note || d.note || "";
     gBuild(pd);
     if (DX_PREVIEW) { _applyPendingParts(); if ((d.nodes || []).length > 1) smallMapNote(d.query); else { const sm = $("dx-small-map"); if (sm) sm.remove(); } }
@@ -2861,8 +2862,11 @@ function gDraw() {
       const deep = (Number(a.layer) || 1) >= (Number(b.layer) || 1) ? e.a : e.b, dn = nodes[deep];
       const depth = Math.min(Number(a.layer) || 1, Number(b.layer) || 1);
       ctx.strokeStyle = on ? _dxAlpha(br.color[deep], 0.62) : _dxAlpha(br.color[deep], 0.07);
-      ctx.lineWidth = (on ? (depth <= 1 ? 4.2 : depth === 2 ? 2.2 : 1.2) : 0.6) / view.k;
+      // 幹（太い線）は中心→分類の箱だけ。中心に直接つながる個々の語（対立・区別の語など）は細い線にする
+      // （所有者 10/24 11:08: 資本論→Kapital の赤い線が幹の太さで、著者のマルクスより強い関係に見えた）
+      ctx.lineWidth = (on ? _dxEdgeWidth(depth, dn) : 0.6) / view.k;
       if (dn.kind === "cooccurrence" || dn.in_body === false) ctx.setLineDash([5 / view.k, 4 / view.k]);
+      else if (dn.kind === "opposite") ctx.setLineDash([2 / view.k, 3 / view.k]);
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
       return;
     }
@@ -2885,9 +2889,9 @@ function gDraw() {
     ctx.fillStyle = isRoot ? "#c2410c" : (GKIND[n.kind] || "#888"); ctx.fill();
     if (isRoot) { ctx.lineWidth = 3 / view.k; ctx.strokeStyle = "#7c2d12"; ctx.stroke(); }
     else if (isHover) { ctx.lineWidth = 3 / view.k; ctx.strokeStyle = "#111"; ctx.stroke(); }
-    if (DX_PREVIEW && !isRoot && _trailSet.has(n.label)) {   // 探求の軌跡で通った語（破線の輪）
-      ctx.beginPath(); ctx.arc(n.x, n.y, r + 5, 0, 7); ctx.setLineDash([4 / view.k, 3 / view.k]);
-      ctx.lineWidth = 2 / view.k; ctx.strokeStyle = "#c2410c"; ctx.stroke(); ctx.setLineDash([]);
+    if (DX_PREVIEW && !isRoot && _trailSet.has(n.label)) {   // この探求で一度開いた語＝灰色の点線の輪（関係の強さとは別の印）
+      ctx.beginPath(); ctx.arc(n.x, n.y, r + (n.role === "originator" ? 9 : 5), 0, 7); ctx.setLineDash([1.5 / view.k, 3 / view.k]);
+      ctx.lineWidth = 1.8 / view.k; ctx.strokeStyle = "#6b7280"; ctx.stroke(); ctx.setLineDash([]);
     }
     if (DX_PREVIEW && n.role === "originator" && !isRoot) {   // 立てた・著した人（二重の輪）
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 4, 0, 7); ctx.lineWidth = 2.4 / view.k; ctx.strokeStyle = "#7c2d12"; ctx.stroke();
@@ -5483,6 +5487,10 @@ function _branchHide(nodes, children, i, hide, parent) {
   const seen = new Set([i]), stack = [...tree(i)];
   while (stack.length) { const c = stack.pop(); if (seen.has(c)) continue; seen.add(c); nodes[c].hidden = hide; tree(c).forEach(x => stack.push(x)); }
 }
+// プレビューの地図の組み直し（俯瞰のときだけ）。地図を描くすべての経路がこれを通る
+function _previewProject(pd, key) {
+  return (DX_PREVIEW && (key || "all") === "all") ? _promoteOriginators(_groupSidebarThinkers(pd)) : pd;
+}
 // この語を立てた・著した人（Wikidata の宣言: 著者 P50・発見者 P61・創設者 P112）は、分類の箱を介さず中心に直結させる
 // （所有者 10/24「資本論の著者マルクスが、地図で他の情報と同じ重さになっているのは不自然」）。どの語にも同じ規則で効く
 function _promoteOriginators(d) {
@@ -5560,6 +5568,10 @@ function _dxBranches() {
   });
   return (G._brMemo = { n: G.nodes.length, color, branch });
 }
+function _dxEdgeWidth(depth, dn) {
+  const trunk = depth <= 1 && dn.kind === "domain";
+  return trunk ? 4.2 : depth <= 2 ? (dn.kind === "domain" ? 2.2 : 1.6) : 1.2;
+}
 function _dxAlpha(hex, a) {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex || ""); if (!m) return `rgba(122,92,46,${a})`;
   const v = parseInt(m[1], 16); return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`;
@@ -5583,7 +5595,9 @@ function _dxLegend() {
   el.innerHTML = `<summary>${jp ? "凡例（見た目が表すもの）" : "Legend"}</summary>`
     + (seenB.size ? `<p class="lg-h">${jp ? "線の色＝どの枝か" : "Line colour = branch"}</p><ul class="lg-br">${[...seenB.values()].map(b => `<li><i style="background:${esc(b.color)}"></i>${esc(b.label)}</li>`).join("")}</ul>` : "")
     + (G.nodes.some(n => n.role === "originator") ? `<p class="lg-orig">${jp ? "中心から直結する最も太い線と二重の輪＝この語を立てた・著した人（Wikidata の宣言：著者 P50・発見者／発明者 P61・創設者 P112）。線の上に関係の名を書きます。" : "Thickest direct line + double ring = the person who authored/founded this (Wikidata P50/P61/P112)."}</p>` : "")
-    + `<p>${jp ? "線の太さ＝中心からの段（太い幹 → 枝 → 細い枝先）。関係の強さを測った値ではありません。" : "Line width = step from the centre (trunk → branch → twig); not a measured strength."}</p>`
+    + (G.nodes.some(n => n.kind === "opposite") ? `<p>${jp ? "赤い細い点線＝対立・区別される語（Wikidata の「別物」「反対」などの記載。強い結びつきではありません）。" : "Thin red dotted = contrasted/different-from item."}</p>` : "")
+    + (G.nodes.some(n => _trailSet.has(n.label) && Number(n.layer) > 1) ? `<p>${jp ? "灰色の点線の輪＝この探求で一度開いた語（関係の強さとは別の印）。" : "Grey dotted ring = opened in this exploration."}</p>` : "")
+    + `<p>${jp ? "線の太さ＝中心からの段（太い幹＝中心から分類の箱 → 枝 → 細い枝先）。関係の強さを測った値ではありません。" : "Line width = step from the centre (trunk → branch → twig); not a measured strength."}</p>`
     + (kinds.has("cooccurrence") || G.nodes.some(n => n.in_body === false) ? `<p>${jp ? "破線＝記事の本文では確かめられない語（検索で一緒に出ただけ・本文に名前が見当たらず記事の横の案内枠のリンクだけ）。" : "Dashed = linked only outside the article body (sidebar) or co-occurring in search."}</p>` : "")
     + `<p>${jp ? "円の大きさ＝その先につながる語の数。円の色＝種類：" : "Circle size = words beyond it. Colour = kind:"}</p><ul class="lg-kind">${[...kinds].filter(k => k !== "word").map(k => `<li><i style="background:${esc(GKIND[k] || "#888")}"></i>${esc(jp ? (DX_KIND_JA[k] || k) : k)}</li>`).join("")}</ul>`
     + (folded.length ? `<p class="lg-fold">${jp ? `畳んでいる枝：${folded.map(n => esc(n.label)).join("・")}（${hiddenN} 語）。円の「＋」を押すと開きます。はじめから開くかは「見方」で選べます。` : `Folded: ${folded.map(n => esc(n.label)).join(", ")} (${hiddenN}). Click “+” to open.`}</p>` : "");
@@ -5827,6 +5841,7 @@ function trailRender() {
   const shell = $("origin-shell"); if (!shell) return;
   const tr = trailLoad();
   _trailSet = new Set(tr.steps.map(s => s.label));
+  if (G && G.nodes && typeof _dxLegend === "function") { try { _dxLegend(); } catch (e) {} }   // 凡例の「一度開いた語」を軌跡に合わせる
   let el = $("dx-trail");
   if (!tr.steps.length) { if (el) el.remove(); return; }
   if (!el) { el = document.createElement("div"); el.id = "dx-trail"; el.className = "dx-trail"; el.setAttribute("role", "navigation"); el.setAttribute("aria-label", "探求の軌跡"); shell.insertBefore(el, shell.querySelector(".graph-head") ? shell.querySelector(".graph-head").nextSibling : shell.firstChild); }
