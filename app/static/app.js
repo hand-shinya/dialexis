@@ -2149,6 +2149,8 @@ const ACTIONS = {
   split:        { label: "語を分ける", effect: "map", run: (t, ctx) => gSplitInPlace(ctx && ctx.nodeIdx, t.term) },
   // 共起語を、元の語との組のまま読む（単独の検索で行き止まりにしない・2026-10-20 プレビュー）
   pair:         { label: "語の組で読む", effect: "action", run: (t, ctx) => gPairPanel((ctx && ctx.a) || "", t.term, ctx || {}) },
+  // 原語版の記事から見る（所有者 2026-10-25 承認・プレビュー）。機械翻訳は使わない
+  originalView: { label: "原語版の記事から見る", effect: "action", run: (t, ctx) => gOriginalViewPanel(t.term, (ctx && ctx.src) || "") },
   // 畳んだ枝（世界の言語）を開く・畳む。中心は変えない（所有者 2026-10-23・プレビュー）
   branch:       { label: "枝を開く・畳む", effect: "map", run: (t, ctx) => gBranchToggle(ctx && ctx.nodeIdx) },
 };
@@ -2169,7 +2171,7 @@ const UI_ACTION_IDS = {
   edge:        ["hl", "focus", "combine", "deepsearch", "handoff", "center", "resetFocus"],
   node:        ["panorama", "handoff", "branch"],
   panelFooter: Object.values(UI_ACTION_MAP.panelFooter),
-  panelLink:   ["deepsearch"],   // パネルの中の「深掘り探索プロンプト」リンク（プレビュー: 別ページへ移らずその場で開く）
+  panelLink:   ["deepsearch", "originalView"],   // パネルの中の「深掘り探索プロンプト」リンク（プレビュー: 別ページへ移らずその場で開く）
   nomiss:      Object.values(UI_ACTION_MAP.nomiss),
   lensMenu:    ["applyLens"],
   textLink:    ["center", "handoff"],
@@ -3267,6 +3269,45 @@ function _thPairResponseHtml(d) {
   h += `<section class="th-section"><h3>最強の反証・注意点</h3><div class="th-counter-grid">${(ds.counterchecks || []).map(t => `<article class="th-counter-card"><p><b>主張：</b>${esc(t.claim || "")}</p><p><b>反証候補：</b>${esc(t.counterargument || "")}</p><p><b>検査：</b>${esc(t.test || "")}</p></article>`).join("")}</div></section><section class="th-section"><h3>参照先</h3><div class="th-source-list">${(ds.sources || []).map(s => `<article class="th-source-card"><div class="th-card-top"><b>${s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id || "source")}</a>` : esc(s.label || s.id || "source")}</b>${_thLevel(s.evidence, levels)}</div><p>${esc(s.status || "")}</p></article>`).join("")}</div></section><section class="th-section th-next"><h3>次の調査</h3>${_thNextActions(d.next_actions || ds.next_actions || [], ds.sources || [])}</section></div>`;
   return h;
 }
+// ── 原語版の記事から見る（所有者 10/25 承認・プレビュー）──
+// 日本語版だけでは、翻訳を経たあとの限られた範囲しか見えない。原語版の記事の節の構成（見出しは原語のまま）と、
+// 本文がリンクする項目（Wikidata の日本語の名前を付ける）を出し、日本語版の本文にも在るかを並べる。機械翻訳は使わない。
+async function gOriginalViewPanel(term, src) {
+  const jp = LANG === "ja";
+  const p = gPanel((jp ? "原語版の記事から見る：" : "Original-language article: ") + term,
+    `<div class="ov-body"><p class="muted"><span class="spin"></span> ${jp ? "原語版の記事の構成とリンク先を取得しています（初めての語は少し時間がかかります）…" : "loading…"}</p></div>`, term);
+  if (!p) return false;
+  let d; try { d = await api(`/api/original-view?q=${encodeURIComponent(term)}${src ? "&src=" + encodeURIComponent(src) : ""}`, { timeout: 90000 }); } catch (e) { d = null; }
+  const box = p.querySelector(".ov-body"); if (!box) return true;
+  if (!d || !d.applies) {
+    box.innerHTML = `<p class="srcline">${jp ? `「${esc(term)}」の、ほかの言語版の記事は Wikidata にまだ結び付いていません。多言語や外部で調べる入口から続けられます。` : "No other-language article is linked for this item."}</p>`;
+    return true;
+  }
+  const c = d.counts || {};
+  const item = (x) => {
+    const name = x.ja || x.orig, term2 = x.ja_article || x.ja || x.orig;
+    return `<span class="ov-item${x.in_ja_article ? " ov-in-ja" : ""}">${_entLink(term2, "word", "ov:" + (x.qid || x.orig))}${x.ja && x.ja !== x.orig ? `<small lang="${esc(d.lang)}">${esc(x.orig)}</small>` : ""}${x.in_ja_article ? `<i class="ov-badge">${jp ? "日本語版にも" : "also in ja"}</i>` : ""}</span>`;
+  };
+  const secHtml = (s) => {
+    const items = s.items.filter(x => !x.repeat);
+    if (!items.length) return "";
+    return `<section class="ov-sec"><h4 lang="${esc(d.lang)}">${esc(s.heading || (jp ? "（導入部）" : "(lead)"))}</h4><div class="ov-items">${items.map(item).join("")}</div></section>`;
+  };
+  const secs = d.sections || [];
+  const chips = (d.choices || []).map(x => `<button type="button" class="ov-lang${x.lang === d.lang ? " on" : ""}" data-l="${esc(x.lang)}">${esc(x.lang_name)}</button>`).join("");
+  box.innerHTML = `<p>${jp ? `${esc(d.lang_name)}版 Wikipedia の記事 <a class="ext-link" href="${esc(d.url)}" target="_blank" rel="noopener" lang="${esc(d.lang)}">『${esc(d.title)}』</a>${d.lang === d.orig_lang ? "（原語版）" : ""}の本文がリンクしている <b>${c.items || 0}</b> 項目のうち、日本語版『${esc(d.ja_title)}』の本文にもあるのは <b>${c.in_ja || 0}</b>。残りの <b>${c.only_here || 0}</b> は、日本語版の記事だけでは見えない手がかりです。` : ""}</p>
+    <p class="srcline">${jp ? "節見出しは原語のまま、項目の名前は Wikidata の日本語の名前（無いものは原語のまま）。機械翻訳は使っていません。名前を押すと、その語の操作が開きます。" : ""}　取得 ${esc(d.retrieved_at || "")}</p>
+    <p class="ov-langs">${jp ? "ほかの言語版で見る：" : "Other languages: "}${chips}</p>
+    <label class="ov-only"><input type="checkbox" class="ov-only-cb"> ${jp ? "日本語版の本文に無いものだけを見る" : "Only items missing in the Japanese article"}</label>
+    ${secs.slice(0, 6).map(secHtml).join("")}
+    ${secs.length > 6 ? dxFold(jp ? "残りの節" : "More sections", secs.length - 6, jp ? "多いので最初の6節のあとを畳んでいます" : "folded after 6", secs.slice(6).map(secHtml).join("")) : ""}`;
+  box.querySelectorAll(".ov-lang").forEach(b => b.addEventListener("click", () =>
+    dispatchAction("originalView", { term, label: term, kind: "word" }, currentViewState(), { surface: "panelLink", src: b.dataset.l })));
+  const cb = box.querySelector(".ov-only-cb");
+  if (cb) cb.addEventListener("change", () => box.classList.toggle("ov-only-on", cb.checked));
+  return true;
+}
+
 // ── 著作の題の系譜（原題 → 各国語の題 → 日本語の訳題）と題の語ごとの対応（所有者 10/25 承認・プレビュー）──
 // 著作の題を一つの語として「言葉／と／物」に分ける欄は、題には当てはまりにくいので畳み、題の単位の系譜を先に出す。
 async function _thWorkLineage(results, word) {
@@ -3293,11 +3334,14 @@ async function _thWorkLineage(results, word) {
       <li><b>日本語の訳題</b>　『${esc(d.ja_title || "")}』${d.align_ja_verdict ? `　<span class="lin-verdict">${esc(d.align_ja_verdict)}</span>` : ""}<ul class="lin-eds">${eds.join("") || "<li>国立国会図書館サーチで訳書の書誌を特定できていません</li>"}</ul></li>
     </ol>
     <p><b>訳の経路</b>：${esc((d.route || {}).text || "")}</p>
+    <p><a href="#" class="ov-open">${esc(o.lang_name || "原語")}版の記事から見る（節の構成と、日本語版に無い手がかり）→</a></p>
     ${al.length ? `<details class="lin-align" open><summary>題の語ごとの対応（原語の辞書の日本語訳から）</summary>
       <table class="lin-table"><thead><tr><th>原題の語</th><th>辞書の見出し</th><th>辞書の日本語訳</th><th>訳題での語</th></tr></thead><tbody>${al.map(row).join("")}</tbody></table>
       <p class="srcline">出所：${esc(d.align_source || "")}。冠詞・前置詞は除いています。辞書の訳語と訳題の語が違うとき（Kritik：辞書は「評論」、訳題は「批判」）も、そのまま示します。</p></details>`
       : (d.align_note ? `<p class="srcline">${esc(d.align_note)}</p>` : "")}`;
   results.prepend(sec);
+  const ovl = sec.querySelector(".ov-open");
+  if (ovl) ovl.addEventListener("click", (ev) => { ev.preventDefault(); dispatchAction("originalView", { term: word, label: word, kind: "word" }, currentViewState(), { surface: "panelLink", src: o.lang || "" }); });
   // 題を一つの語として分けた欄は、消さずに畳む
   const old = [...results.querySelectorAll(".th-section")].find(s => (s.querySelector("h3") || {}).textContent === "原語・翻訳語の対応");
   if (old) {
@@ -3802,6 +3846,7 @@ function gActions(n) {
             ? "🧭 この著作の原題・翻訳版・訳者・受容史を追跡する"
             : "🧭 この語の翻訳・受容史（原典・版・変容・欠損）を証拠付きで整理する", action: "translationHistory" },
     ];
+    if (DX_PREVIEW) CORE_HEAD.push({ s: "🌐 原語版から見る", t: "🌐 原語版の記事の構成と、そこからつながる項目を見る（日本語版に無いものが分かる）", action: "originalView" });
     const CORE_TAIL = [
       { s: "🌐 外部で調べる", t: "🌐 外部の専門情報で調べる（各サイトの言語で・新タブ）", action: "external" },
       { s: "⭐ 棚", t: "⭐ 棚に追加（あとで見る）", action: "shelf" },
@@ -5441,17 +5486,17 @@ const RADIAL_PRIMARY = ["relationship", "split", "meaning", "anatomy", "multilin
 const RADIAL_GLYPH = { meaning: "意", anatomy: "源", multilingual: "言", collapse: "埋", expand: "枝", panorama: "全",
   center: "◎", author: "人", authorNote: "系", translationHistory: "訳", relationship: "命", combine: "合", lens: "見",
   contrast: "並", colloc: "共", external: "外", shelf: "棚", deepsearch: "深", handoff: "出", newtab: "↗",
-  focus: "焦", hl: "線", resetFocus: "戻", pairTranslationHistory: "訳", split: "分", pair: "組" };
+  focus: "焦", hl: "線", resetFocus: "戻", pairTranslationHistory: "訳", split: "分", pair: "組", originalView: "原" };
 const RADIAL_SHORT = { meaning: "意味", anatomy: "源をたどる", multilingual: "多言語", collapse: "埋もれた原語",
   expand: "その場で広げる", panorama: "全体像", center: "中心に", author: "人物を調べる", authorNote: "系譜",
   translationHistory: "翻訳・受容史", relationship: "中心との関係", combine: "組み合わせ", lens: "見方", contrast: "並置",
   colloc: "共起", external: "外部で調べる", shelf: "棚へ", deepsearch: "深掘り", handoff: "持ち出す", newtab: "新タブ",
-  focus: "この分岐を中心", hl: "経路を強調", resetFocus: "全体に戻す", pairTranslationHistory: "2人の受容史", split: "語を分ける", pair: "組で読む" };
+  focus: "この分岐を中心", hl: "経路を強調", resetFocus: "全体に戻す", pairTranslationHistory: "2人の受容史", split: "語を分ける", pair: "組で読む", originalView: "原語版から見る" };
 const RADIAL_EN = { meaning: "Meaning", anatomy: "Trace origin", multilingual: "Languages", collapse: "Hidden originals",
   expand: "Grow here", panorama: "Overview", center: "Center", author: "Person", authorNote: "Lineage",
   translationHistory: "Translation history", relationship: "Relation", combine: "Combine", lens: "Views", contrast: "Compare",
   colloc: "Collocation", external: "External", shelf: "Shelf", deepsearch: "Deep dive", handoff: "Take out", newtab: "New tab",
-  focus: "Focus branch", hl: "Highlight", resetFocus: "Reset", pairTranslationHistory: "Pair history", split: "Split", pair: "Read as pair" };
+  focus: "Focus branch", hl: "Highlight", resetFocus: "Reset", pairTranslationHistory: "Pair history", split: "Split", pair: "Read as pair", originalView: "Original-language article" };
 let _radial = null, _radialHoverT = 0, _radialLeaveT = 0, _radialHoverNode = null;
 function gRadialClose() {
   if (G && G.hl && !G.press) { G.hover = null; G.hl = null; if (!G.running) gDraw(); }   // 円形メニューを閉じたら強調も消す

@@ -819,3 +819,15 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .th-lineage .lin-verdict { color: #7c2d12; font-size: 0.9em; margin-left: 4px; }
 .th-lineage .lin-table { border-collapse: collapse; margin: 6px 0; font-size: 0.95em; }
 .th-lineage .lin-table th, .th-lineage .lin-table td { border-bottom: 1px solid #e3ddd0; padding: 3px 8px; text-align: left; }
+
+/* 原語版の記事から見る（プレビュー・10/25） */
+.ov-langs .ov-lang { border: 1px solid #d8d0bf; background: #fff; border-radius: 12px; padding: 1px 9px; margin: 2px 3px; font-size: 12px; cursor: pointer; }
+.ov-langs .ov-lang.on { background: #2e5c7a; color: #fff; border-color: #2e5c7a; }
+.ov-sec h4 { margin: 10px 0 4px; font-size: 13px; color: #5a4a30; }
+.ov-items { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.ov-item small { color: #888; margin-left: 3px; font-size: 11px; }
+.ov-item .ov-badge { font-style: normal; font-size: 10.5px; color: #3a7d44; border: 1px solid #b9d8bf; border-radius: 8px; padding: 0 5px; margin-left: 4px; }
+.ov-only-on .ov-item.ov-in-ja { display: none; }
+.ov-only { display: block; font-size: 12.5px; margin: 4px 0 6px; }
+.ov-langs .ov-lang { color: #2b2b2b; opacity: 1; width: auto; }
+.ov-only input[type="checkbox"] { width: auto; display: inline-block; margin: 0 4px 0 0; vertical-align: middle; }

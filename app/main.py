@@ -3796,6 +3796,19 @@ async def api_text_scan(request: Request, lang: str = "ja"):
     }
 
 
+@app.get("/api/original-view")
+async def api_original_view(q: str, src: str = ""):
+    """原語版の記事から見る（所有者 10/25 承認）。原語版の Wikipedia 記事の節の構成と、本文がリンクする項目に
+    Wikidata の日本語の名前を付け、日本語版の記事の本文にも在るかを並べる。機械翻訳は使わない。"""
+    if not q.strip():
+        raise HTTPException(400, "empty query")
+    from .connectors import original_view
+    try:
+        return {"query": q, **(await original_view.view(q.strip(), src.strip()))}
+    except Exception as e:  # noqa: BLE001
+        return {"query": q, "applies": False, "error": f"{type(e).__name__}: {e}"}
+
+
 @app.get("/api/work-lineage")
 async def api_work_lineage(q: str, lang: str = "ja"):
     """著作の題の系譜（原題 → 各国語の題 → 日本語の訳題）と題の語ごとの対応（所有者 10/25 承認）。
