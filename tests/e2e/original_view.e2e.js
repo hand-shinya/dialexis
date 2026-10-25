@@ -9,7 +9,7 @@ const { chromium } = require("playwright-core");
 const EXE = process.env.DX_CHROMIUM || ((process.env.HOME || "") + "/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome");
 const BASE = process.argv[2] || "http://127.0.0.1:8099";
 const OV = (src) => ({ applies: true, lang: src || "fr", lang_name: src === "en" ? "英語" : "フランス語", title: src === "en" ? "The Order of Things" : "Les Mots et les Choses", url: "u", retrieved_at: "t",
-  orig_lang: "fr", ja_title: "中心語", choices: [{ lang: "en", lang_name: "英語" }, { lang: "fr", lang_name: "フランス語" }],
+  orig_lang: "fr", orig_by: "work", ja_title: "中心語", choices: [{ lang: "en", lang_name: "英語" }, { lang: "fr", lang_name: "フランス語" }],
   sections: [{ heading: "", items: [{ orig: "Michel Foucault", qid: "Q44272", ja: "ミシェル・フーコー", in_ja_article: true }] },
     { heading: "Notion d’épistémè", items: [{ orig: "Diego Vélasquez", qid: "Q297", ja: "ディエゴ・ベラスケス", in_ja_article: false }, { orig: "Wörter und Sachen", qid: "", ja: "", in_ja_article: false }] }],
   counts: { items: 3, in_ja: 1, only_here: 2 } });

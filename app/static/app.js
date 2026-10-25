@@ -3295,7 +3295,7 @@ async function gOriginalViewPanel(term, src) {
   };
   const secs = d.sections || [];
   const chips = (d.choices || []).map(x => `<button type="button" class="ov-lang${x.lang === d.lang ? " on" : ""}" data-l="${esc(x.lang)}">${esc(x.lang_name)}</button>`).join("");
-  box.innerHTML = `<p>${jp ? `${esc(d.lang_name)}版 Wikipedia の記事 <a class="ext-link" href="${esc(d.url)}" target="_blank" rel="noopener" lang="${esc(d.lang)}">『${esc(d.title)}』</a>${d.lang === d.orig_lang ? "（原語版）" : ""}の本文がリンクしている <b>${c.items || 0}</b> 項目のうち、日本語版『${esc(d.ja_title)}』の本文にもあるのは <b>${c.in_ja || 0}</b>。残りの <b>${c.only_here || 0}</b> は、日本語版の記事だけでは見えない手がかりです。` : ""}</p>
+  box.innerHTML = `<p>${jp ? `${esc(d.lang_name)}版 Wikipedia の記事 <a class="ext-link" href="${esc(d.url)}" target="_blank" rel="noopener" lang="${esc(d.lang)}">『${esc(d.title)}』</a>${d.lang === d.orig_lang ? (d.orig_by === "work" ? "（原題の言語の版）" : "（日本語版の記事の冒頭が挙げる言語の版。語の起源の言語とは限りません）") : ""}の本文がリンクしている <b>${c.items || 0}</b> 項目のうち、日本語版『${esc(d.ja_title)}』の本文にもあるのは <b>${c.in_ja || 0}</b>。残りの <b>${c.only_here || 0}</b> は、日本語版の記事だけでは見えない手がかりです。` : ""}</p>
     <p class="srcline">${jp ? "節見出しは原語のまま、項目の名前は Wikidata の日本語の名前（無いものは原語のまま）。機械翻訳は使っていません。名前を押すと、その語の操作が開きます。" : ""}　取得 ${esc(d.retrieved_at || "")}</p>
     <p class="ov-langs">${jp ? "ほかの言語版で見る：" : "Other languages: "}${chips}</p>
     <label class="ov-only"><input type="checkbox" class="ov-only-cb"> ${jp ? "日本語版の本文に無いものだけを見る" : "Only items missing in the Japanese article"}</label>

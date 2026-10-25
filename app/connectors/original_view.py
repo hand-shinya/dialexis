@@ -93,16 +93,19 @@ async def view(word: str, src_lang: str = "") -> dict:
     # 原語の選び方: 著作は原題の言語、それ以外は記事が示す原語（独: Entfremdung など）、無ければ英語
     from .title_lineage import _lang_code, _val, _LANG_NAME
     cl = ent.get("claims") or {}
-    orig = ""
+    orig, orig_by = "", ""
     t1476 = [_val(c) for c in cl.get("P1476") or []]
     if t1476 and isinstance(t1476[0], dict):
         orig = t1476[0].get("language", "")
+        orig_by = "work" if orig else ""
     if not orig:
         lq = next((v.get("id") for v in (_val(c) for c in cl.get("P407") or []) if isinstance(v, dict)), "")
         orig = await _lang_code(lq) if lq else ""
+        orig_by = "work" if orig else ""
     if not orig:
         name2code = {v: k for k, v in _LANG_NAME.items()}
         orig = next((name2code.get(o.get("name")) for o in (cd.get("original_terms") or []) if name2code.get(o.get("name"))), "")
+        orig_by = "lead" if orig else ""   # 日本語版の記事の冒頭が挙げる言語（独: Entfremdung）。語の起源の言語とは限らない
     choices = [l for l in ["en", "de", "fr", "it", "es", "ru", "la", "zh", "el"] if l in sl and l != "ja"]
     if orig and orig in sl and orig not in choices:
         choices.insert(0, orig)
@@ -151,6 +154,6 @@ async def view(word: str, src_lang: str = "") -> dict:
             out_secs.append({"heading": h, "items": items})
     return {"applies": True, "qid": qid, "lang": lang, "lang_name": _LANG_NAME.get(lang, lang), "title": title,
             "url": f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}", "retrieved_at": at,
-            "orig_lang": orig, "ja_title": ja_title or "", "choices": [{"lang": l, "lang_name": _LANG_NAME.get(l, l)} for l in choices],
+            "orig_lang": orig, "orig_by": orig_by, "ja_title": ja_title or "", "choices": [{"lang": l, "lang_name": _LANG_NAME.get(l, l)} for l in choices],
             "sections": out_secs, "counts": {"items": n_all, "in_ja": n_ja, "only_here": n_all - n_ja},
             "queried_at": now()}

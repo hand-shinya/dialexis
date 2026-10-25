@@ -49,7 +49,7 @@ def test_view_marks_what_the_japanese_article_also_has(monkeypatch):
     monkeypatch.setattr(ov.concept, "_article_resolved", resolved)
     monkeypatch.setattr(ov, "cached_get_json", get)
     d = asyncio.run(ov.view("言葉と物"))
-    assert d["applies"] and d["lang"] == "fr" and d["title"] == "Les Mots et les Choses"
+    assert d["applies"] and d["lang"] == "fr" and d["title"] == "Les Mots et les Choses" and d["orig_by"] == "work"
     first = {i["orig"]: (i["ja"], i["in_ja_article"]) for s in d["sections"] for i in s["items"] if not i["repeat"]}
     assert first["Michel Foucault"] == ("ミシェル・フーコー", True)
     assert first["Diego Vélasquez"] == ("ディエゴ・ベラスケス", False)    # 日本語版では案内用の枠だけ＝本文には無い
