@@ -1167,6 +1167,7 @@ async def api_origin(q: str, lang: str = "ja", preview: int = 0):
         "concept_origin": concept_origin,        # 概念-翻訳-原点（疎外→独 Entfremdung）
         "originators": cd.get("originators") or [],  # 立てた/著した人（P50/P61/P112・決定論）
         "associated": cd.get("associated") or [],    # 関連する思想家（記事言及・重要度順・再現向上）
+        "item_kind": cd.get("item_kind") or "concept",   # 著作か概念か（人物の一覧の見出しを関係に合わせて言い分ける）
         "relations": cd.get("relations") or {"near": [], "opposite": []},  # 類語・対義（クイズ等で利用）
         "relations_typed": cd.get("relations_typed") or [],  # 型・向き・宣言元つき（2026-10-15 試作）
         "named_after": cd.get("named_after") or [],  # 語形の由来（P138・語源・概念の原点でない）
@@ -4626,16 +4627,27 @@ async def api_dimensions(q: str, lang: str = "ja"):
         raise HTTPException(400, "empty query")
     WP = f"https://{lang}.wikipedia.org/w/api.php"
     q, _bnote = await _bridged_term(q.strip(), lang)   # 言語の橋: 本文と同じ記事の節を見る（P11）
+    # 記事は、地図・原点の欄と同じ解決（concept.node: 同名の記事・転送）で選ぶ。以前は全文検索の1位を使い、
+    # 「言葉と物」で「建築物」の節を固有の切り口として出していた（所有者の写し 10/25 21:25）。
+    matched_by, title = "title", None
     try:
-        sb, _, _ = await cached_get_json(WP, {"action": "query", "list": "search",
-                                              "srsearch": q, "srlimit": 1, "format": "json"})
-    except Exception as e:
-        return {"query": q, "found": False, "error": f"{type(e).__name__}: {e}", "dimensions": []}
-    hits = sb.get("query", {}).get("search", [])
-    if not hits:
-        return {"query": q, "found": False, "dimensions": [],
-                "note": f"「{q}」は共通次元とメニューから探索できます（固有の切り口はデータが増えると現れます）。"}
-    title = hits[0]["title"]
+        cn = await concept.node(q, lang)
+        cdat = (cn or {}).get("data") or {}
+        if cdat.get("found") and cdat.get("title"):
+            title = cdat["title"]
+    except Exception:  # noqa: BLE001 — 解決に失敗したら検索へ（下で、その旨を返す）
+        title = None
+    if not title:
+        try:
+            sb, _, _ = await cached_get_json(WP, {"action": "query", "list": "search",
+                                                  "srsearch": q, "srlimit": 1, "format": "json"})
+        except Exception as e:
+            return {"query": q, "found": False, "error": f"{type(e).__name__}: {e}", "dimensions": []}
+        hits = sb.get("query", {}).get("search", [])
+        if not hits:
+            return {"query": q, "found": False, "dimensions": [],
+                    "note": f"「{q}」は共通次元とメニューから探索できます（固有の切り口はデータが増えると現れます）。"}
+        title, matched_by = hits[0]["title"], "search"
     # 曖昧さ回避ページ検出（道→楽曲/映画… のような多義ノイズを正直に警告する）
     disambig = False
     try:
@@ -4664,7 +4676,7 @@ async def api_dimensions(q: str, lang: str = "ja"):
                              "url": art + "#" + urllib.parse.quote(s.get("anchor", ""))})
         if len(dims) >= 14:                    # cap（無音truncationを避け note で明示）
             break
-    return {"query": q, "found": True, "title": title, "article_url": art,
+    return {"query": q, "found": True, "title": title, "article_url": art, "matched_by": matched_by,
             "disambiguation": disambig,
             "note": ("この語は多義（曖昧さ回避ページ）です。下は特定の概念でなく別義の一覧の可能性があります。"
                      if disambig else ""),

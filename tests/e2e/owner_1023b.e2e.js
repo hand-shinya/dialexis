@@ -38,14 +38,14 @@ const GRAPH = (q) => ({ query: q, note: "fx", nodes: [{ id: "root", label: q, ki
   const t2 = await rel("本文の人");
   ok("① 本文でリンクされている思想家には、その告知を出さない", t2 === "");
   const lg = await p.$eval(".dx-legend", e => e.innerText).catch(() => "");
-  ok("② 凡例が破線の意味（案内枠のリンクだけ）を言う", /案内枠のリンクだけ/.test(lg));
+  ok("② 凡例が破線の意味（案内用の枠にだけ名前がある）を言う", /案内用の枠にだけ名前がある/.test(lg));
   await p.waitForSelector(".assoc-line", { timeout: 8000 }).catch(() => {});
   const card = await p.evaluate(() => [...document.querySelectorAll(".via-tpl")].map(e => (e.previousElementSibling || {}).textContent));
   ok("② 原点の欄で、案内枠だけの名前に印が付く（本文の人には付かない）", card.length === 1 && card[0] === "枠の人", JSON.stringify(card));
   // ④ 所有者の承認（10/23 18:1x）: 本文に出てくる人を先に、案内枠だけの人は消さずに件数つきで畳む
   const grp = await p.evaluate(() => { const G = window.__dx.G; const g = G.nodes.find(n => n.tplGroup); const w = G.nodes.find(n => n.label === "枠の人"), h = G.nodes.find(n => n.label === "本文の人");
     return g && { label: g.label, folded: g.folded, wHidden: !!w.hidden, hHidden: !!h.hidden }; });
-  ok("④ 地図: 案内枠だけの思想家は件数つきの束に畳み、本文の人は出したまま", !!grp && /案内枠のリンクだけの思想家 1/.test(grp.label) && grp.folded && grp.wHidden && !grp.hHidden, JSON.stringify(grp));
+  ok("④ 地図: 案内枠だけの思想家は件数つきの束に畳み、本文の人は出したまま", !!grp && /案内用の枠にだけ名前がある人物 1/.test(grp.label) && grp.folded && grp.wHidden && !grp.hHidden, JSON.stringify(grp));
   const gpos = await p.evaluate(() => { const G = window.__dx.G, r = G.cv.getBoundingClientRect(); const n = G.nodes.find(x => x.tplGroup); return { x: r.left + n.x * G.view.k + G.view.x, y: r.top + n.y * G.view.k + G.view.y }; });
   await p.mouse.click(gpos.x, gpos.y); await p.waitForTimeout(2200);
   const opened = await p.evaluate(() => { const G = window.__dx.G; return !G.nodes.find(n => n.label === "枠の人").hidden && !G.nodes.find(n => n.label === "本文の人").hidden; });

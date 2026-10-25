@@ -3687,7 +3687,7 @@ function gRelationshipPanel(term, relation, node) {
   const p = gPanel(`🧭 中心命題との関係：${info.target}`,
     `<div class="rel-hero"><p class="rel-route">${info.mapRoot ? `<span>地図の中心</span><b>${esc(info.mapRoot)}</b><span>→</span><span>広げた語</span><b>${esc(info.center)}</b><span>→</span><span>この項目</span>` : `<span>中心命題</span><b>${esc(info.center)}</b><span>→</span><span>${esc(info.roleLabel || "派生項目")}</span>`}<b>${esc(info.target)}</b></p><p>${esc(info.summary)}</p></div>
       <section class="rel-section"><h4>この地図での接続</h4><dl class="rel-dl"><dt>位置</dt><dd>${esc(relationText)}</dd><dt>対象の種類</dt><dd>${esc((DX_PREVIEW && REL_KIND_JA[info.targetKind]) || info.targetKind || "項目")}</dd><dt>証拠階層</dt><dd><span class="rel-evidence">${esc(_relationEvidenceLabel(info.evidence))}</span></dd></dl>${DX_PREVIEW && detail === info.summary ? "" : `<p class="rel-detail">${esc(detail)}</p>`}</section>
-      ${DX_PREVIEW ? `${_relFactsHtml(info.node)}<section class="rel-section rel-evidence-sec"><h4>なぜつながっているか（本文の文）</h4>${info.node && info.node.in_body === false && !info.mapRoot ? `<p class="rel-via-tpl">「${esc(info.target)}」は『${esc(info.node.via_article || info.center)}』の記事の<b>本文（注釈を含む）には、リンクも名前も見当たりません</b>。記事の横の案内枠（テンプレート）にあるリンクから、この地図に入っています。下の文が0件なのはそのためで、つながりが無いという意味ではありません。地図では破線で描いています。</p>` : ""}<div class="rel-ev" aria-live="polite"><p class="srcline muted">Wikipedia の本文から、2つの語が一緒に出てくる文を探しています…</p></div></section>`
+      ${DX_PREVIEW ? `${_relFactsHtml(info.node)}<section class="rel-section rel-evidence-sec"><h4>なぜつながっているか（本文の文）</h4>${info.node && info.node.in_body === false && !info.mapRoot ? `<p class="rel-via-tpl">「${esc(info.target)}」は『${esc(info.node.via_article || info.center)}』の記事の<b>本文（注釈を含む）には、リンクも名前も見当たりません</b>。記事に付いた案内用の枠（テンプレート）にだけ名前があり、そこから、この地図に入っています。下の文が0件なのはそのためで、つながりが無いという意味ではありません。地図では破線で描いています。</p>` : ""}<div class="rel-ev" aria-live="polite"><p class="srcline muted">Wikipedia の本文から、2つの語が一緒に出てくる文を探しています…</p></div></section>`
         : `<section class="rel-section"><h4>ここで分けて読むこと</h4><ul class="rel-list"><li>中心命題そのものの主張と、派生項目の著作・思想・受容上の位置を混同しない。</li><li>人物名の表記差、著作題名の翻訳差、引用・影響関係を別々の証拠単位で確認する。</li><li>「調査候補」は入口であり、本文・版・標準ロケータの照合後に確定度を更新する。</li></ul></section>`}
       <section class="rel-section"><h4>次に広げる</h4><div class="rel-next">${next.map((x, i) => `<button type="button" class="rel-next-btn" data-i="${i}">${esc(x.label)}</button>`).join("")}</div></section>
       ${sources.length ? `<section class="rel-section"><h4>確認入口</h4><div class="rel-sources">${sources.map(s => s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id)}</a>` : `<span>${esc(s.label || s.id)}</span>`).join(" ")}</div></section>` : `<p class="srcline">この接続は探索レンズとして提示しています。本文・版・引用箇所を追加すれば証拠単位へ更新できます。</p>`}`,
@@ -4149,8 +4149,22 @@ function _bodyFirst(list) {
   if (!DX_PREVIEW) return { body: list, tpl: [] };
   return { body: list.filter(x => x.in_body !== false), tpl: list.filter(x => x.in_body === false) };
 }
-const TPL_FOLD_LABEL = "記事の本文に名前が見当たらない思想家（記事の横の案内枠のリンクだけ）";
-const TPL_FOLD_REASON = "本文（注釈を含む）にリンクも名前も見当たらないため畳んでいます（消してはいません）";
+// 人物の一覧の言い方は、データが言える関係だけを言う（所有者 10/25「この情報はどのような関係があるのか、どのような
+// 意味なのか不可解」）。記事の本文がリンク・言及している、という事実だけを書き、「担った」「思想家」とは言わない。
+// 著作の記事（言葉と物）と概念の記事（実存）で、記事の中の人物の役割が違うので言い分ける。
+function _peopleWords(kind) {
+  const work = kind === "work";
+  return {
+    head: work ? "この著作の記事の本文に出てくる人物" : "この語の記事の本文に出てくる人物",
+    note: work
+      ? "Wikipedia の記事の本文がリンク・言及している人物です（著作の中で論じられる人、研究者、訳者など）。この著作との具体的な関係は、名前を押して「中心との関係」で本文の文を確かめられます。"
+      : "Wikipedia の記事の本文がリンク・言及している人物です（その語を論じた人、例に挙がる人など）。この語との具体的な関係は、名前を押して「中心との関係」で本文の文を確かめられます。",
+    fold: "記事の本文には出てこず、記事に付いた案内用の枠（テンプレート）にだけ名前がある人物",
+    reason: "本文に出てこないので、この語との関係は確かめられていません。そのため畳んでいます（消してはいません）",
+  };
+}
+const TPL_FOLD_LABEL = _peopleWords("concept").fold;
+const TPL_FOLD_REASON = _peopleWords("concept").reason;
 function _panoBearers(d) {   // 原語・思想家・著作（概念を担った系譜＝日本語表記の来歴とは別次元）
   const o = d.origin || {}; let h = "";
   const co = _panoOrigSplit(d).origs;   // 語自身の語源に接地した原語だけ（翻訳対応語は表記側へ）
@@ -4158,9 +4172,10 @@ function _panoBearers(d) {   // 原語・思想家・著作（概念を担った
     + co.map(x => `${_entLink(x.term, "original", "orig:" + x.term)}${x.name ? `（${esc(x.name)}）` : ""}`).join("　") + `</p>`;
   const personsAll = (o.associated || []).filter(x => x && x.is_person), persons = personsAll.slice(0, 8);
   const bf = _bodyFirst(personsAll), pl = x => _entLink(_pw(x), "author", x.qid ? ("wd:" + x.qid) : ("author:" + _pw(x)));
-  if (persons.length) h += `<p class="pano-lbl">この概念を担った思想家</p><div class="pano-terms">`
+  const pw = _peopleWords(o.item_kind);
+  if (persons.length) h += `<p class="pano-lbl">${DX_PREVIEW ? pw.head : "この概念を担った思想家"}</p>${DX_PREVIEW ? `<p class="srcline muted">${esc(pw.note)}</p>` : ""}<div class="pano-terms">`
     + dxSliceMap(bf.body, 8, pl, "　", "思想家")
-    + (bf.tpl.length ? dxFold(TPL_FOLD_LABEL, bf.tpl.length, TPL_FOLD_REASON, bf.tpl.map(pl).join("　")) : "") + `</div>`;
+    + (bf.tpl.length ? dxFold(pw.fold, bf.tpl.length, pw.reason, bf.tpl.map(pl).join("　")) : "") + `</div>`;
   return h;
 }
 function _panoFocus(d) {   // 翻訳で変わった焦点（意味・用法・概念作用の差＝構成要素の再掲でない）
@@ -5102,9 +5117,10 @@ async function originRun(q, tok) {
   }
   // (1b) 関連する思想家（記事言及・重要度順）— P50/P61が無い概念でも0にしない（資本主義→スミス/マルクス…）
   if (assoc.length) {
-    html += `<div class="assoc-line">${jp ? "関連する思想家（この概念の記事がリンク・重要度順）" : "Associated thinkers (linked from the article, by prominence)"}:
-      ${(() => { const bf = _bodyFirst(assoc), one = p => `<a href="#" class="origin-thinker" data-name="${esc(p.label)}">${esc(p.label)}</a>${DX_PREVIEW && p.in_body === false ? `<small class="via-tpl">${jp ? "（本文に名前が見当たらず、記事の横の案内枠のリンクだけ）" : " (sidebar link only)"}</small>` : ""}`;
-        return bf.body.map(one).join("　／　") + (bf.tpl.length ? dxFold(TPL_FOLD_LABEL, bf.tpl.length, TPL_FOLD_REASON, bf.tpl.map(one).join("　／　")) : ""); })()}</div>
+    const pwc = _peopleWords(d.item_kind);
+    html += `<div class="assoc-line">${jp ? (DX_PREVIEW ? `${pwc.head}（Wikidata の記述の多い順）<br><small class="muted">${esc(pwc.note)}</small><br>` : "関連する思想家（この概念の記事がリンク・重要度順）") : "People in the article body (by prominence)"}:
+      ${(() => { const bf = _bodyFirst(assoc), one = p => `<a href="#" class="origin-thinker" data-name="${esc(p.label)}">${esc(p.label)}</a>${DX_PREVIEW && p.in_body === false ? `<small class="via-tpl">${jp ? "（本文に出てこず、案内用の枠にだけ名前がある）" : " (sidebar link only)"}</small>` : ""}`;
+        return bf.body.map(one).join("　／　") + (bf.tpl.length ? dxFold(pwc.fold, bf.tpl.length, pwc.reason, bf.tpl.map(one).join("　／　")) : ""); })()}</div>
       <p class="srcline">${jp ? "『立てた人』が一人に定まらない概念でも、通常検索が結びつける主要人物へ届くための層。記事の言及に接地（賛否は判定しない）。" : "A recall layer reaching the figures normal search associates; grounded in the article's mentions."}</p>`;
   }
   // (2) 語形の由来（語源）＋翻訳原点の候補 — 思想家がいる場合は"語源"として明確に降格し警告
@@ -5311,8 +5327,9 @@ async function gDiscoverDims(q, tok) {
     return;
   }
   const link = (x) => `<a class="dim-disc-l" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.heading)}</a>`;
-  el.innerHTML = `<p class="dim-disc-h">${jp ? "この概念に固有の切り口（記事の構造から・出所つき・概念ごとに異なる）" : "Facets specific to this concept (from its own article structure)"}</p>
+  el.innerHTML = `<p class="dim-disc-h">${jp ? "この語の記事に固有の切り口（記事の節見出しから・出所つき・語ごとに異なる）" : "Facets specific to this concept (from its own article structure)"}</p>
     ${d.disambiguation ? `<p class="srcline" style="color:var(--warn)">⚠ ${esc(d.note)}</p>` : ""}
+    ${d.matched_by === "search" ? `<p class="srcline" style="color:var(--warn)">⚠ ${jp ? `「${esc(q)}」と同じ題の記事に代えて、全文検索で最も近い記事「${esc(d.title)}」の節を示しています。この語そのものの切り口とは限りません。` : `Sections of the nearest search hit “${esc(d.title)}”, not an article titled “${esc(q)}”.`}</p>` : ""}
     <div class="dim-disc-list">${d.dimensions.map(link).join("")}</div>
     <p class="srcline muted">${jp ? "出所" : "source"}: <a href="${esc(d.article_url)}" target="_blank">Wikipedia (${LANG})「${esc(d.title)}」</a>。固定の共通次元と違い、語ごとに違う切り口が出ます。</p>`;
 }
@@ -5516,7 +5533,7 @@ function _groupSidebarThinkers(d) {
   const nodes = d.nodes.slice(), head = [];
   Object.entries(groups).forEach(([pid, kids]) => {
     const gid = "grp:tpl:" + pid, pl = Number(byId[pid].layer) || 1;
-    nodes.push({ id: gid, label: (LANG === "ja" ? "案内枠のリンクだけの思想家 " : "Sidebar-only thinkers ") + kids.length, kind: "domain", layer: pl + 1, weight: 1.6, tplGroup: true });
+    nodes.push({ id: gid, label: (LANG === "ja" ? "案内用の枠にだけ名前がある人物 " : "Navigation-box-only people ") + kids.length, kind: "domain", layer: pl + 1, weight: 1.6, tplGroup: true });
     head.push({ from: pid, to: gid, strength: 0.6 });
     kids.forEach(k => head.push({ from: gid, to: k, strength: 0.5 }));
   });
@@ -5598,7 +5615,7 @@ function _dxLegend() {
     + (G.nodes.some(n => n.kind === "opposite") ? `<p>${jp ? "赤い細い点線＝対立・区別される語（Wikidata の「別物」「反対」などの記載。強い結びつきではありません）。" : "Thin red dotted = contrasted/different-from item."}</p>` : "")
     + (G.nodes.some(n => _trailSet.has(n.label) && Number(n.layer) > 1) ? `<p>${jp ? "灰色の点線の輪＝この探求で一度開いた語（関係の強さとは別の印）。" : "Grey dotted ring = opened in this exploration."}</p>` : "")
     + `<p>${jp ? "線の太さ＝中心からの段（太い幹＝中心から分類の箱 → 枝 → 細い枝先）。関係の強さを測った値ではありません。" : "Line width = step from the centre (trunk → branch → twig); not a measured strength."}</p>`
-    + (kinds.has("cooccurrence") || G.nodes.some(n => n.in_body === false) ? `<p>${jp ? "破線＝記事の本文では確かめられない語（検索で一緒に出ただけ・本文に名前が見当たらず記事の横の案内枠のリンクだけ）。" : "Dashed = linked only outside the article body (sidebar) or co-occurring in search."}</p>` : "")
+    + (kinds.has("cooccurrence") || G.nodes.some(n => n.in_body === false) ? `<p>${jp ? "破線＝記事の本文では確かめられない語（検索で一緒に出ただけ・本文に出てこず記事に付いた案内用の枠にだけ名前がある）。" : "Dashed = linked only outside the article body (sidebar) or co-occurring in search."}</p>` : "")
     + `<p>${jp ? "円の大きさ＝その先につながる語の数。円の色＝種類：" : "Circle size = words beyond it. Colour = kind:"}</p><ul class="lg-kind">${[...kinds].filter(k => k !== "word").map(k => `<li><i style="background:${esc(GKIND[k] || "#888")}"></i>${esc(jp ? (DX_KIND_JA[k] || k) : k)}</li>`).join("")}</ul>`
     + (folded.length ? `<p class="lg-fold">${jp ? `畳んでいる枝：${folded.map(n => esc(n.label)).join("・")}（${hiddenN} 語）。円の「＋」を押すと開きます。はじめから開くかは「見方」で選べます。` : `Folded: ${folded.map(n => esc(n.label)).join(", ")} (${hiddenN}). Click “+” to open.`}</p>` : "");
 }

@@ -246,5 +246,8 @@ def test_graph_dimensions_and_anatomy_follow_the_same_bridge(monkeypatch):
     asyncio.run(main.api_dimensions("uhuru", "ja"))
     asyncio.run(main.api_anatomy("uhuru", "ja", 0))
     assert seen["node"] and seen["node"][0] == "自由"
-    assert seen["search"] and seen["search"][0] == "自由"
+    # 切り口（api_dimensions）も橋を渡った語で記事を解決する。2026-10-25 から記事は concept.node（地図と同じ解決）で選ぶので、
+    # node が 自由 で呼ばれ、以後の問い合わせ（節の取得など）も 自由 の記事に対して行う
+    assert seen["node"].count("自由") >= 2 and "uhuru" not in seen["node"]
+    assert "自由" in seen["search"] and all(x in (None, "自由") for x in seen["search"])
     assert seen["variants"] == ["自由"]
