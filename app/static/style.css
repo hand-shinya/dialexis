@@ -809,3 +809,13 @@ pre.llm { white-space: pre-wrap; font-family: inherit; background: #faf8f3;
 .segment-particle { color: #6b6b6b; }
 .assoc-line { margin: 0 0 1em; }
 .dx-legend .lg-orig { color: #7c2d12; font-weight: 600; }
+
+/* 題の系譜（プレビュー・10/25） */
+.th-lineage .lin-flow { padding-left: 1.4em; }
+.th-lineage .lin-flow > li { margin: 6px 0; }
+.th-lineage .lin-orig { font-weight: 600; font-size: 1.05em; }
+.th-lineage .lin-langs, .th-lineage .lin-eds { margin: 4px 0 4px 0.6em; padding-left: 1em; font-size: 0.95em; }
+.th-lineage .lin-lang { color: #6b6b6b; display: inline-block; min-width: 5.5em; }
+.th-lineage .lin-verdict { color: #7c2d12; font-size: 0.9em; margin-left: 4px; }
+.th-lineage .lin-table { border-collapse: collapse; margin: 6px 0; font-size: 0.95em; }
+.th-lineage .lin-table th, .th-lineage .lin-table td { border-bottom: 1px solid #e3ddd0; padding: 3px 8px; text-align: left; }

@@ -3267,6 +3267,45 @@ function _thPairResponseHtml(d) {
   h += `<section class="th-section"><h3>最強の反証・注意点</h3><div class="th-counter-grid">${(ds.counterchecks || []).map(t => `<article class="th-counter-card"><p><b>主張：</b>${esc(t.claim || "")}</p><p><b>反証候補：</b>${esc(t.counterargument || "")}</p><p><b>検査：</b>${esc(t.test || "")}</p></article>`).join("")}</div></section><section class="th-section"><h3>参照先</h3><div class="th-source-list">${(ds.sources || []).map(s => `<article class="th-source-card"><div class="th-card-top"><b>${s.url ? `<a class="ext-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label || s.id || "source")}</a>` : esc(s.label || s.id || "source")}</b>${_thLevel(s.evidence, levels)}</div><p>${esc(s.status || "")}</p></article>`).join("")}</div></section><section class="th-section th-next"><h3>次の調査</h3>${_thNextActions(d.next_actions || ds.next_actions || [], ds.sources || [])}</section></div>`;
   return h;
 }
+// ── 著作の題の系譜（原題 → 各国語の題 → 日本語の訳題）と題の語ごとの対応（所有者 10/25 承認・プレビュー）──
+// 著作の題を一つの語として「言葉／と／物」に分ける欄は、題には当てはまりにくいので畳み、題の単位の系譜を先に出す。
+async function _thWorkLineage(results, word) {
+  let d; try { d = await api(`/api/work-lineage?q=${encodeURIComponent(word)}&lang=${LANG}`, { timeout: 60000 }); } catch (e) { return; }
+  if (!d || !d.applies || !results.isConnected) return;
+  const o = d.original || {};
+  const lk = (u, t) => u ? `<a class="ext-link" href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>` : esc(t);
+  const others = (d.align_others || []);
+  const verdictOf = (lang) => { const x = others.find(y => y.lang === lang); if (!x) return "";
+    const m = x.align.filter(a => a.matched).map(a => `${a.orig}→${a.matched}`);
+    return `<span class="lin-verdict">${esc(x.verdict)}${m.length ? `（${esc(m.join("、"))}）` : ""}</span>`; };
+  const langRow = (x) => `<li><span class="lin-lang">${esc(x.lang_name)}</span> <span lang="${esc(x.lang)}">${esc(x.title)}</span> ${verdictOf(x.lang)}</li>`;
+  const tb = d.titles_by_lang || [];
+  const eds = (d.ja_editions || []).map(e => `<li>${esc(e.year || "年不明")}　${esc(e.publisher || "")}　${e.translators && e.translators.length ? esc(e.translators.join("・")) + " 訳" : "訳者の記載は書誌から読めず"}　${lk(e.url, "国立国会図書館サーチ")}</li>`);
+  const al = d.align_ja || [];
+  const row = (a) => `<tr><td lang="${esc(o.lang)}">${esc(a.orig)}</td><td>${a.lemma ? lk(a.dict_url, a.lemma) : "—"}</td><td>${esc((a.candidates || []).join("・") || "辞書に日本語訳の記載なし")}</td><td>${a.matched ? `<b>${esc(a.matched)}</b>` : "訳題には現れない"}</td></tr>`;
+  const sec = document.createElement("section");
+  sec.className = "th-section th-lineage";
+  sec.innerHTML = `<h3>題の系譜（原題 → 各国語の題 → 日本語の訳題）</h3>
+    <p class="muted">著作の題は、一つの語として分けず、題の単位でたどります。出所：Wikidata・各言語版 Wikipedia の記事名・国立国会図書館サーチ・${esc(o.lang_name || "原語")}の Wiktionary。</p>
+    <ol class="lin-flow">
+      <li><b>原題</b>　<span lang="${esc(o.lang)}" class="lin-orig">${esc(o.title || "（原題の記載なし）")}</span>　${esc([o.lang_name, o.year, (o.authors || []).join("・")].filter(Boolean).join("・"))}　${lk(o.wikidata_url, "Wikidata")}</li>
+      <li><b>各国語の題</b>（各言語版 Wikipedia の記事名）<ul class="lin-langs">${tb.slice(0, 6).map(langRow).join("")}</ul>${tb.length > 6 ? dxFold("ほかの言語の題", tb.length - 6, "多いので6言語のあとを畳んでいます", `<ul class="lin-langs">${tb.slice(6).map(langRow).join("")}</ul>`) : ""}</li>
+      <li><b>日本語の訳題</b>　『${esc(d.ja_title || "")}』${d.align_ja_verdict ? `　<span class="lin-verdict">${esc(d.align_ja_verdict)}</span>` : ""}<ul class="lin-eds">${eds.join("") || "<li>国立国会図書館サーチで訳書の書誌を特定できていません</li>"}</ul></li>
+    </ol>
+    <p><b>訳の経路</b>：${esc((d.route || {}).text || "")}</p>
+    ${al.length ? `<details class="lin-align" open><summary>題の語ごとの対応（原語の辞書の日本語訳から）</summary>
+      <table class="lin-table"><thead><tr><th>原題の語</th><th>辞書の見出し</th><th>辞書の日本語訳</th><th>訳題での語</th></tr></thead><tbody>${al.map(row).join("")}</tbody></table>
+      <p class="srcline">出所：${esc(d.align_source || "")}。冠詞・前置詞は除いています。辞書の訳語と訳題の語が違うとき（Kritik：辞書は「評論」、訳題は「批判」）も、そのまま示します。</p></details>`
+      : (d.align_note ? `<p class="srcline">${esc(d.align_note)}</p>` : "")}`;
+  results.prepend(sec);
+  // 題を一つの語として分けた欄は、消さずに畳む
+  const old = [...results.querySelectorAll(".th-section")].find(s => (s.querySelector("h3") || {}).textContent === "原語・翻訳語の対応");
+  if (old) {
+    const det = document.createElement("details"); det.className = "dx-fold";
+    det.innerHTML = `<summary>題を一つの語として分けた場合の対応 <span class="bg-n">1</span> — 著作の題には当てはまりにくいため畳んでいます（消していません）。押すと開きます</summary>`;
+    old.replaceWith(det); det.appendChild(old);
+  }
+}
 function _thResponseHtml(d) {
   const jp = LANG === "ja";
   if (d && d.dossier && d.dossier.mode === "person_pair") return _thPairResponseHtml(d);
@@ -3376,6 +3415,7 @@ async function gTranslationHistoryPanel(word, targetContext = {}) {
       if (results.isConnected) {
         results.innerHTML = _thResponseHtml(d);
         _thBindLedgerActions(results, d);
+        if (DX_PREVIEW) _thWorkLineage(results, word);
         if (d && d.dossier && d.dossier.mode === "person") _thBindPersonExplorers(results, d);
       }
     } catch (e) {

@@ -441,7 +441,7 @@ async def node(word: str, lang: str = "ja", typed: bool = False) -> dict:
         origs = list(by_name.values())
 
         labels, originators, named_after, associated = {}, [], [], []
-        item_p31 = []
+        item_p31, item_is_work = [], False
         relations = {"near": [], "opposite": []}
         relations_typed = []
         if qid:
@@ -458,6 +458,7 @@ async def node(word: str, lang: str = "ja", typed: bool = False) -> dict:
                                                        "suggestions": [title], "rejected_article": title,
                                                        "rejected_qid": qid})
             item_p31 = _claim_qids(claims, "P31")   # この記事の項目が何か（著作・概念・人物…）。見出しの言い方を変えるのに使う
+            item_is_work = bool(claims.get("P1476")) or bool(claims.get("P50") and claims.get("P577"))
             orig_q = _claim_qids(claims, "P50") + _claim_qids(claims, "P61") + _claim_qids(claims, "P112")
             na_q = _claim_qids(claims, "P138")  # named after＝語形の由来（rhizome←根茎:植物）
             near_q = [x for p in _REL_NEAR for x in _claim_qids(claims, p)]  # 近い/類する
@@ -498,7 +499,9 @@ async def node(word: str, lang: str = "ja", typed: bool = False) -> dict:
             "original_terms": origs,          # 概念-翻訳-原点の候補（記事が明示・LEAD）
             "originators": originators,        # 立てた/著した人（P50/P61/P112・決定論・人物のみ）
             # 項目の種類: 著作（書籍・文学作品・映画など）か、それ以外（概念など）か
-            "item_kind": "work" if set(item_p31) & _CREATIVE_P31 else "concept",
+            # 型の一覧だけに頼ると「哲学書」(Q12765855 存在と時間) のような型を取りこぼすので、題 (P1476) か、
+            # 著者 (P50) と刊行日 (P577) の宣言を持つ項目も著作とみなす（10/25）
+            "item_kind": "work" if (set(item_p31) & _CREATIVE_P31 or item_is_work) else "concept",
             "associated": associated,          # 関連する思想家（記事言及・重要度順・再現向上）
             "named_after": named_after,        # 語形の由来（P138・語源であって概念の原点でない）
             "relations": relations,            # 類語・対義の星座（近い/対立・人物除外・決定論）

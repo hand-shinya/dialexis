@@ -95,6 +95,7 @@ expected_tests = [
   "tests/test_sep_original_term.py",
   "tests/test_smoke.py",
   "tests/test_tetsugaku_jii.py",
+  "tests/test_title_lineage.py",
   "tests/test_topic_ranking.py",
   "tests/test_translation_edge.py",
   "tests/test_translation_history.py",
@@ -286,7 +287,7 @@ deadline = "2026-11-06"
 observation = "所有者が、畳んだ言語の枝と見た目の符号化について「本採用」「作り直し」「撤去」のいずれかを決めたこと"
 observation_threshold = "判断が1件記録されている（開発台帳）"
 how_to_measure = "grep -n 'preview-map-visual' Main/論考/哲学DESK/_AI/開発台帳.md（Vault 内）で 2026-10-23 以降の判断の行を数える"
-retreat = "期日までに判断が無ければ、_branchHide・gBranchToggle・ACTIONS.branch（UI_ACTION_IDS.node からも）・dx_lang_open の設定・_dxSizes・_dxBranches・_dxLegend・gInitialLayout の比例配分と keepPos・案内枠だけの思想家の束（_groupSidebarThinkers・_bodyFirst・TPL_FOLD_LABEL。所有者の承認 10/23 18:1x）・立てた人の直結（_promoteOriginators・rel＝originator の描き方・関係パネルの「著者」。所有者 10/24）・.dx-legend の CSS と tests/e2e/map_visual.e2e.js を削除する（地図は従来の等分配置・関係の種類ごとの太さ・並び順の大きさに戻る）"
+retreat = "期日までに判断が無ければ、_branchHide・gBranchToggle・ACTIONS.branch（UI_ACTION_IDS.node からも）・dx_lang_open の設定・_dxSizes・_dxBranches・_dxLegend・gInitialLayout の比例配分と keepPos・案内枠だけの思想家の束（_groupSidebarThinkers・_bodyFirst・TPL_FOLD_LABEL。所有者の承認 10/23 18:1x）・立てた人の直結（_promoteOriginators・rel＝originator の描き方・関係パネルの「著者」。所有者 10/24）・題の系譜（/api/work-lineage・connectors/title_lineage.py・_thWorkLineage・tests/test_title_lineage.py・tests/e2e/work_lineage.e2e.js。所有者 10/25 承認）・.dx-legend の CSS と tests/e2e/map_visual.e2e.js を削除する（地図は従来の等分配置・関係の種類ごとの太さ・並び順の大きさに戻る）"
 status = "open"
 observed = ""
 evidence = ""

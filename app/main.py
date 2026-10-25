@@ -3796,6 +3796,27 @@ async def api_text_scan(request: Request, lang: str = "ja"):
     }
 
 
+@app.get("/api/work-lineage")
+async def api_work_lineage(q: str, lang: str = "ja"):
+    """著作の題の系譜（原題 → 各国語の題 → 日本語の訳題）と題の語ごとの対応（所有者 10/25 承認）。
+    著作でない語（概念など）には applies=False を返す（語の対応は従来の欄のまま）。"""
+    if not q.strip():
+        raise HTTPException(400, "empty query")
+    from .connectors import title_lineage
+    try:
+        cn = await concept.node(q.strip(), lang)
+    except Exception as e:  # noqa: BLE001
+        return {"query": q, "applies": False, "error": f"{type(e).__name__}: {e}"}
+    cd = (cn or {}).get("data") or {}
+    if not cd.get("found") or cd.get("item_kind") != "work" or not cd.get("qid"):
+        return {"query": q, "applies": False, "item_kind": cd.get("item_kind")}
+    try:
+        out = await title_lineage.lineage(cd["qid"], cd.get("title") or q)
+    except Exception as e:  # noqa: BLE001
+        return {"query": q, "applies": False, "error": f"{type(e).__name__}: {e}"}
+    return {"query": q, **out}
+
+
 @app.get("/api/translation-history")
 async def api_translation_history(q: str, domain: str = "philosophy", lang: str = "ja",
                                   request: Request = None):
